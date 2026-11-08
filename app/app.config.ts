@@ -47,6 +47,19 @@ export default ({ config }: ConfigContext): ExpoConfig => ({
     ],
     ['expo-font', { fonts }],
     'expo-secure-store',
+    [
+      'expo-calendar',
+      {
+        // Adding a ticket only needs write-only access (iOS 17+): the app never reads the calendar.
+        writeOnlyAccess: true,
+        // The app never touches reminders.
+        remindersPermission: false,
+        writeOnlyCalendarPermission:
+          'Үзвэрийн цагийг календарьт нэмэхийн тулд хандах эрх хэрэгтэй. / Open Cinema adds your showtime to your calendar.',
+        calendarPermission:
+          'Үзвэрийн цагийг календарьт нэмэхийн тулд хандах эрх хэрэгтэй. / Open Cinema adds your showtime to your calendar.',
+      },
+    ],
   ],
   experiments: { typedRoutes: true, reactCompiler: true },
   extra: {

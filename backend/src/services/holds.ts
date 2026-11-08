@@ -22,6 +22,7 @@ export const toHold = (h: HoldRow): Hold => ({
   seatId: h.seatId,
   showtimeId: h.showtimeId,
   expiresAt: h.expiresAt.toISOString(),
+  bookingId: h.bookingId ?? null,
 });
 
 export type CreateHoldsInput = {

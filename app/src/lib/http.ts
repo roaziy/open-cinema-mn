@@ -10,6 +10,8 @@ export class ApiError extends Error {
     message?: string,
     /** The parsed error body, for codes that carry extra fields (e.g. `seat_taken` -> `seatIds`). */
     readonly body?: Record<string, unknown>,
+    /** Seconds from a `Retry-After` header, when the server sent one. */
+    readonly retryAfter?: number,
   ) {
     super(message ?? code);
     this.name = 'ApiError';
@@ -56,7 +58,14 @@ export async function rawRequest<T>(path: string, opts: RequestOptions = {}): Pr
       typeof err.error === 'string' ? err.error : `http_${res.status}`,
       typeof err.message === 'string' ? err.message : undefined,
       body && typeof body === 'object' ? (body as Record<string, unknown>) : undefined,
+      parseRetryAfter(res.headers.get('Retry-After')),
     );
   }
   return body as T;
+}
+
+function parseRetryAfter(value: string | null): number | undefined {
+  // An empty header is no header (Number('') would read as 0).
+  const n = value === null || value.trim() === '' ? Number.NaN : Number(value);
+  return Number.isFinite(n) && n >= 0 ? n : undefined;
 }

@@ -6,6 +6,7 @@ import {
   type SeatState,
 } from '@open-cinema/shared';
 import { keepPreviousData, useQuery, useQueryClient } from '@tanstack/react-query';
+import { router } from 'expo-router';
 import { useCallback, useEffect, useRef, useState } from 'react';
 import type { TKey } from '@/i18n';
 import { ApiError, api } from './api';
@@ -107,7 +108,13 @@ export function useSeatActions(showtimeId: string, t: (key: TKey) => string, pat
               qc.setQueryData<Hold[]>(holdsKey, (cur) => [...(cur ?? []), mine]);
               patchSeats([{ seatId, state: 'held' }]);
               haptic.error();
-              showToast(t('seats.failedToast'), 'error');
+              if (e instanceof ApiError && e.code === 'hold_in_booking' && mine.bookingId) {
+                // The seat is part of an unpaid order: finish or let that order lapse.
+                showToast(t('checkout.pendingOrder'), 'error', 5000);
+                router.push(`/pay/${mine.bookingId}`);
+              } else {
+                showToast(t('seats.failedToast'), 'error');
+              }
             }
           }
           return;
@@ -124,6 +131,7 @@ export function useSeatActions(showtimeId: string, t: (key: TKey) => string, pat
           seatId,
           showtimeId,
           expiresAt: new Date(Date.now() + HOLD_MS).toISOString(),
+          bookingId: null,
         };
         // A hold list still loading must not land after, and wipe, the optimistic write.
         await qc.cancelQueries({ queryKey: holdsKey });
