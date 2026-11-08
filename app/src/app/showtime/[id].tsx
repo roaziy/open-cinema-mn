@@ -1,13 +1,111 @@
-import { Stack, useLocalSearchParams } from 'expo-router';
-import { StyleSheet, Text, View } from 'react-native';
+import type { Hold } from '@open-cinema/shared';
+import { formatUbTime } from '@open-cinema/shared';
+import { useQueryClient } from '@tanstack/react-query';
+import { router, Stack, useLocalSearchParams } from 'expo-router';
+import { useHeaderHeight } from 'expo-router/react-navigation';
+import { useCallback, useMemo } from 'react';
+import { StyleSheet, Text, useWindowDimensions, View } from 'react-native';
+import { PosterBackdrop } from '@/components/poster-backdrop';
+import { SeatCanvas, seatAreaWidth } from '@/components/seat-canvas';
+import type { SeatStatus } from '@/components/seat-cell';
+import { SeatFooter } from '@/components/seat-footer';
+import { SeatLegend } from '@/components/seat-legend';
+import { Skeleton } from '@/components/skeleton';
+import { ErrorState } from '@/components/state-views';
 import { useI18n } from '@/i18n';
-import { colors, space } from '@/theme/tokens';
+import { useAuth } from '@/lib/auth';
+import { layoutSeats } from '@/lib/seat-layout';
+import { liveHolds, seatLabel, useMyHolds, useSeatActions, useSeatMap } from '@/lib/seats';
+import { useSeatStream } from '@/lib/sse';
+import { showToast } from '@/lib/toast';
+import { colors, radius, space } from '@/theme/tokens';
 import { type } from '@/theme/type';
 
-/** Placeholder until the seat map lands. */
-export default function ShowtimeScreen() {
+export default function SeatMapScreen() {
   const { t } = useI18n();
   const { id } = useLocalSearchParams<{ id: string }>();
+  const { width } = useWindowDimensions();
+  const headerHeight = useHeaderHeight();
+  const { user } = useAuth();
+  const qc = useQueryClient();
+
+  const map = useSeatMap(id);
+  const holds = useMyHolds(id);
+  const stream = useSeatStream(id);
+  const toggle = useSeatActions(id, t, stream.patch);
+
+  const seats = map.data?.seats;
+  const layout = useMemo(() => layoutSeats(seats ?? [], seatAreaWidth(width)), [seats, width]);
+  const bySeat = useMemo(() => new Map((seats ?? []).map((s) => [s.id, s])), [seats]);
+
+  const mine = useMemo(() => liveHolds(holds.data), [holds.data]);
+  const mineIds = useMemo(() => new Set(mine.map((h) => h.seatId)), [mine]);
+
+  const statusOf = useCallback(
+    (seatId: string): SeatStatus => {
+      if (mineIds.has(seatId)) return 'mine';
+      const state = stream.seats[seatId] ?? bySeat.get(seatId)?.state ?? 'free';
+      return state === 'free' ? 'free' : 'taken';
+    },
+    [mineIds, stream.seats, bySeat],
+  );
+
+  const labelOf = useCallback(
+    (seatId: string, status: SeatStatus) => {
+      const seat = bySeat.get(seatId);
+      if (!seat) return '';
+      const state =
+        status === 'mine'
+          ? t('seats.mine')
+          : status === 'taken'
+            ? t('seats.taken')
+            : t('seats.free');
+      const kind =
+        seat.kind === 'premium'
+          ? `${t('seats.kind.premium')}, `
+          : seat.kind === 'wheelchair'
+            ? `${t('seats.kind.wheelchair')}, `
+            : '';
+      return t('seats.a11y', { row: seat.rowLabel, n: seat.number, state: `${kind}${state}` });
+    },
+    [bySeat, t],
+  );
+
+  const selected = useMemo(() => mine.flatMap((h) => bySeat.get(h.seatId) ?? []), [mine, bySeat]);
+  const earliest = useMemo(() => mine.map((h) => h.expiresAt).sort()[0] ?? null, [mine]);
+
+  // Holds run out one by one: release only the ones that lapsed, and say which.
+  const { patch } = stream;
+  const onExpire = useCallback(() => {
+    const cache = qc.getQueriesData<Hold[]>({ queryKey: ['holds', id] });
+    const lapsed = new Set<string>();
+    for (const [key, list] of cache) {
+      if (!list) continue;
+      const keep = list.filter((h) => new Date(h.expiresAt).getTime() > Date.now());
+      for (const h of list) if (!keep.includes(h)) lapsed.add(h.seatId);
+      qc.setQueryData(key, keep);
+    }
+    if (lapsed.size === 0) return;
+    patch([...lapsed].map((seatId) => ({ seatId, state: 'free' as const })));
+    const names = [...lapsed].flatMap((sid) => {
+      const seat = bySeat.get(sid);
+      return seat ? [seatLabel(seat)] : [];
+    });
+    showToast(
+      t(names.length > 1 ? 'seats.expiredMany' : 'seats.expired', { seats: names.join(', ') }),
+      'error',
+    );
+    qc.invalidateQueries({ queryKey: ['holds', id] });
+  }, [qc, id, t, patch, bySeat]);
+
+  const show = map.data?.showtime;
+  const tone = show?.movie.tone ?? colors.canvas;
+
+  const onContinue = () => {
+    if (!user || user.role === 'guest') router.push(`/showtime/${id}/gate`);
+    else router.push(`/checkout/${id}`);
+  };
+
   return (
     <View style={styles.root}>
       <Stack.Screen
@@ -15,23 +113,113 @@ export default function ShowtimeScreen() {
           headerShown: true,
           title: '',
           headerTransparent: true,
+          headerBackButtonDisplayMode: 'minimal',
           headerTintColor: colors.ink,
         }}
       />
-      <Text style={styles.text}>{t('showtime.placeholder')}</Text>
-      <Text style={styles.id}>{id}</Text>
+      {show ? (
+        <View style={[styles.head, { paddingTop: headerHeight + space.xs }]}>
+          <PosterBackdrop
+            uri={show.movie.backdropUrl ?? show.movie.posterUrl}
+            tone={tone}
+            fadeHeight={90}
+          />
+          <View style={styles.headRow}>
+            <View style={styles.headText}>
+              <Text style={styles.title} numberOfLines={1}>
+                {show.movie.title}
+              </Text>
+              <Text style={styles.meta} numberOfLines={1}>
+                {[
+                  show.branch.name,
+                  show.hallName,
+                  `${formatUbTime(show.startsAt)}`,
+                  show.format,
+                ].join('  ·  ')}
+              </Text>
+            </View>
+            <LiveBadge status={stream.status} />
+          </View>
+        </View>
+      ) : (
+        <View style={{ height: headerHeight + 56 }} />
+      )}
+
+      <View style={styles.legend}>
+        <SeatLegend />
+      </View>
+
+      {map.isError && !map.data ? (
+        <View style={styles.center}>
+          <ErrorState error={map.error} onRetry={() => map.refetch()} />
+        </View>
+      ) : !map.data ? (
+        <View style={styles.skeleton}>
+          <Skeleton height={64} radius={radius.card} />
+          <Skeleton height={220} radius={radius.card} />
+        </View>
+      ) : (
+        <SeatCanvas
+          layout={layout}
+          tone={tone}
+          onSeat={toggle}
+          statusOf={statusOf}
+          labelOf={labelOf}
+        />
+      )}
+
+      {show ? (
+        <SeatFooter
+          selected={selected}
+          priceStandard={show.priceStandard}
+          pricePremium={show.pricePremium}
+          expiresAt={earliest}
+          onExpire={onExpire}
+          onRelease={toggle}
+          onViewFromSeat={() => {
+            const last = selected[selected.length - 1];
+            if (last) router.push(`/showtime/${id}/view?seat=${last.id}`);
+          }}
+          onContinue={onContinue}
+        />
+      ) : null}
+    </View>
+  );
+}
+
+function LiveBadge({ status }: { status: ReturnType<typeof useSeatStream>['status'] }) {
+  const { t } = useI18n();
+  if (status === 'error') return null;
+  const live = status === 'live';
+  return (
+    <View style={styles.badge} accessibilityLiveRegion="polite">
+      <View style={[styles.badgeDot, { backgroundColor: live ? colors.action : colors.muted }]} />
+      <Text style={styles.badgeText}>{live ? t('seats.live') : t('seats.reconnecting')}</Text>
     </View>
   );
 }
 
 const styles = StyleSheet.create({
-  root: {
-    flex: 1,
-    backgroundColor: colors.canvas,
+  root: { flex: 1, backgroundColor: colors.canvas },
+  head: { paddingHorizontal: space.lg, paddingBottom: space.md, overflow: 'hidden' },
+  headRow: { flexDirection: 'row', alignItems: 'center', gap: space.md },
+  headText: { flex: 1, gap: 2 },
+  title: { ...type.headline, color: colors.ink },
+  meta: { ...type.caption, color: colors.body },
+  badge: {
+    flexDirection: 'row',
     alignItems: 'center',
-    justifyContent: 'center',
-    gap: space.sm,
+    gap: 6,
+    height: 26,
+    paddingHorizontal: space.md,
+    borderRadius: radius.pill,
+    backgroundColor: colors.scrim,
+    borderWidth: 1,
+    borderColor: colors.scrimBorder,
   },
-  text: { ...type.body, color: colors.body },
-  id: { ...type.caption, color: colors.muted },
+  badgeDot: { width: 7, height: 7, borderRadius: 4 },
+  badgeText: { ...type.footnote, color: colors.ink },
+  legend: { paddingHorizontal: space.lg, paddingVertical: space.sm },
+  center: { flex: 1, justifyContent: 'center' },
+  skeleton: { flex: 1, padding: space.lg, gap: space.lg },
 });

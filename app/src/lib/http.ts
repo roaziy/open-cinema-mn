@@ -8,6 +8,8 @@ export class ApiError extends Error {
     readonly status: number,
     readonly code: string,
     message?: string,
+    /** The parsed error body, for codes that carry extra fields (e.g. `seat_taken` -> `seatIds`). */
+    readonly body?: Record<string, unknown>,
   ) {
     super(message ?? code);
     this.name = 'ApiError';
@@ -53,6 +55,7 @@ export async function rawRequest<T>(path: string, opts: RequestOptions = {}): Pr
       res.status,
       typeof err.error === 'string' ? err.error : `http_${res.status}`,
       typeof err.message === 'string' ? err.message : undefined,
+      body && typeof body === 'object' ? (body as Record<string, unknown>) : undefined,
     );
   }
   return body as T;

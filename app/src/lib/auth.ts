@@ -124,6 +124,14 @@ export function getAccessToken(): string | null {
   return state.session?.accessToken ?? null;
 }
 
+export function getRefreshToken(): string | null {
+  return state.session?.refreshToken ?? null;
+}
+
+export function getUser(): PublicUser | null {
+  return state.session?.user ?? null;
+}
+
 export function getUserId(): string | null {
   return state.session?.user.id ?? null;
 }
