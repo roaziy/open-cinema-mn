@@ -29,6 +29,13 @@
       "when": 1794147440726,
       "tag": "0003_scan_response_indexes",
       "breakpoints": true
+    },
+    {
+      "idx": 4,
+      "version": "7",
+      "when": 1794147846124,
+      "tag": "0004_payments_refunded_at",
+      "breakpoints": true
     }
   ]
 }

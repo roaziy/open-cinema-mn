@@ -391,7 +391,7 @@ export async function confirmBooking(db: Db, bookingId: string, deps: Deps): Pro
 }
 
 /**
- * Pays back a failed booking whose payment is still `paid`. Runs outside any transaction; a
+ * Pays back a failed or cancelled booking whose payment is still `paid`. Runs outside any transaction; a
  * provider error is logged and the sweeper tries again. Safe to call repeatedly.
  */
 export async function refundOwed(db: Db, bookingId: string, deps: Deps): Promise<void> {
@@ -403,7 +403,7 @@ export async function refundOwed(db: Db, bookingId: string, deps: Deps): Promise
       and(
         eq(payments.bookingId, bookingId),
         eq(payments.status, 'paid'),
-        eq(bookings.status, 'failed'),
+        inArray(bookings.status, ['failed', 'cancelled']),
       ),
     )
     .then((r) => r.map((x) => x.payments));
@@ -412,7 +412,7 @@ export async function refundOwed(db: Db, bookingId: string, deps: Deps): Promise
     await deps.payments.refund(p.invoiceId);
     await db
       .update(payments)
-      .set({ status: 'refunded' })
+      .set({ status: 'refunded', refundedAt: deps.clock() })
       .where(and(eq(payments.id, p.id), eq(payments.status, 'paid')));
   } catch (err) {
     console.error('refund failed, will retry', err);
