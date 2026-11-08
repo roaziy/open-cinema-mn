@@ -21,13 +21,10 @@ import { signQr } from '../lib/sign';
 import { bookingConfirmedEmail } from '../messages/templates';
 import type { MockRaw } from '../payments/mock';
 import { heldCount, SLOT_COLUMNS, toBranch, toSlot, toSummary } from './catalog-views';
-import { lockUserShowtime, MAX_SEATS_PER_BOOKING, type Tx } from './holds';
+import { lockUserShowtime, MAX_SEATS_PER_BOOKING, SeatTakenError, type Tx } from './holds';
 import { nonFreeSeats } from './seat-state';
 
 type Deps = Pick<AppDeps, 'messages' | 'payments' | 'seatHub' | 'clock'>;
-
-const lockKey = (tx: Tx, key: string) =>
-  tx.execute(sql`select pg_advisory_xact_lock(hashtextextended(${key}, 0))`);
 
 export type CreateBookingInput = {
   userId: string;
@@ -140,6 +137,18 @@ async function createInTransaction(
   if (holds.length !== a.holdIds.length) throw conflict('holds_unavailable');
 
   const seatIds = holds.map((h) => h.seatId).sort();
+  // A stale hold on a seat that is already sold must never be invoiced.
+  const sold = await tx
+    .select({ seatId: tickets.seatId })
+    .from(tickets)
+    .where(
+      and(
+        eq(tickets.showtimeId, a.showtimeId),
+        eq(tickets.status, 'valid'),
+        inArray(tickets.seatId, seatIds),
+      ),
+    );
+  if (sold.length > 0) throw new SeatTakenError(sold.map((t) => t.seatId));
   const kinds = await tx
     .select({ id: seats.id, kind: seats.kind })
     .from(seats)
@@ -174,25 +183,51 @@ async function createInTransaction(
   return created.id;
 }
 
-/** Creates the invoice once per booking, however many requests race to do it. */
+/**
+ * Creates the invoice once per booking. The provider is called outside any transaction (it may
+ * be an HTTP call and must never hold a pooled connection); the unique index on
+ * `payments.booking_id` makes a racing second call a no-op, and every caller reads the stored row.
+ */
 async function ensureInvoice(db: Db, deps: Deps, bookingId: string): Promise<void> {
-  await db.transaction(async (tx) => {
-    await lockKey(tx, `invoice:${bookingId}`);
-    const [have] = await tx
+  const has = () =>
+    db
       .select({ id: payments.id })
       .from(payments)
       .where(eq(payments.bookingId, bookingId))
-      .limit(1);
-    if (have) return;
-    const [b] = await tx.select().from(bookings).where(eq(bookings.id, bookingId)).limit(1);
-    if (b?.status !== 'pending') return;
-    await deps.payments.createInvoice({
-      bookingId,
-      amount: b.total,
-      description: `Open Cinema ${b.orderNo}`,
-    });
+      .limit(1)
+      .then((r) => r.length > 0);
+  if (await has()) return;
+  const [b] = await db.select().from(bookings).where(eq(bookings.id, bookingId)).limit(1);
+  if (b?.status !== 'pending') return;
+  const inv = await deps.payments.createInvoice({
+    bookingId,
+    amount: b.total,
+    description: `Open Cinema ${b.orderNo}`,
   });
+  // An invoice never outlives the seats it was issued for.
+  const expiresAt = new Date(
+    Math.min(inv.expiresAt.getTime(), (b.expiresAt ?? inv.expiresAt).getTime()),
+  );
+  const raw: MockRaw = {
+    state: 'pending',
+    qrText: inv.qrText,
+    deeplinks: inv.deeplinks,
+    expiresAt: expiresAt.toISOString(),
+  };
+  await db
+    .insert(payments)
+    .values({
+      bookingId,
+      provider: env.PAYMENT_PROVIDER,
+      invoiceId: inv.invoiceId,
+      amount: b.total,
+      raw,
+    })
+    .onConflictDoNothing({ target: payments.bookingId });
 }
+
+const clampIso = (iso: string, cap: Date | null) =>
+  cap && cap.getTime() < new Date(iso).getTime() ? cap.toISOString() : iso;
 
 export async function bookingView(
   db: Db,
@@ -238,7 +273,7 @@ export async function bookingView(
             invoiceId: payment.invoiceId,
             qrText: raw.qrText,
             deeplinks: raw.deeplinks,
-            expiresAt: raw.expiresAt,
+            expiresAt: clampIso(raw.expiresAt, b.expiresAt),
           }
         : null,
     ticketIds: ticketRows.map((t) => t.id),
@@ -274,8 +309,7 @@ export async function confirmBooking(db: Db, bookingId: string, deps: Deps): Pro
   if (remote === 'pending') return;
 
   const outcome = await db.transaction(async (tx): Promise<Outcome> => {
-    // The booking row lock serialises every settle. The payment row is deliberately not locked:
-    // the provider's refund writes it on another connection and would wait on us forever.
+    // The booking row lock serialises every settle. No provider call happens in here.
     const [locked] = await tx
       .select()
       .from(bookings)
@@ -332,9 +366,9 @@ export async function confirmBooking(db: Db, bookingId: string, deps: Deps): Pro
       return { kind: 'paid', seatIds: locked.seatIds };
     }
 
-    // Money was taken but the seats are gone: give it back, never keep a payment without tickets.
-    await deps.payments.refund(pay.invoiceId);
-    await tx.update(payments).set({ status: 'refunded' }).where(eq(payments.id, pay.id));
+    // Money was taken but the seats are gone. Record that a refund is owed (payment stays
+    // `paid`); the refund itself runs after this commit and is retried by the sweeper.
+    await tx.update(payments).set({ status: 'paid' }).where(eq(payments.id, pay.id));
     const freed = await releaseBookingHolds(tx, bookingId);
     await tx
       .update(bookings)
@@ -352,6 +386,36 @@ export async function confirmBooking(db: Db, bookingId: string, deps: Deps): Pro
     await sendConfirmationEmail(db, bookingId, deps);
   } else if (outcome.kind === 'failed') {
     await publishFreed(db, deps, b.showtimeId, outcome.freed);
+    await refundOwed(db, bookingId, deps);
+  }
+}
+
+/**
+ * Pays back a failed booking whose payment is still `paid`. Runs outside any transaction; a
+ * provider error is logged and the sweeper tries again. Safe to call repeatedly.
+ */
+export async function refundOwed(db: Db, bookingId: string, deps: Deps): Promise<void> {
+  const [p] = await db
+    .select()
+    .from(payments)
+    .innerJoin(bookings, eq(bookings.id, payments.bookingId))
+    .where(
+      and(
+        eq(payments.bookingId, bookingId),
+        eq(payments.status, 'paid'),
+        eq(bookings.status, 'failed'),
+      ),
+    )
+    .then((r) => r.map((x) => x.payments));
+  if (!p) return;
+  try {
+    await deps.payments.refund(p.invoiceId);
+    await db
+      .update(payments)
+      .set({ status: 'refunded' })
+      .where(and(eq(payments.id, p.id), eq(payments.status, 'paid')));
+  } catch (err) {
+    console.error('refund failed, will retry', err);
   }
 }
 

@@ -1,5 +1,5 @@
 import { randomUUID } from 'node:crypto';
-import { and, eq } from 'drizzle-orm';
+import { and, eq, inArray, sql } from 'drizzle-orm';
 import type { Db } from '../db/client';
 import { payments } from '../db/schema';
 import { env } from '../env';
@@ -17,8 +17,8 @@ export type MockRaw = {
 };
 
 /**
- * QPay-shaped provider for development: invoices live in the `payments` table and the "bank
- * screen" is the dev endpoint that calls `markPaid`.
+ * QPay-shaped provider for development: invoice state lives in `payments.raw` (the row is
+ * written by the booking service) and the "bank screen" is the dev endpoint calling `markPaid`.
  */
 export class MockPaymentProvider implements PaymentProvider {
   constructor(
@@ -26,24 +26,13 @@ export class MockPaymentProvider implements PaymentProvider {
     private readonly clock: () => Date,
   ) {}
 
+  /** Pure: the caller stores the invoice (`payments` row, state `pending`) in its transaction. */
   async createInvoice(b: { bookingId: string; amount: number; description: string }) {
     const invoiceId = `mock_${randomUUID()}`;
     const expiresAt = new Date(this.clock().getTime() + INVOICE_TTL_MS);
-    const qrText = `${env.API_PUBLIC_URL}/v1/mock-pay/${invoiceId}`;
+    // Opaque to the app: its mock bank screen posts to this route.
+    const qrText = `${env.API_PUBLIC_URL}/v1/bookings/${b.bookingId}/mock-pay`;
     const deeplinks = [{ name: 'Mock bank', url: `mockbank://pay?invoice=${invoiceId}` }];
-    const raw: MockRaw = {
-      state: 'pending',
-      qrText,
-      deeplinks,
-      expiresAt: expiresAt.toISOString(),
-    };
-    await this.db.insert(payments).values({
-      bookingId: b.bookingId,
-      provider: MOCK_PROVIDER,
-      invoiceId,
-      amount: b.amount,
-      raw,
-    });
     return { invoiceId, qrText, deeplinks, expiresAt };
   }
 
@@ -73,14 +62,22 @@ export class MockPaymentProvider implements PaymentProvider {
     return row.raw as MockRaw;
   }
 
+  /** Atomic compare-and-set in SQL, so concurrent callers cannot overwrite each other. */
   private async setState(invoiceId: string, next: MockState, from: MockState[]): Promise<void> {
-    const raw = await this.readRaw(invoiceId);
-    if (!from.includes(raw.state)) {
+    const res = await this.db
+      .update(payments)
+      .set({ raw: sql`jsonb_set(${payments.raw}, '{state}', to_jsonb(${next}::text))` })
+      .where(
+        and(
+          eq(payments.provider, MOCK_PROVIDER),
+          eq(payments.invoiceId, invoiceId),
+          inArray(sql`${payments.raw}->>'state'`, from),
+        ),
+      )
+      .returning({ id: payments.id });
+    if (res.length === 0) {
+      const raw = await this.readRaw(invoiceId);
       throw new Error(`mock invoice ${invoiceId} is ${raw.state}, cannot become ${next}`);
     }
-    await this.db
-      .update(payments)
-      .set({ raw: { ...raw, state: next } })
-      .where(and(eq(payments.provider, MOCK_PROVIDER), eq(payments.invoiceId, invoiceId)));
   }
 }

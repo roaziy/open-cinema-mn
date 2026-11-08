@@ -15,6 +15,13 @@
       "when": 1794144071730,
       "tag": "0001_bookings_order_no",
       "breakpoints": true
+    },
+    {
+      "idx": 2,
+      "version": "7",
+      "when": 1794145135433,
+      "tag": "0002_payments_booking_unique",
+      "breakpoints": true
     }
   ]
 }
