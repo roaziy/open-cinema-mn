@@ -587,6 +587,96 @@ describe('admin login', () => {
   });
 });
 
+describe('admin password change', () => {
+  beforeEach(resetDb);
+
+  async function adminSession() {
+    const [row] = await db
+      .insert(users)
+      .values({
+        role: 'admin',
+        email: 'admin@example.com',
+        passwordHash: await hashPassword('correct-horse'),
+      })
+      .returning();
+    const ctx = setup();
+    const login = await request(ctx.app)
+      .post('/v1/auth/admin/login')
+      .send({ email: 'admin@example.com', password: 'correct-horse' })
+      .expect(200);
+    return { ...ctx, id: (row as { id: string }).id, tokens: login.body };
+  }
+  const change = (
+    app: ReturnType<typeof makeTestApp>,
+    token: string,
+    body: Record<string, unknown>,
+  ) =>
+    request(app).post('/v1/auth/admin/password').set('authorization', `Bearer ${token}`).send(body);
+
+  it('verifies the current password, sets the new one and ends every other session', async () => {
+    const { app, tokens } = await adminSession();
+    const other = await request(app)
+      .post('/v1/auth/admin/login')
+      .send({ email: 'admin@example.com', password: 'correct-horse' })
+      .expect(200);
+    const res = await change(app, tokens.accessToken, {
+      current: 'correct-horse',
+      next: 'a-better-password',
+    }).expect(200);
+    expect(res.body.user).toMatchObject({ role: 'admin' });
+    // The old password and the other device's refresh token are dead; the new pair works.
+    await request(app)
+      .post('/v1/auth/admin/login')
+      .send({ email: 'admin@example.com', password: 'correct-horse' })
+      .expect(401);
+    await request(app)
+      .post('/v1/auth/refresh')
+      .send({ refreshToken: res.body.refreshToken })
+      .expect(200);
+    await request(app)
+      .post('/v1/auth/refresh')
+      .send({ refreshToken: other.body.refreshToken })
+      .expect(401);
+  });
+
+  it('refuses a wrong current password with 400 (not 401) and counts it as a failed attempt', async () => {
+    const { app, tokens } = await adminSession();
+    const res = await change(app, tokens.accessToken, {
+      current: 'nope',
+      next: 'a-better-password',
+    });
+    expect(res.status).toBe(400);
+    expect(res.body.error).toBe('wrong_password');
+    for (let i = 0; i < 4; i++) {
+      await change(app, tokens.accessToken, { current: 'nope', next: 'a-better-password' });
+    }
+    const locked = await change(app, tokens.accessToken, {
+      current: 'correct-horse',
+      next: 'a-better-password',
+    });
+    expect(locked.status).toBe(429);
+  });
+
+  it('enforces the minimum length', async () => {
+    const { app, tokens } = await adminSession();
+    await change(app, tokens.accessToken, { current: 'correct-horse', next: 'short' }).expect(400);
+  });
+
+  it('is admin only', async () => {
+    const { app } = await adminSession();
+    const [cust] = await db
+      .insert(users)
+      .values({ role: 'customer', phone: '+97699112045' })
+      .returning();
+    const t = await issueTokens(db, cust as typeof users.$inferSelect, new Date());
+    await change(app, t.accessToken, { current: 'x', next: 'a-better-password' }).expect(403);
+    await request(app)
+      .post('/v1/auth/admin/password')
+      .send({ current: 'x', next: 'a-better-password' })
+      .expect(401);
+  });
+});
+
 describe('profile and roles', () => {
   beforeEach(resetDb);
 

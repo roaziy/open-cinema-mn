@@ -164,6 +164,7 @@ export function Sidebar({
                 role={ROLE_LABEL[user.role] ?? user.role}
                 detail={user.name ? user.email : null}
                 loginPath="/login"
+                accountHref="/admin/account"
               />
             </div>
           </div>

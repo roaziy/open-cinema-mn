@@ -45,3 +45,11 @@ export const AdminLoginBody = z.object({
   password: z.string().min(1).max(200),
 });
 export type AdminLoginBody = z.infer<typeof AdminLoginBody>;
+
+/** Minimum length of an admin password, enforced when it is set or changed. */
+export const ADMIN_PASSWORD_MIN = 8;
+export const AdminPasswordBody = z.object({
+  current: z.string().min(1).max(200),
+  next: z.string().min(ADMIN_PASSWORD_MIN).max(200),
+});
+export type AdminPasswordBody = z.infer<typeof AdminPasswordBody>;
