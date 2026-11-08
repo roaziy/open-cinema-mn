@@ -1,9 +1,8 @@
 import type { Hold, SeatDelta } from '@open-cinema/shared';
-import { and, count, eq, gt, inArray, lte } from 'drizzle-orm';
+import { and, count, eq, gt, inArray, lte, ne, sql } from 'drizzle-orm';
 import type { Db } from '../db/client';
 import { seatHolds, seats, showtimes, tickets } from '../db/schema';
 import { AppError, badRequest, isUniqueViolation, notFound } from '../lib/errors';
-import { nonFreeSeats } from './seat-state';
 
 export const HOLD_TTL_MS = 10 * 60_000;
 export const MAX_SEATS_PER_BOOKING = 10;
@@ -44,13 +43,48 @@ export async function createHolds(db: Db, input: CreateHoldsInput): Promise<Crea
   try {
     return await db.transaction((tx) => holdInTransaction(tx, { ...input, seatIds }));
   } catch (err) {
-    if (!isUniqueViolation(err)) throw err;
-    // The transaction is aborted; find out who beat us from a fresh read.
-    const taken = await nonFreeSeats(db, input.showtimeId, input.now);
-    const lost = seatIds.filter((id) => taken.has(id));
+    if (!isUniqueViolation(err) && !isDeadlock(err)) throw err;
+    // The transaction is aborted; find out who beat us from a fresh read. Only seats held by
+    // someone else or sold count as lost; the user's own holds are never a conflict.
+    const [others, sold] = await Promise.all([
+      db
+        .select({ seatId: seatHolds.seatId })
+        .from(seatHolds)
+        .where(
+          and(
+            eq(seatHolds.showtimeId, input.showtimeId),
+            inArray(seatHolds.seatId, seatIds),
+            gt(seatHolds.expiresAt, input.now),
+            ne(seatHolds.userId, input.userId),
+          ),
+        ),
+      db
+        .select({ seatId: tickets.seatId })
+        .from(tickets)
+        .where(
+          and(
+            eq(tickets.showtimeId, input.showtimeId),
+            eq(tickets.status, 'valid'),
+            inArray(tickets.seatId, seatIds),
+          ),
+        ),
+    ]);
+    const lostIds = new Set([...others, ...sold].map((r) => r.seatId));
+    const lost = seatIds.filter((id) => lostIds.has(id));
     throw new SeatTakenError(lost.length > 0 ? lost : seatIds);
   }
 }
+
+const isDeadlock = (err: unknown): boolean => {
+  const e = err as { code?: string; cause?: { code?: string } } | null;
+  return e?.code === '40P01' || e?.cause?.code === '40P01';
+};
+
+/** Serialises all hold changes of one user on one showtime (cap check, re-hold, release). */
+const lockUserShowtime = (tx: Tx, userId: string, showtimeId: string) =>
+  tx.execute(
+    sql`select pg_advisory_xact_lock(hashtextextended(${userId} || ':' || ${showtimeId}, 0))`,
+  );
 
 type Tx = Parameters<Parameters<Db['transaction']>[0]>[0];
 
@@ -58,6 +92,7 @@ async function holdInTransaction(
   tx: Tx,
   { showtimeId, seatIds, userId, now }: CreateHoldsInput,
 ): Promise<CreateHoldsResult> {
+  await lockUserShowtime(tx, userId, showtimeId);
   const [show] = await tx
     .select({ status: showtimes.status, startsAt: showtimes.startsAt, hallId: showtimes.hallId })
     .from(showtimes)
@@ -127,28 +162,18 @@ async function holdInTransaction(
     );
   if (alreadyMine + fresh.length > MAX_SEATS_PER_BOOKING) throw badRequest('too_many_seats');
 
+  // Re-holding an own active hold returns it unchanged: extending it would let a hold live forever.
+  // Inserts go in sorted seat order so two users holding the same seats in opposite order cannot
+  // deadlock on the unique index.
   const expiresAt = new Date(now.getTime() + HOLD_TTL_MS);
-  const refreshed = mineHere.size
-    ? await tx
-        .update(seatHolds)
-        .set({ expiresAt })
-        .where(
-          and(
-            eq(seatHolds.showtimeId, showtimeId),
-            eq(seatHolds.userId, userId),
-            inArray(seatHolds.seatId, [...mineHere]),
-          ),
-        )
-        .returning()
-    : [];
   const inserted = fresh.length
     ? await tx
         .insert(seatHolds)
-        .values(fresh.map((seatId) => ({ showtimeId, seatId, userId, expiresAt })))
+        .values([...fresh].sort().map((seatId) => ({ showtimeId, seatId, userId, expiresAt })))
         .returning()
     : [];
 
-  const byInput = new Map([...refreshed, ...inserted].map((h) => [h.seatId, h]));
+  const byInput = new Map([...active, ...inserted].map((h) => [h.seatId, h]));
   return {
     holds: seatIds.map((id) => toHold(byInput.get(id) as HoldRow)),
     changes: inserted.map((h) => ({ seatId: h.seatId, state: 'held' as const })),
@@ -177,9 +202,18 @@ export async function releaseHold(
   db: Db,
   { holdId, userId }: { holdId: string; userId: string },
 ): Promise<{ showtimeId: string; seatId: string } | null> {
-  const [row] = await db
-    .delete(seatHolds)
+  const [found] = await db
+    .select({ showtimeId: seatHolds.showtimeId })
+    .from(seatHolds)
     .where(and(eq(seatHolds.id, holdId), eq(seatHolds.userId, userId)))
-    .returning();
-  return row ? { showtimeId: row.showtimeId, seatId: row.seatId } : null;
+    .limit(1);
+  if (!found) return null;
+  return db.transaction(async (tx) => {
+    await lockUserShowtime(tx, userId, found.showtimeId);
+    const [row] = await tx
+      .delete(seatHolds)
+      .where(and(eq(seatHolds.id, holdId), eq(seatHolds.userId, userId)))
+      .returning();
+    return row ? { showtimeId: row.showtimeId, seatId: row.seatId } : null;
+  });
 }
