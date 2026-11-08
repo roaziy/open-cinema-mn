@@ -12,8 +12,8 @@ import { Skeleton } from '@/components/skeleton';
 import { EmptyState, ErrorState } from '@/components/state-views';
 import { type TKey, useI18n } from '@/i18n';
 import { useBranchId } from '@/lib/branch';
-import { nextUbDays, useMovie, useShowtimes } from '@/lib/catalog';
-import { formatDuration, weekdayOf } from '@/lib/format';
+import { useMovie, useShowtimes } from '@/lib/catalog';
+import { formatDuration, nextUbDays, weekdayOf } from '@/lib/format';
 import { colors, hairlineWidth, hueFor, radius, space } from '@/theme/tokens';
 import { type } from '@/theme/type';
 
@@ -31,6 +31,10 @@ export default function ShowtimesScreen() {
   const preferred = useBranchId();
   const movie = useMovie(id);
   const shows = useShowtimes(id, date);
+  // Previous day's cards linger as placeholder data: never show or open them under a new chip.
+  const loading = shows.isPending || shows.isPlaceholderData;
+  // The transparent native header is laid over the backdrop; reserve its height ourselves.
+  const headerHeight = insets.top + (process.env.EXPO_OS === 'ios' ? 44 : 56);
 
   // The preferred branch leads; the rest keep the API order.
   const branches = useMemo(() => {
@@ -53,12 +57,17 @@ export default function ShowtimesScreen() {
   return (
     <ScrollView
       style={styles.root}
-      contentInsetAdjustmentBehavior="automatic"
+      contentInsetAdjustmentBehavior="never"
       contentContainerStyle={{ paddingBottom: insets.bottom + space.xxxl }}
       showsVerticalScrollIndicator={false}
     >
       {movie.data ? (
-        <View style={styles.film}>
+        <View
+          style={[
+            styles.film,
+            { paddingTop: headerHeight + space.lg, minHeight: headerHeight + 112 },
+          ]}
+        >
           <PosterBackdrop
             uri={movie.data.backdropUrl ?? movie.data.posterUrl}
             tone={movie.data.tone}
@@ -74,7 +83,12 @@ export default function ShowtimesScreen() {
           </View>
         </View>
       ) : (
-        <View style={styles.film} />
+        <View
+          style={[
+            styles.film,
+            { paddingTop: headerHeight + space.lg, minHeight: headerHeight + 112 },
+          ]}
+        />
       )}
 
       <ScrollView
@@ -101,7 +115,7 @@ export default function ShowtimesScreen() {
       </ScrollView>
 
       <View style={styles.list}>
-        {shows.isPending ? (
+        {loading ? (
           <>
             <Skeleton height={190} radius={radius.card} />
             <Skeleton height={190} radius={radius.card} />
@@ -218,7 +232,6 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     gap: space.md,
     padding: space.lg,
-    minHeight: 112,
     overflow: 'hidden',
   },
   filmText: { flex: 1, gap: 2 },
@@ -240,7 +253,7 @@ const styles = StyleSheet.create({
   },
   dayOn: { backgroundColor: colors.action, borderColor: colors.action },
   dayName: { ...type.footnote, color: colors.muted },
-  dayNameOn: { color: 'rgba(255,255,255,0.85)' },
+  dayNameOn: { color: colors.onActionMuted },
   dayNum: { ...type.number, fontSize: 20, color: colors.ink },
   dayNumOn: { color: colors.onAction },
   list: { paddingHorizontal: space.lg, gap: space.lg, marginTop: space.lg },
@@ -268,12 +281,12 @@ const styles = StyleSheet.create({
     borderTopColor: colors.highlight,
     gap: 2,
   },
-  slotFew: { borderColor: 'rgba(251,191,36,0.45)' },
+  slotFew: { borderColor: colors.warningTint },
   slotSold: { opacity: 0.55 },
   slotOn: { backgroundColor: colors.action, borderColor: colors.action },
   time: { ...type.number, fontSize: 19, color: colors.ink },
   struck: { textDecorationLine: 'line-through', color: colors.muted },
   slotSub: { ...type.footnote, color: colors.body },
-  slotSubOn: { color: 'rgba(255,255,255,0.85)' },
+  slotSubOn: { color: colors.onActionMuted },
   slotNote: { ...type.footnote, color: colors.muted },
 });

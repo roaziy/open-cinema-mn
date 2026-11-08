@@ -44,7 +44,6 @@ export const mn = {
   'showtimes.emptyHint': 'Өөр өдөр сонгоно уу.',
   'showtimes.fewLeft': '{n} үлдсэн',
   'showtimes.soldOut': 'Дүүрсэн',
-  'showtimes.seatsLeft': '{n} суудал',
   'showtime.placeholder': 'Суудал сонгох дэлгэц удахгүй.',
 
   'weekday.0': 'Ням',

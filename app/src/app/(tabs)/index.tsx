@@ -7,12 +7,12 @@ import { Skeleton } from '@/components/skeleton';
 import { EmptyState, ErrorState } from '@/components/state-views';
 import { useI18n } from '@/i18n';
 import { useMovies } from '@/lib/catalog';
-import { shortDate } from '@/lib/format';
+import { formatMonthDay } from '@/lib/format';
 import { colors, space } from '@/theme/tokens';
 import { type } from '@/theme/type';
 
 export default function MoviesScreen() {
-  const { t } = useI18n();
+  const { t, locale } = useI18n();
   const insets = useSafeAreaInsets();
   const now = useMovies('now');
   const soon = useMovies('soon');
@@ -35,18 +35,20 @@ export default function MoviesScreen() {
           />
         }
       >
-        {now.isPending ? (
-          <HeroSkeleton top={insets.top} />
+        {now.data ? (
+          now.data.length === 0 ? (
+            <View style={{ paddingTop: insets.top + 64 }}>
+              <EmptyState title={t('home.empty')} />
+            </View>
+          ) : (
+            <HeroPager movies={now.data.slice(0, 5)} />
+          )
         ) : now.isError ? (
           <View style={{ paddingTop: insets.top + 64 }}>
             <ErrorState error={now.error} onRetry={() => now.refetch()} />
           </View>
-        ) : now.data.length === 0 ? (
-          <View style={{ paddingTop: insets.top + 64 }}>
-            <EmptyState title={t('home.empty')} />
-          </View>
         ) : (
-          <HeroPager movies={now.data.slice(0, 5)} />
+          <HeroSkeleton top={insets.top} />
         )}
 
         {now.data && now.data.length > 0 ? (
@@ -57,7 +59,20 @@ export default function MoviesScreen() {
           />
         ) : null}
 
-        {soon.isPending ? (
+        {soon.data ? (
+          soon.data.length > 0 ? (
+            <PosterRow
+              title={t('home.comingSoon')}
+              movies={soon.data}
+              caption={(m) => t('home.opens', { date: formatMonthDay(m.releaseDate, locale) })}
+            />
+          ) : null
+        ) : soon.isError ? (
+          <View style={styles.soonSkeleton}>
+            <Text style={styles.soonTitle}>{t('home.comingSoon')}</Text>
+            <ErrorState error={soon.error} onRetry={() => soon.refetch()} />
+          </View>
+        ) : (
           <View style={styles.soonSkeleton}>
             <Skeleton width={150} height={24} style={{ marginLeft: space.lg }} />
             <PosterRowSkeleton>
@@ -66,13 +81,7 @@ export default function MoviesScreen() {
               ))}
             </PosterRowSkeleton>
           </View>
-        ) : soon.data && soon.data.length > 0 ? (
-          <PosterRow
-            title={t('home.comingSoon')}
-            movies={soon.data}
-            caption={(m) => t('home.opens', { date: shortDate(m.releaseDate) })}
-          />
-        ) : null}
+        )}
       </ScrollView>
 
       <View style={[styles.header, { top: insets.top + space.sm }]} pointerEvents="box-none">
@@ -107,5 +116,6 @@ const styles = StyleSheet.create({
   },
   headerTitle: { ...type.title, color: colors.ink },
   heroSkeleton: { height: HERO_HEIGHT, alignItems: 'center', gap: space.md },
+  soonTitle: { ...type.title, color: colors.ink, paddingHorizontal: space.lg },
   soonSkeleton: { gap: space.md, marginTop: space.xxl },
 });

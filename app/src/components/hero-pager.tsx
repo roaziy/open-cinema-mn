@@ -30,12 +30,10 @@ export function HeroPager({ movies }: { movies: MovieSummary[] }) {
   const onEnd = useCallback(
     (e: NativeSyntheticEvent<NativeScrollEvent>) => {
       const next = Math.round(e.nativeEvent.contentOffset.x / width);
-      setIndex((prev) => {
-        if (prev !== next) haptic.select();
-        return next;
-      });
+      if (next !== index) haptic.select();
+      setIndex(next);
     },
-    [width],
+    [width, index],
   );
 
   return (
@@ -63,6 +61,7 @@ function Page({ movie, width }: { movie: MovieSummary; width: number }) {
   const { t } = useI18n();
   const insets = useSafeAreaInsets();
   const open = () => router.push(`/movie/${movie.id}`);
+  const book = () => router.push(`/movie/${movie.id}/showtimes`);
   return (
     <View style={{ width, height: HERO_HEIGHT }}>
       <PosterBackdrop uri={movie.backdropUrl ?? movie.posterUrl} tone={movie.tone} />
@@ -80,7 +79,12 @@ function Page({ movie, width }: { movie: MovieSummary; width: number }) {
             .filter(Boolean)
             .join('  ·  ')}
         </Text>
-        <Pressable style={styles.cta} onPress={open} accessibilityRole="button">
+        <Pressable
+          style={styles.cta}
+          onPress={book}
+          accessibilityRole="button"
+          accessibilityLabel={`${movie.title} — ${t('home.book').toLowerCase()}`}
+        >
           <Text style={styles.ctaText}>{t('home.book')}</Text>
         </Pressable>
       </View>
@@ -113,6 +117,6 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
     gap: 6,
   },
-  pip: { width: 6, height: 6, borderRadius: 3, backgroundColor: 'rgba(255,255,255,0.25)' },
+  pip: { width: 6, height: 6, borderRadius: 3, backgroundColor: colors.pip },
   pipOn: { width: 18, backgroundColor: colors.ink },
 });

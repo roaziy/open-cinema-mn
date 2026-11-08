@@ -45,7 +45,6 @@ export const en: Record<TKey, string> = {
   'showtimes.emptyHint': 'Try another day.',
   'showtimes.fewLeft': '{n} left',
   'showtimes.soldOut': 'Sold out',
-  'showtimes.seatsLeft': '{n} seats',
   'showtime.placeholder': 'Seat selection is coming soon.',
 
   'weekday.0': 'Sun',
