@@ -82,3 +82,27 @@ body {
     animation-duration: 0.01ms !important;
   }
 }
+
+/* Door scanner: dark text on the signal colours keeps contrast above 7:1 under a bright doorway. */
+@theme {
+  --color-on-green: #052e14;
+  --color-on-red: #3a0709;
+  --animate-rise: rise 0.2s ease-out;
+  @keyframes rise {
+    from {
+      transform: translateY(24px);
+      opacity: 0;
+    }
+    to {
+      transform: none;
+      opacity: 1;
+    }
+  }
+}
+
+@utility no-scrollbar {
+  scrollbar-width: none;
+  &::-webkit-scrollbar {
+    display: none;
+  }
+}

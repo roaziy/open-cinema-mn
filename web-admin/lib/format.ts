@@ -74,3 +74,15 @@ const DateField = AdminShowtimeListQuery.shape.from.unwrap();
 export function isDate(v: string | undefined): v is string {
   return v !== undefined && DateField.safeParse(v).success;
 }
+
+const CLOCK = new Intl.DateTimeFormat('en-GB', {
+  hour: '2-digit',
+  minute: '2-digit',
+  hour12: false,
+  timeZone: 'Asia/Ulaanbaatar',
+});
+
+/** "19:05" in Ulaanbaatar time. */
+export function clockUb(instant: string | Date): string {
+  return CLOCK.format(typeof instant === 'string' ? new Date(instant) : instant);
+}
