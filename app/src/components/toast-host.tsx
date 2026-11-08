@@ -1,35 +1,36 @@
 import { Platform, StyleSheet, Text, View } from 'react-native';
-import Animated, { FadeInUp } from 'react-native-reanimated';
+import Animated, { FadeInUp, FadeOutUp } from 'react-native-reanimated';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { FullWindowOverlay } from 'react-native-screens';
 import { useToast } from '@/lib/toast';
 import { colors, radius, space } from '@/theme/tokens';
 import { type } from '@/theme/type';
 
+const ios = Platform.OS === 'ios';
+
 /**
  * The one toast layer, mounted at the root. On iOS it sits in a full-window overlay, which is
- * painted above native sheets and modals (gate, login). That overlay is only mounted while a
- * toast is showing, and is not marked modal, so it never takes VoiceOver away from the screen
- * underneath; elsewhere a plain absolute layer is enough.
+ * painted above native sheets and modals (gate, login). The overlay stays mounted for the
+ * app's lifetime: it moves VoiceOver focus to itself every time it attaches, so mounting it
+ * per toast would pull focus off the seat just tapped. It is not modal, touches pass through
+ * it, and the toast inside is hidden from VoiceOver (showToast announces it instead).
+ * Elsewhere a plain absolute layer with a live region is enough.
  */
 export function ToastHost() {
   const toast = useToast();
   const insets = useSafeAreaInsets();
   const layer = (
-    <View pointerEvents="none" style={[styles.layer, { top: insets.top + space.sm }]}>
+    <View
+      pointerEvents="none"
+      accessibilityElementsHidden={ios}
+      style={[styles.layer, { top: insets.top + space.sm }]}
+    >
       {toast ? (
         <Animated.View
           key={toast.id}
           entering={FadeInUp.duration(180)}
-          style={[
-            styles.toast,
-            toast.tone === 'error' && styles.error,
-            {
-              opacity: toast.leaving ? 0 : 1,
-              transitionProperty: 'opacity',
-              transitionDuration: '160ms',
-            },
-          ]}
+          exiting={FadeOutUp.duration(160)}
+          style={[styles.toast, toast.tone === 'error' && styles.error]}
           accessibilityLiveRegion="polite"
         >
           <View
@@ -43,8 +44,7 @@ export function ToastHost() {
       ) : null}
     </View>
   );
-  if (Platform.OS !== 'ios') return layer;
-  if (!toast) return null;
+  if (!ios) return layer;
   return (
     <FullWindowOverlay unstable_accessibilityContainerViewIsModal={false}>
       {layer}

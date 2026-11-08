@@ -2,15 +2,11 @@ import { useSyncExternalStore } from 'react';
 import { AccessibilityInfo, Platform } from 'react-native';
 
 export type ToastTone = 'error' | 'info';
-export type ToastItem = { id: number; message: string; tone: ToastTone; leaving: boolean };
-
-/** How long the fade-out runs before the toast layer is removed. */
-const LEAVE_MS = 200;
+export type ToastItem = { id: number; message: string; tone: ToastTone };
 
 let current: ToastItem | null = null;
 let seq = 0;
 let timer: ReturnType<typeof setTimeout> | null = null;
-let leaveTimer: ReturnType<typeof setTimeout> | null = null;
 const listeners = new Set<() => void>();
 
 const subscribe = (cb: () => void) => {
@@ -28,15 +24,15 @@ function set(next: ToastItem | null) {
 /** One toast at a time: a new one replaces the old. */
 export function showToast(message: string, tone: ToastTone = 'info', ms = 3200) {
   if (timer) clearTimeout(timer);
-  if (leaveTimer) clearTimeout(leaveTimer);
-  const item: ToastItem = { id: ++seq, message, tone, leaving: false };
-  set(item);
-  // VoiceOver does not read an overlay that appears on its own.
-  if (Platform.OS === 'ios') AccessibilityInfo.announceForAccessibility(message);
-  timer = setTimeout(() => {
-    set({ ...item, leaving: true });
-    leaveTimer = setTimeout(() => set(null), LEAVE_MS);
-  }, ms);
+  set({ id: ++seq, message, tone });
+  // On iOS the toast itself is hidden from VoiceOver, so focus stays on what the user just
+  // tapped and this announcement is the only speech. Queued, so it waits for VoiceOver to
+  // finish reading a screen that just opened instead of cutting it off. Android speaks the
+  // toast through its live region instead.
+  if (Platform.OS === 'ios') {
+    AccessibilityInfo.announceForAccessibilityWithOptions(message, { queue: true });
+  }
+  timer = setTimeout(() => set(null), ms);
 }
 
 export function useToast(): ToastItem | null {
