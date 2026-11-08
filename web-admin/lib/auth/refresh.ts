@@ -63,3 +63,18 @@ export function refreshSession(refreshToken: string, ip: string | null): Promise
   inflight.set(refreshToken, call);
   return call;
 }
+
+/** Best-effort `POST /auth/logout`: closes the session on the API. Never throws. */
+export async function revokeSession(refreshToken: string, ip: string | null): Promise<void> {
+  try {
+    await fetch(`${apiUrl()}/v1/auth/logout`, {
+      method: 'POST',
+      headers: { 'content-type': 'application/json', ...bffHeaders(ip) },
+      body: JSON.stringify({ refreshToken }),
+      cache: 'no-store',
+      signal: AbortSignal.timeout(5_000),
+    });
+  } catch {
+    // The cookies are dropped either way.
+  }
+}

@@ -26,7 +26,9 @@ export function safeNext(value: unknown, fallback: string): string {
   try {
     const url = new URL(value, BASE);
     if (url.origin !== BASE) return fallback;
-    return url.pathname + url.search + url.hash;
+    const out = url.pathname + url.search + url.hash;
+    // Dot segments collapse (`/.//x` becomes `//x`), so judge the normalized result too.
+    return out.startsWith('//') ? fallback : out;
   } catch {
     return fallback;
   }

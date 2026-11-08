@@ -19,6 +19,12 @@ describe('safeNext', () => {
     ['javascript:alert(1)', 'javascript url'],
     ['admin', 'relative'],
     ['', 'empty'],
+    ['/.//evil.example', 'dot segment collapsing to //'],
+    ['/..//x', 'dot-dot collapsing to //'],
+    ['/%2e//x', 'encoded dot collapsing to //'],
+    ['/%2E%2E//x', 'encoded dot-dot collapsing to //'],
+    ['/a/..//x', 'inner dot-dot collapsing to //'],
+    ['/x/../..//x/p?q=1', 'deep dot-dot collapsing to //'],
   ])('rejects %j (%s)', (value) => {
     expect(safeNext(value, FALLBACK)).toBe(FALLBACK);
   });
