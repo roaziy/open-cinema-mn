@@ -1,5 +1,6 @@
 import {
   AdminLoginBody,
+  AdminPasswordBody,
   normalizeEmail,
   normalizePhone,
   type OtpChannel,
@@ -15,7 +16,7 @@ import { sessions, users } from '../db/schema';
 import { AppError, badRequest, forbidden, isUniqueViolation, unauthorized } from '../lib/errors';
 import { validate } from '../lib/http';
 import { consumeOtp, issueOtp, type Scope } from '../lib/otp';
-import { verifyDummy, verifyPassword } from '../lib/password';
+import { hashPassword, verifyDummy, verifyPassword } from '../lib/password';
 import { clientIp, type Limiters } from '../lib/rate-limit';
 import {
   issueTokens,
@@ -26,7 +27,7 @@ import {
 } from '../lib/tokens';
 import { otpEmail, otpSms } from '../messages/templates';
 import { MessageSendError } from '../messages/wesend';
-import { requireAuth } from '../middleware/auth';
+import { requireAuth, requireRole } from '../middleware/auth';
 
 const LOCK_MS = 15 * 60 * 1000;
 const MAX_FAILED_LOGINS = 5;
@@ -204,25 +205,16 @@ export function createAuthRouter(deps: AppDeps, limiters: Limiters): Router {
     res.status(204).end();
   });
 
-  r.post('/auth/admin/login', limiters.login, validate(AdminLoginBody), async (req, res) => {
-    const body = req.body as AdminLoginBody;
-    const now = clock();
-    const email = normalizeEmail(body.email);
-    const [user] = email
-      ? await db.select().from(users).where(eq(users.email, email)).limit(1)
-      : [];
-    if (user?.role !== 'admin' || !user.passwordHash) {
-      await verifyDummy(body.password);
-      throw unauthorized('invalid_credentials');
-    }
-    const adminId = user.id;
-    // The row lock serializes attempts per account, so parallel guesses cannot skip the counter
-    // or reset it while another attempt is locking the account.
-    const outcome = await db.transaction(async (tx) => {
+  /**
+   * The row lock serializes attempts per account, so parallel guesses cannot skip the counter
+   * or reset it while another attempt is locking the account. Used by login and password change.
+   */
+  async function checkAdminPassword(adminId: string, password: string, now: Date) {
+    return db.transaction(async (tx) => {
       const [row] = await tx.select().from(users).where(eq(users.id, adminId)).for('update');
       if (!row?.passwordHash) return { kind: 'invalid' as const };
       if (row.lockedUntil && row.lockedUntil > now) return { kind: 'locked' as const };
-      if (await verifyPassword(row.passwordHash, body.password)) {
+      if (await verifyPassword(row.passwordHash, password)) {
         const [fresh] = await tx
           .update(users)
           .set({ failedLogins: 0, lockedUntil: null })
@@ -241,10 +233,52 @@ export function createAuthRouter(deps: AppDeps, limiters: Limiters): Router {
         .where(eq(users.id, adminId));
       return { kind: 'invalid' as const };
     });
+  }
+
+  r.post('/auth/admin/login', limiters.login, validate(AdminLoginBody), async (req, res) => {
+    const body = req.body as AdminLoginBody;
+    const now = clock();
+    const email = normalizeEmail(body.email);
+    const [user] = email
+      ? await db.select().from(users).where(eq(users.email, email)).limit(1)
+      : [];
+    if (user?.role !== 'admin' || !user.passwordHash) {
+      await verifyDummy(body.password);
+      throw unauthorized('invalid_credentials');
+    }
+    const outcome = await checkAdminPassword(user.id, body.password, now);
     if (outcome.kind === 'locked') throw new AppError(429, 'account_locked');
     if (outcome.kind === 'invalid') throw unauthorized('invalid_credentials');
     res.json(await issueTokens(db, outcome.user, now));
   });
+
+  /**
+   * Changes the signed-in admin's password. Every session of the account ends (a stolen session
+   * must not outlive the change) and a fresh pair for this device comes back.
+   */
+  r.post(
+    '/auth/admin/password',
+    limiters.login,
+    auth,
+    requireRole('admin'),
+    validate(AdminPasswordBody),
+    async (req, res) => {
+      const { current, next } = req.body as AdminPasswordBody;
+      const now = clock();
+      const outcome = await checkAdminPassword(me(req).id, current, now);
+      if (outcome.kind === 'locked') throw new AppError(429, 'account_locked');
+      // Not 401: the BFF would read that as an expired session and sign the admin out.
+      if (outcome.kind === 'invalid') throw badRequest('wrong_password');
+      const passwordHash = await hashPassword(next);
+      const [user] = await db
+        .update(users)
+        .set({ passwordHash })
+        .where(eq(users.id, outcome.user.id))
+        .returning();
+      await revokeAllSessions(db, outcome.user.id, now);
+      res.json(await issueTokens(db, one(user), now));
+    },
+  );
 
   r.get('/me', auth, async (req, res) => {
     const [user] = await db

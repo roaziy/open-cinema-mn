@@ -1,4 +1,5 @@
-// Production bundle: dist/index.js (API) and dist/migrate.js (migrations), run with plain node.
+// Production bundle: dist/index.js (API), dist/migrate.js (migrations) and dist/admin-create.js (first
+// admin), run with plain node.
 // The workspace package @open-cinema/shared ships TypeScript source, so it is inlined; every
 // other dependency stays external and is loaded from node_modules at runtime.
 import { rename, rm } from 'node:fs/promises';
@@ -12,7 +13,11 @@ const next = path.join(root, 'dist.next');
 await rm(next, { recursive: true, force: true });
 await build({
   absWorkingDir: root,
-  entryPoints: { index: 'src/index.ts', migrate: 'src/db/migrate.ts' },
+  entryPoints: {
+    index: 'src/index.ts',
+    migrate: 'src/db/migrate.ts',
+    'admin-create': 'src/scripts/admin-create.ts',
+  },
   outdir: next,
   bundle: true,
   platform: 'node',
