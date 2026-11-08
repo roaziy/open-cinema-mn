@@ -69,35 +69,28 @@ export default function LoginScreen() {
     if (!target) return;
     // The login clears cached data for the old identity: keep the seat names for the message.
     const seatMap = showtimeId ? qc.getQueryData<SeatMap>(seatKeys.map(showtimeId)) : undefined;
-    {
-      const { lostSeatIds, heldCount } = await loginKeepingHolds(
-        channel,
-        target,
-        digits,
-        showtimeId,
-      );
-      haptic.success();
-      const lost = lostLabels(seatMap, lostSeatIds);
-      if (showtimeId && next === 'checkout' && heldCount === 0) {
-        // Nothing left to pay for (the holds ran out or were taken): back to the map.
-        router.dismissTo(`/showtime/${showtimeId}`);
-        const msg =
-          lost.length > 0 ? t('seats.lost', { seats: lost.join(', ') }) : t('seats.expiredNone');
-        setTimeout(() => showToast(msg, 'error', 5000), 400);
-      } else if (showtimeId && next === 'checkout' && lost.length === 0) {
-        router.dismissTo(`/showtime/${showtimeId}`);
-        router.push(`/checkout/${showtimeId}`);
-      } else if (showtimeId) {
-        router.dismissTo(`/showtime/${showtimeId}`);
-        if (lost.length > 0) {
-          setTimeout(
-            () => showToast(t('seats.lost', { seats: lost.join(', ') }), 'error', 5000),
-            400,
-          );
-        }
-      } else {
-        router.dismiss();
+    const { lostSeatIds, heldCount } = await loginKeepingHolds(channel, target, digits, showtimeId);
+    haptic.success();
+    const lost = lostLabels(seatMap, lostSeatIds);
+    if (showtimeId && next === 'checkout' && heldCount === 0) {
+      // Nothing left to pay for (the holds ran out or were taken): back to the map.
+      router.dismissTo(`/showtime/${showtimeId}`);
+      const msg =
+        lost.length > 0 ? t('seats.lost', { seats: lost.join(', ') }) : t('seats.expiredNone');
+      setTimeout(() => showToast(msg, 'error', 5000), 400);
+    } else if (showtimeId && next === 'checkout' && lost.length === 0) {
+      router.dismissTo(`/showtime/${showtimeId}`);
+      router.push(`/checkout/${showtimeId}`);
+    } else if (showtimeId) {
+      router.dismissTo(`/showtime/${showtimeId}`);
+      if (lost.length > 0) {
+        setTimeout(
+          () => showToast(t('seats.lost', { seats: lost.join(', ') }), 'error', 5000),
+          400,
+        );
       }
+    } else {
+      router.dismiss();
     }
   };
 

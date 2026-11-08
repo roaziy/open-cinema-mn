@@ -39,6 +39,7 @@ export default function GateScreen() {
 
   const [email, setEmail] = useState(() => getContactEmail(id) ?? '');
   const [touched, setTouched] = useState(false);
+  const [checkingLogin, setCheckingLogin] = useState(false);
   const normalized = normalizeEmail(email);
   const invalid = touched && !normalized;
 
@@ -73,11 +74,17 @@ export default function GateScreen() {
         </View>
 
         <Pressable
-          style={[styles.loginCard, closed && styles.disabled]}
-          disabled={closed}
-          accessibilityState={{ disabled: closed }}
+          style={[styles.loginCard, (closed || checkingLogin) && styles.disabled]}
+          disabled={closed || checkingLogin}
+          accessibilityState={{ disabled: closed || checkingLogin, busy: checkingLogin }}
           onPress={async () => {
-            if (await confirmGuestLogin(t)) router.push(`/login?showtimeId=${id}&next=checkout`);
+            if (checkingLogin) return;
+            setCheckingLogin(true);
+            try {
+              if (await confirmGuestLogin(t)) router.push(`/login?showtimeId=${id}&next=checkout`);
+            } finally {
+              setCheckingLogin(false);
+            }
           }}
           accessibilityRole="button"
         >

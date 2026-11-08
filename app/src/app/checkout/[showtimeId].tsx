@@ -92,13 +92,16 @@ export default function CheckoutScreen() {
     [live, showtimeId],
   );
   const attempt = signature ? getAttempt(signature, newIdempotencyKey) : null;
-  const existingBooking = attempt?.bookingId ?? null;
+  // The server knows which holds are already inside an unpaid order (also after a restart).
+  const serverBooking = live.find((h) => h.bookingId)?.bookingId ?? null;
+  const existingBooking = serverBooking ?? attempt?.bookingId ?? null;
   useEffect(() => {
     if (existingBooking && !submitted.current) {
       submitted.current = true;
+      if (serverBooking) showToast(t('checkout.pendingOrder'), 'error', 5000);
       router.replace(`/pay/${existingBooking}`);
     }
-  }, [existingBooking]);
+  }, [existingBooking, serverBooking, t]);
   // Deep link or back-navigation with nothing held: never render an order out of thin air.
   const noSeats = holds.data !== undefined && !holds.isPlaceholderData && live.length === 0;
   useEffect(() => {
@@ -247,7 +250,7 @@ export default function CheckoutScreen() {
             </View>
             {!receipt ? (
               <Pressable
-                onPress={() => router.navigate('/(tabs)/profile')}
+                onPress={() => router.dismissTo('/(tabs)/profile')}
                 accessibilityRole="link"
               >
                 <Text style={styles.link}>{t('checkout.receiptAdd')}</Text>

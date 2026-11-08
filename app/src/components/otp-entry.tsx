@@ -1,6 +1,7 @@
 import { type ComponentRef, useEffect, useRef, useState } from 'react';
 import { ActivityIndicator, StyleSheet, Text, TextInput, View } from 'react-native';
 import { useI18n } from '@/i18n';
+import { ApiError } from '@/lib/api';
 import { haptic } from '@/lib/haptics';
 import { otpErrorKey } from '@/lib/otp-errors';
 import { colors, radius, space } from '@/theme/tokens';
@@ -81,8 +82,9 @@ export function OtpEntry({ sentTo, onVerify, onResend, onChange, mapError }: Pro
       inputRef.current?.focus();
     } catch (e) {
       fail(e);
-      // The server said "too soon": the timer is the honest answer, so show it again.
-      setResendLeft(RESEND_S);
+      // Only when the server says "too soon" is the full wait the honest answer; any other
+      // failure (network, send error) must not lock the user out for another minute.
+      if (e instanceof ApiError && e.code === 'resend_too_soon') setResendLeft(RESEND_S);
     } finally {
       setBusy(false);
     }

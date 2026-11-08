@@ -65,6 +65,7 @@ export async function rawRequest<T>(path: string, opts: RequestOptions = {}): Pr
 }
 
 function parseRetryAfter(value: string | null): number | undefined {
-  const n = value === null ? Number.NaN : Number(value);
+  // An empty header is no header (Number('') would read as 0).
+  const n = value === null || value.trim() === '' ? Number.NaN : Number(value);
   return Number.isFinite(n) && n >= 0 ? n : undefined;
 }

@@ -19,9 +19,13 @@ export const isRateLimited = (e: unknown): boolean => statusOf(e) === 429;
 export type RetryOptions = {
   delays?: readonly number[];
   sleep?: (ms: number) => Promise<void>;
-  /** Which failures are worth another try (default: `isTransient`). */
-  retryable?: (e: unknown) => boolean;
-  /** Return false to stop retrying (the caller no longer wants the result). */
+  /** Which failures are worth another try. */
+  retryable: (e: unknown) => boolean;
+  /**
+   * Return false to stop retrying (the caller no longer wants the result). Checked again after
+   * every wait: the world can change while sleeping (e.g. the user logs out), and a request
+   * sent then would replay a token that is no longer valid.
+   */
   shouldContinue?: () => boolean;
 };
 
@@ -35,8 +39,8 @@ function waitFor(e: unknown, delay: number): number {
  * Run `fn`, retrying retryable failures after each delay. The last error is thrown once the
  * delays run out; any other error is thrown at once.
  */
-export async function retryTransient<T>(fn: () => Promise<T>, opts: RetryOptions = {}): Promise<T> {
-  const { delays = BACKOFF_MS, sleep = sleepMs, retryable = isTransient, shouldContinue } = opts;
+export async function retryTransient<T>(fn: () => Promise<T>, opts: RetryOptions): Promise<T> {
+  const { delays = BACKOFF_MS, sleep = sleepMs, retryable, shouldContinue } = opts;
   for (let attempt = 0; ; attempt++) {
     try {
       return await fn();
@@ -44,6 +48,7 @@ export async function retryTransient<T>(fn: () => Promise<T>, opts: RetryOptions
       const delay = delays[attempt];
       if (delay === undefined || !retryable(e) || shouldContinue?.() === false) throw e;
       await sleep(waitFor(e, delay));
+      if (shouldContinue?.() === false) throw e;
     }
   }
 }
