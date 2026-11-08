@@ -22,6 +22,10 @@ export class SeatHub {
     };
   }
 
+  listenerCount(showtimeId: string): number {
+    return this.listeners.get(showtimeId)?.size ?? 0;
+  }
+
   publish(showtimeId: string, changes: SeatDelta[]): void {
     if (changes.length === 0) return;
     for (const listener of this.listeners.get(showtimeId) ?? []) listener(changes);

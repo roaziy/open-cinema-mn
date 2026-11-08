@@ -41,3 +41,9 @@ export function fixedClock(iso: string): (() => Date) & { advance(ms: number): v
 export function makeTestApp(over: Partial<import('../src/app').AppDeps> = {}): Express {
   return createApp({ messages: fakeMessages(), ...over });
 }
+
+/** Unwraps the first row of an insert/select, failing the test loudly when it is missing. */
+export function one<T>(value: T | undefined | null): T {
+  if (value === undefined || value === null) throw new Error('expected a value');
+  return value;
+}

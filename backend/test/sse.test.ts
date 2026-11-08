@@ -1,10 +1,10 @@
 import type { Server } from 'node:http';
 import type { AddressInfo } from 'node:net';
-import { afterEach, beforeEach, describe, expect, it } from 'vitest';
-import { db } from '../src/db/client';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import { type Db, db } from '../src/db/client';
 import { branches, halls, movies, seatHolds, seats, showtimes, users } from '../src/db/schema';
 import { SeatHub } from '../src/lib/seat-hub';
-import { fixedClock, makeTestApp, resetDb } from './helpers';
+import { fixedClock, makeTestApp, one, resetDb } from './helpers';
 
 const clock = fixedClock('2026-11-08T04:00:00Z');
 let server: Server | undefined;
@@ -24,13 +24,13 @@ async function setup() {
     .returning();
   const [h] = await db
     .insert(halls)
-    .values({ branchId: b!.id, name: 'H', screenWidthM: 10, screenHeightM: 5, screenXM: 5 })
+    .values({ branchId: one(b).id, name: 'H', screenWidthM: 10, screenHeightM: 5, screenXM: 5 })
     .returning();
   const [s1, s2] = await db
     .insert(seats)
     .values([
-      { hallId: h!.id, rowLabel: 'A', number: 1, xM: 1, yM: 1 },
-      { hallId: h!.id, rowLabel: 'A', number: 2, xM: 2, yM: 1 },
+      { hallId: one(h).id, rowLabel: 'A', number: 1, xM: 1, yM: 1 },
+      { hallId: one(h).id, rowLabel: 'A', number: 2, xM: 2, yM: 1 },
     ])
     .returning();
   const [m] = await db
@@ -47,8 +47,8 @@ async function setup() {
   const [st] = await db
     .insert(showtimes)
     .values({
-      movieId: m!.id,
-      hallId: h!.id,
+      movieId: one(m).id,
+      hallId: one(h).id,
       startsAt: new Date('2026-11-08T11:00:00Z'),
       priceStandard: 1,
       pricePremium: 2,
@@ -58,14 +58,14 @@ async function setup() {
     .insert(users)
     .values({ role: 'customer', phone: '+97699112045' })
     .returning();
-  return { show: st!, s1: s1!, s2: s2!, user: u! };
+  return { show: one(st), s1: one(s1), s2: one(s2), user: one(u) };
 }
 
 type Evt = { event: string; data: unknown };
 
 /** Opens the stream and returns a reader that yields parsed SSE events and raw comments. */
-async function open(path: string, hub: SeatHub) {
-  server = makeTestApp({ clock, seatHub: hub }).listen(0);
+async function open(path: string, hub: SeatHub, appDb: Db = db) {
+  server = makeTestApp({ clock, seatHub: hub, db: appDb }).listen(0);
   await new Promise((r) => server?.once('listening', r));
   const port = (server.address() as AddressInfo).port;
   const ac = new AbortController();
@@ -149,9 +149,54 @@ describe('seat stream', () => {
       event: 'delta',
       data: { changes: [{ seatId: f.s2.id, state: 'free' }] },
     });
+    expect(hub.listenerCount(f.show.id)).toBe(1);
     aborts[0]?.abort();
-    await new Promise((r) => setTimeout(r, 50));
-    expect(() => hub.publish(f.show.id, [{ seatId: f.s1.id, state: 'free' }])).not.toThrow();
+    await vi.waitFor(() => expect(hub.listenerCount(f.show.id)).toBe(0));
+  });
+
+  it('does not subscribe when the client drops during the first query', async () => {
+    const f = await setup();
+    const hub = new SeatHub();
+    // Holds the first select (the existence check) until released.
+    let release: () => void = () => {};
+    const gate = new Promise<void>((r) => {
+      release = r;
+    });
+    let gated = false;
+    const wrap = <T extends object>(builder: T): T =>
+      new Proxy(builder, {
+        get(target, prop, receiver) {
+          if (prop === 'then' && !gated) {
+            gated = true;
+            const then = Reflect.get(target, prop, receiver) as (...a: unknown[]) => unknown;
+            return (...a: unknown[]) => gate.then(() => then.apply(target, a));
+          }
+          const v = Reflect.get(target, prop, target);
+          if (typeof v !== 'function') return v;
+          return (...args: unknown[]) => {
+            const out = v.apply(target, args);
+            return out && typeof out === 'object' ? wrap(out) : out;
+          };
+        },
+      });
+    const slowDb = new Proxy(db, {
+      get(target, prop) {
+        const v = Reflect.get(target, prop, target);
+        if (prop === 'select') {
+          return (...args: unknown[]) =>
+            wrap((v as (...a: unknown[]) => object).apply(target, args));
+        }
+        return typeof v === 'function' ? v.bind(target) : v;
+      },
+    }) as Db;
+    const pending = open(`/v1/showtimes/${f.show.id}/seats/stream`, hub, slowDb);
+    await vi.waitFor(() => expect(gated).toBe(true));
+    aborts[0]?.abort();
+    await pending.catch(() => {});
+    await new Promise((r) => setTimeout(r, 100)); // let the server observe the close
+    release();
+    await new Promise((r) => setTimeout(r, 200)); // let the handler resume
+    expect(hub.listenerCount(f.show.id)).toBe(0);
   });
 
   it('404s for an unknown showtime', async () => {

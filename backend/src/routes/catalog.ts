@@ -11,10 +11,10 @@ import { and, asc, desc, eq, gt, inArray, sql } from 'drizzle-orm';
 import { Router } from 'express';
 import { z } from 'zod';
 import type { AppDeps } from '../app';
-import type { Db } from '../db/client';
 import { branches, halls, movies, seatHolds, seats, showtimes, tickets } from '../db/schema';
 import { notFound } from '../lib/errors';
 import { validate } from '../lib/http';
+import { nonFreeSeats } from '../services/seat-state';
 
 const HEARTBEAT_MS = 20_000;
 const UUID = z.string().uuid();
@@ -51,28 +51,6 @@ const toBranch = (b: BranchRow): Branch => ({
   lat: b.lat,
   lng: b.lng,
 });
-
-/** Seats that are not free for a showtime. Sold wins over held. */
-export async function nonFreeSeats(
-  db: Db,
-  showtimeId: string,
-  now: Date,
-): Promise<Map<string, 'held' | 'sold'>> {
-  const [soldRows, heldRows] = await Promise.all([
-    db
-      .select({ seatId: tickets.seatId })
-      .from(tickets)
-      .where(and(eq(tickets.showtimeId, showtimeId), eq(tickets.status, 'valid'))),
-    db
-      .select({ seatId: seatHolds.seatId })
-      .from(seatHolds)
-      .where(and(eq(seatHolds.showtimeId, showtimeId), gt(seatHolds.expiresAt, now))),
-  ]);
-  const out = new Map<string, 'held' | 'sold'>();
-  for (const r of heldRows) out.set(r.seatId, 'held');
-  for (const r of soldRows) out.set(r.seatId, 'sold');
-  return out;
-}
 
 const SLOT_COLUMNS = {
   id: showtimes.id,
@@ -249,6 +227,17 @@ export function createCatalogRouter(deps: AppDeps): Router {
   });
 
   r.get('/showtimes/:id/seats/stream', async (req, res) => {
+    // Registered before the first await so a client dropping mid-query is still cleaned up.
+    let closed = false;
+    let cleanupFns: (() => void)[] = [];
+    const cleanup = () => {
+      closed = true;
+      for (const fn of cleanupFns) fn();
+      cleanupFns = [];
+    };
+    res.on('close', cleanup);
+    const gone = () => closed || res.destroyed;
+
     const id = req.params.id;
     if (!UUID.safeParse(id).success) throw notFound();
     const [exists] = await db
@@ -256,6 +245,7 @@ export function createCatalogRouter(deps: AppDeps): Router {
       .from(showtimes)
       .where(eq(showtimes.id, id))
       .limit(1);
+    if (gone()) return;
     if (!exists) throw notFound();
 
     res.writeHead(200, {
@@ -274,18 +264,11 @@ export function createCatalogRouter(deps: AppDeps): Router {
       else queued.push(changes);
     });
     const heartbeat = setInterval(() => res.write(': ping\n\n'), HEARTBEAT_MS);
-    let closed = false;
-    const cleanup = () => {
-      if (closed) return;
-      closed = true;
-      clearInterval(heartbeat);
-      unsubscribe();
-    };
-    req.on('close', cleanup);
+    cleanupFns.push(unsubscribe, () => clearInterval(heartbeat));
 
     try {
       const taken = await nonFreeSeats(db, id, clock());
-      if (closed) return;
+      if (gone()) return cleanup();
       sseWrite(res, 'snapshot', {
         seats: [...taken].map(([seatId, state]) => ({ seatId, state })),
       });
