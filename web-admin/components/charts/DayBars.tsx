@@ -1,4 +1,5 @@
-import { dayMonth, mnt } from '@/lib/format';
+import { formatMnt } from '@open-cinema/shared';
+import { compact, dayMonth } from '@/lib/format';
 import { niceMax } from './HourlyChart';
 
 type Day = { date: string; revenue: number; tickets: number };
@@ -6,12 +7,6 @@ type Day = { date: string; revenue: number; tickets: number };
 const W = 760;
 const H = 220;
 const PAD = { l: 52, r: 8, t: 12, b: 28 };
-
-function short(v: number): string {
-  if (v >= 1_000_000) return `${+(v / 1_000_000).toFixed(1)}M`;
-  if (v >= 1000) return `${+(v / 1000).toFixed(0)}K`;
-  return String(v);
-}
 
 /** Revenue per day. Labels thin out on long ranges so they never collide. */
 export function DayBars({ days }: { days: Day[] }) {
@@ -38,11 +33,11 @@ export function DayBars({ days }: { days: Day[] }) {
               x2={W - PAD.r}
               y1={y}
               y2={y}
-              stroke="rgb(255 255 255 / 0.07)"
+              className="stroke-hairline"
               strokeDasharray={t === 0 ? undefined : '2 4'}
             />
-            <text x={PAD.l - 8} y={y + 4} textAnchor="end" fontSize="11" fill="#8E8E93">
-              {short(max * t)}
+            <text x={PAD.l - 8} y={y + 4} textAnchor="end" fontSize="11" className="fill-muted">
+              {compact(max * t)}
             </text>
           </g>
         );
@@ -59,13 +54,19 @@ export function DayBars({ days }: { days: Day[] }) {
               width={barW}
               height={bh}
               rx={Math.min(4, barW / 2)}
-              fill="#30C46B"
+              className="fill-hue-green"
               opacity={0.85}
             >
-              <title>{`${dayMonth(d.date)} · ${mnt(d.revenue)} · ${d.tickets} тасалбар`}</title>
+              <title>{`${dayMonth(d.date)} · ${formatMnt(d.revenue)} · ${d.tickets} тасалбар`}</title>
             </rect>
             {i % every === 0 && (
-              <text x={x + barW / 2} y={H - 8} textAnchor="middle" fontSize="11" fill="#8E8E93">
+              <text
+                x={x + barW / 2}
+                y={H - 8}
+                textAnchor="middle"
+                fontSize="11"
+                className="fill-muted"
+              >
                 {d.date.slice(8)}
               </text>
             )}

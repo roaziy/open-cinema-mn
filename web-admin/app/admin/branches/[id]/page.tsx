@@ -39,7 +39,7 @@ export default async function BranchPage({ params }: Props) {
           <div className="flex gap-2">
             <BranchEditButton branch={branch} />
             <Link href={`/admin/halls/new?branch=${branch.id}`} className={buttonClass('primary')}>
-              <Plus size={16} weight="bold" aria-hidden />
+              <Plus size={16} aria-hidden />
               Шинэ заал
             </Link>
           </div>

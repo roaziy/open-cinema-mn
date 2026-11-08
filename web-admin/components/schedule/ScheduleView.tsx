@@ -7,7 +7,7 @@ import { Button } from '@/components/ui/Button';
 import { Empty } from '@/components/ui/Empty';
 import { count, minutesIntoDay } from '@/lib/format';
 import { HUES, type HueKey } from '@/lib/hues';
-import { hourTicks, nowOffset, place, rangeFor } from '@/lib/timeline';
+import { clickToStart, hourTicks, nowOffset, place, rangeFor } from '@/lib/timeline';
 import { type DrawerTarget, type HallOption, ShowtimeDrawer } from './ShowtimeDrawer';
 
 export type HallRow = HallOption & { branchId: string; hue: HueKey };
@@ -72,15 +72,8 @@ export function ScheduleView({
   function createAt(hallId: string, e: React.MouseEvent<HTMLDivElement>) {
     if (e.target !== e.currentTarget) return;
     const rect = e.currentTarget.getBoundingClientRect();
-    const frac = (e.clientX - rect.left) / rect.width;
-    const min = Math.round((range.fromMin + frac * (range.toMin - range.fromMin)) / 5) * 5;
-    const hh = Math.floor(min / 60) % 24;
-    setTarget({
-      mode: 'create',
-      hallId,
-      date,
-      time: `${String(hh).padStart(2, '0')}:${String(min % 60).padStart(2, '0')}`,
-    });
+    const start = clickToStart(date, (e.clientX - rect.left) / rect.width, range);
+    setTarget({ mode: 'create', hallId, ...start });
   }
 
   return (
@@ -96,7 +89,7 @@ export function ScheduleView({
           onClick={() => setTarget({ mode: 'create', date })}
           disabled={halls.length === 0 || movies.length === 0}
         >
-          <Plus size={16} weight="bold" aria-hidden />
+          <Plus size={16} aria-hidden />
           Шинэ сеанс
         </Button>
       </div>
@@ -194,7 +187,7 @@ export function ScheduleView({
                                 key={s.id}
                                 type="button"
                                 onClick={() => setTarget({ mode: 'edit', showtime: s })}
-                                aria-label={`${s.movieTitle}, ${s.hallName}${cancelled ? ', цуцлагдсан' : ''}`}
+                                aria-label={chipLabel(s, fmt(startMin))}
                                 className={`focus-ring absolute inset-y-2 overflow-hidden rounded-card border text-left transition-[filter,border-color] hover:brightness-125 ${
                                   cancelled ? 'border-dashed border-white/15' : 'border-white/10'
                                 } ${ended || cancelled ? 'opacity-50' : ''}`}
@@ -266,4 +259,11 @@ export function ScheduleView({
 function fmt(min: number): string {
   const h = Math.floor(min / 60) % 24;
   return `${String(h).padStart(2, '0')}:${String(min % 60).padStart(2, '0')}`;
+}
+
+/** Everything a sighted user reads off the chip, in one phrase. */
+function chipLabel(s: AdminShowtime, time: string): string {
+  const parts = [s.movieTitle, time, s.format, s.hallName, `${s.sold}/${s.capacity} суудал`];
+  if (s.status === 'cancelled') parts.push('цуцлагдсан');
+  return parts.join(', ');
 }

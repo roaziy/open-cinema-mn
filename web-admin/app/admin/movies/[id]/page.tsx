@@ -4,12 +4,11 @@ import { MovieEditor } from '@/components/movies/MovieEditor';
 import { ErrorState } from '@/components/ui/ErrorState';
 import { PageHeader } from '@/components/ui/PageHeader';
 import { getMovie, safely } from '@/lib/admin-data';
+import { isUuid } from '@/lib/ids';
 
 type Props = { params: Promise<{ id: string }> };
 
 export const metadata: Metadata = { title: 'Киноны мэдээлэл' };
-
-const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
 export default async function MoviePage({ params }: Props) {
   const { id } = await params;
@@ -21,7 +20,7 @@ export default async function MoviePage({ params }: Props) {
       </>
     );
   }
-  if (!UUID.test(id)) notFound();
+  if (!isUuid(id)) notFound();
   const movie = await safely(() => getMovie(id));
   if (!movie) {
     return (

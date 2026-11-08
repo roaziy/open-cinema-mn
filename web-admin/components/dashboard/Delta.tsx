@@ -19,7 +19,7 @@ export function Delta({ now, before, label }: { now: number; before: number; lab
           flat ? 'text-muted' : up ? 'text-success' : 'text-danger'
         }`}
       >
-        <Icon size={14} weight="bold" aria-hidden />
+        <Icon size={14} aria-hidden />
         {flat ? '0%' : `${up ? '+' : '−'}${Math.abs(d)}%`}
       </span>
       {label}

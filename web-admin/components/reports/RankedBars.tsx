@@ -1,4 +1,5 @@
-import { count, mnt, pct } from '@/lib/format';
+import { formatMnt } from '@open-cinema/shared';
+import { count, pct } from '@/lib/format';
 import { HUES, type HueKey } from '@/lib/hues';
 
 export type RankedRow = {
@@ -34,7 +35,7 @@ export function RankedBars({ rows }: { rows: RankedRow[] }) {
             </div>
           </div>
           <div className="text-right">
-            <p className="text-sm font-medium text-ink tabular-nums">{mnt(r.revenue)}</p>
+            <p className="text-sm font-medium text-ink tabular-nums">{formatMnt(r.revenue)}</p>
             <p className="text-xs text-muted tabular-nums">{count(r.tickets)} тасалбар</p>
           </div>
           <p className="hidden text-right text-sm text-body tabular-nums sm:block">

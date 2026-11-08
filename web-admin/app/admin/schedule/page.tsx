@@ -1,15 +1,18 @@
 import { CaretLeft, CaretRight } from '@phosphor-icons/react/dist/ssr';
 import type { Metadata } from 'next';
 import Link from 'next/link';
+import { redirect } from 'next/navigation';
 import { BranchPills } from '@/components/dashboard/BranchPills';
 import { DateJump } from '@/components/schedule/DateJump';
 import { ScheduleView } from '@/components/schedule/ScheduleView';
 import { buttonClass } from '@/components/ui/Button';
 import { ErrorState } from '@/components/ui/ErrorState';
+import { Notice } from '@/components/ui/Notice';
 import { PageHeader } from '@/components/ui/PageHeader';
 import { getBranches, getHalls, getMovies, getShowtimes, safely } from '@/lib/admin-data';
 import { addDays, dayMonth, isDate, todayUb, weekdayMn } from '@/lib/format';
 import { hueFor } from '@/lib/hues';
+import { isUuid } from '@/lib/ids';
 
 export const metadata: Metadata = { title: 'Сеанс, үнэ' };
 
@@ -18,15 +21,18 @@ type Props = { searchParams: Promise<{ date?: string; branch?: string }> };
 export default async function SchedulePage({ searchParams }: Props) {
   const sp = await searchParams;
   const today = todayUb();
+  const badDate = sp.date !== undefined && !isDate(sp.date);
   const date = isDate(sp.date) ? sp.date : today;
-  const branches = await safely(getBranches);
-  const branchId = branches?.find((b) => b.id === sp.branch)?.id;
+  const wanted = isUuid(sp.branch) ? sp.branch : undefined;
 
-  const [halls, showtimes, movies] = await Promise.all([
-    safely(() => getHalls(branchId)),
-    safely(() => getShowtimes({ from: date, to: date, branchId })),
+  const [branches, halls, showtimes, movies] = await Promise.all([
+    safely(getBranches),
+    safely(() => getHalls(wanted)),
+    safely(() => getShowtimes({ from: date, to: date, branchId: wanted })),
     safely(getMovies),
   ]);
+  const branchId = branches?.find((b) => b.id === wanted)?.id;
+  if (sp.branch && branches && !branchId) redirect(`/admin/schedule?date=${date}`);
 
   const href = (d: string) => {
     const p = new URLSearchParams({ date: d });
@@ -91,6 +97,11 @@ export default async function SchedulePage({ searchParams }: Props) {
   return (
     <>
       {header}
+      {badDate && (
+        <div className="mb-4">
+          <Notice>Огнооны хэлбэр буруу байна. Өнөөдрийн хуваарийг харуулж байна.</Notice>
+        </div>
+      )}
       {branches.length > 1 && (
         <div className="-mt-3 mb-4">
           <BranchPills

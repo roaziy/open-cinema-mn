@@ -52,6 +52,9 @@ export function inferGen(seats: SeatLike[]): HallGenParams | null {
   };
 }
 
+const sameList = (a: number[], b: number[]) =>
+  a.length === b.length && a.every((v, i) => v === b[i]);
+
 export function sameGen(a: HallGenParams, b: HallGenParams): boolean {
   return (
     a.rows === b.rows &&
@@ -60,21 +63,32 @@ export function sameGen(a: HallGenParams, b: HallGenParams): boolean {
     Math.abs(a.rowSpacingM - b.rowSpacingM) < 0.005 &&
     Math.abs(a.firstRowDistanceM - b.firstRowDistanceM) < 0.005 &&
     Math.abs(a.risePerRowM - b.risePerRowM) < 0.005 &&
-    a.aisleAfter.length === b.aisleAfter.length &&
-    a.aisleAfter.every((v, i) => v === b.aisleAfter[i])
+    sameList(
+      normalizeAisles(a.aisleAfter, a.seatsPerRow),
+      normalizeAisles(b.aisleAfter, b.seatsPerRow),
+    )
   );
 }
 
-/** "7, 14" -> [7, 14]; junk and duplicates are dropped. */
-export function parseAisles(text: string): number[] {
-  return [
-    ...new Set(
-      text
-        .split(/[\s,;]+/)
-        .map(Number)
-        .filter((n) => Number.isInteger(n) && n >= 1),
-    ),
-  ].sort((a, b) => a - b);
+/**
+ * Aisle positions as the generator reads them: an aisle after the last seat means nothing, so
+ * those are dropped; the rest sorted and unique. Two spellings of one layout compare equal.
+ */
+export function normalizeAisles(aisles: number[], seatsPerRow: number): number[] {
+  return [...new Set(aisles.filter((n) => Number.isInteger(n) && n >= 1 && n < seatsPerRow))].sort(
+    (a, b) => a - b,
+  );
+}
+
+/** "7, 14" -> [7, 14]; junk and duplicates are dropped, then normalised for the row length. */
+export function parseAisles(text: string, seatsPerRow = Number.POSITIVE_INFINITY): number[] {
+  return normalizeAisles(
+    text
+      .split(/[\s,;]+/)
+      .map(Number)
+      .filter((n) => Number.isInteger(n)),
+    seatsPerRow,
+  );
 }
 
 /** Bounding box of seat centres, for fitting the plan into its SVG. */

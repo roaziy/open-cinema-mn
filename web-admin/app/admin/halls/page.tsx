@@ -16,7 +16,7 @@ export default async function HallsPage() {
   const [branches, halls] = await Promise.all([safely(getBranches), safely(() => getHalls())]);
   const add = (
     <Link href="/admin/halls/new" className={buttonClass('primary')}>
-      <Plus size={16} weight="bold" aria-hidden />
+      <Plus size={16} aria-hidden />
       Шинэ заал
     </Link>
   );

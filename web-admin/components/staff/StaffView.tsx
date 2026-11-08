@@ -85,7 +85,7 @@ export function StaffView({ staff, branches }: { staff: AdminStaff[]; branches: 
         subtitle="Билет шалгах ажилтан утасны дугаараар OTP кодоор нэвтэрнэ"
         action={
           <Button variant="primary" onClick={() => setOpen(true)} disabled={branches.length === 0}>
-            <Plus size={16} weight="bold" aria-hidden />
+            <Plus size={16} aria-hidden />
             Ажилтан нэмэх
           </Button>
         }
@@ -172,6 +172,7 @@ export function StaffView({ staff, branches }: { staff: AdminStaff[]; branches: 
       <Drawer
         open={open}
         onClose={close}
+        step={offerConvert ? 'convert' : 'form'}
         title="Ажилтан нэмэх"
         subtitle="Утасны дугаараар нэвтрэх эрх олгоно"
         footer={
@@ -231,7 +232,13 @@ export function StaffView({ staff, branches }: { staff: AdminStaff[]; branches: 
               <p>
                 Энэ дугаараар хэрэглэгчийн бүртгэл байна. Ажилтан болгож, сонгосон салбарт оноох уу?
               </p>
-              <Button size="sm" variant="primary" onClick={() => create(true)} disabled={pending}>
+              <Button
+                size="sm"
+                variant="primary"
+                data-step-focus
+                onClick={() => create(true)}
+                disabled={pending}
+              >
                 Ажилтан болгох
               </Button>
             </div>

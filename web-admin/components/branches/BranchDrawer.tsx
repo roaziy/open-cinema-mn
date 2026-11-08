@@ -74,6 +74,7 @@ export function BranchDrawer({
     <Drawer
       open={open}
       onClose={onClose}
+      step={confirm ? 'confirm' : 'form'}
       title={branch ? 'Салбар засах' : 'Шинэ салбар'}
       footer={
         <>
@@ -83,7 +84,7 @@ export function BranchDrawer({
                 <Button variant="danger" onClick={remove} disabled={pending}>
                   Тийм, устга
                 </Button>
-                <Button variant="ghost" onClick={() => setConfirm(false)}>
+                <Button variant="ghost" data-step-focus onClick={() => setConfirm(false)}>
                   Болих
                 </Button>
               </>
