@@ -176,7 +176,7 @@ async function holdInTransaction(
   const byInput = new Map([...active, ...inserted].map((h) => [h.seatId, h]));
   return {
     holds: seatIds.map((id) => toHold(byInput.get(id) as HoldRow)),
-    changes: inserted.map((h) => ({ seatId: h.seatId, state: 'held' as const })),
+    changes: fresh.map((seatId) => ({ seatId, state: 'held' as const })),
   };
 }
 
