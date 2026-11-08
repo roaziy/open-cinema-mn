@@ -91,7 +91,10 @@ export default function SeatMapScreen() {
       const seat = bySeat.get(sid);
       return seat ? [seatLabel(seat)] : [];
     });
-    showToast(t('seats.expired', { seats: names.join(', ') }), 'error');
+    showToast(
+      t(names.length > 1 ? 'seats.expiredMany' : 'seats.expired', { seats: names.join(', ') }),
+      'error',
+    );
     qc.invalidateQueries({ queryKey: ['holds', id] });
   }, [qc, id, t, patch, bySeat]);
 

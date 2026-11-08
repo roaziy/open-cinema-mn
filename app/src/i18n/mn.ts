@@ -63,6 +63,7 @@ export const mn = {
   'seats.reconnecting': 'Дахин холбогдож байна',
   'seats.left': '{time} үлдсэн',
   'seats.expired': 'Хугацаа дууссан тул {seats} суудал чөлөөлөгдлөө',
+  'seats.expiredMany': 'Хугацаа дууссан тул {seats} суудлууд чөлөөлөгдлөө',
   'seats.lost': 'Эдгээр суудал алдагдлаа: {seats}',
   'seats.fromSeat': 'Суудлаас харах',
   'seats.continue': 'Үргэлжлүүлэх',

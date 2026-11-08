@@ -1,11 +1,12 @@
 import { normalizeEmail } from '@open-cinema/shared';
-import { router, useLocalSearchParams } from 'expo-router';
+import { router, useIsFocused, useLocalSearchParams } from 'expo-router';
 import { Clock, SignIn, Ticket } from 'phosphor-react-native';
 import { useEffect, useMemo, useState } from 'react';
 import { StyleSheet, Text, TextInput, View } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { IconTile } from '@/components/icon-tile';
 import { Pressable } from '@/components/pressable';
+import { ToastHost } from '@/components/toast-host';
 import { useI18n } from '@/i18n';
 import { getContactEmail, setContactEmail } from '@/lib/checkout-store';
 import { formatCountdown, liveHolds, useCountdown, useMyHolds } from '@/lib/seats';
@@ -26,10 +27,14 @@ export default function GateScreen() {
     [holds.data],
   );
   const left = useCountdown(earliest);
-  // The seats are gone: go back to the map, which says which ones lapsed.
+  // No live seat left (the timer ran out, or the map's own expiry cleared them first): go
+  // back to the map, which says which ones lapsed. Only while this sheet is the front screen,
+  // so a login modal on top is never the one that closes.
+  const focused = useIsFocused();
+  const noSeats = holds.data !== undefined && earliest === null;
   useEffect(() => {
-    if (left === 0) router.dismiss();
-  }, [left]);
+    if (focused && (noSeats || left === 0)) router.dismissTo(`/showtime/${id}`);
+  }, [focused, noSeats, left, id]);
 
   const [email, setEmail] = useState(() => getContactEmail(id) ?? '');
   const [touched, setTouched] = useState(false);
@@ -48,6 +53,7 @@ export default function GateScreen() {
 
   return (
     <View style={styles.root}>
+      <ToastHost />
       <View style={[styles.body, { paddingBottom: insets.bottom + space.lg }]}>
         <View style={styles.head}>
           <View style={styles.headText}>
@@ -67,7 +73,8 @@ export default function GateScreen() {
         </View>
 
         <Pressable
-          style={styles.loginCard}
+          style={[styles.loginCard, noSeats && styles.disabled]}
+          disabled={noSeats}
           onPress={() => router.push(`/login?showtimeId=${id}&next=checkout`)}
           accessibilityRole="button"
         >
@@ -113,7 +120,8 @@ export default function GateScreen() {
           />
           {invalid ? <Text style={styles.error}>{t('gate.emailInvalid')}</Text> : null}
           <Pressable
-            style={[styles.secondary, !normalized && styles.disabled]}
+            style={[styles.secondary, (!normalized || noSeats) && styles.disabled]}
+            disabled={noSeats}
             onPress={asGuest}
             accessibilityRole="button"
             accessibilityState={{ disabled: !normalized }}

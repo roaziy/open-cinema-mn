@@ -52,6 +52,18 @@ export function liveHolds(holds: Hold[] | undefined, now = Date.now()): Hold[] {
   return (holds ?? []).filter((h) => new Date(h.expiresAt).getTime() > now);
 }
 
+/** Read one seat's current state from the server and apply it to the local map. */
+async function syncSeat(showtimeId: string, seatId: string, patchSeats: Patch) {
+  try {
+    const map = SeatMapSchema.parse(await api(`/showtimes/${showtimeId}`, { auth: false }));
+    const seat = map.seats.find((x) => x.id === seatId);
+    if (seat) patchSeats([{ seatId, state: seat.state }]);
+  } catch {
+    // Unknown: the safe reading is "taken" until the stream says otherwise.
+    patchSeats([{ seatId, state: 'held' }]);
+  }
+}
+
 type Patch = (changes: { seatId: string; state: 'free' | 'held' | 'sold' }[]) => void;
 
 /**
@@ -86,8 +98,12 @@ export function useSeatActions(showtimeId: string, t: (key: TKey) => string, pat
           try {
             await api<void>(`/holds/${mine.id}`, { method: 'DELETE' });
           } catch (e) {
-            // Already gone (expired) is the outcome we wanted; anything else comes back.
-            if (!(e instanceof ApiError && e.status === 404)) {
+            if (e instanceof ApiError && e.status === 404) {
+              // The hold was already gone, so the seat may be free or someone else's now:
+              // take its state from the server instead of guessing.
+              await syncSeat(showtimeId, seatId, patchSeats);
+              qc.invalidateQueries({ queryKey: holdsKey });
+            } else {
               qc.setQueryData<Hold[]>(holdsKey, (cur) => [...(cur ?? []), mine]);
               patchSeats([{ seatId, state: 'held' }]);
               haptic.error();
