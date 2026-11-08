@@ -16,6 +16,8 @@ export type WalletConfig = {
   wwdrPath: string;
 };
 
+let warned = false;
+
 /** Read per call, never at startup: a missing certificate only disables the Wallet endpoint. */
 export function walletConfig(source: Env = env): WalletConfig | null {
   const {
@@ -25,6 +27,14 @@ export function walletConfig(source: Env = env): WalletConfig | null {
     WALLET_SIGNER_KEY_PATH: signerKeyPath,
     WALLET_WWDR_PATH: wwdrPath,
   } = source;
+  const set = [passTypeId, teamId, signerCertPath, signerKeyPath, wwdrPath].filter(Boolean).length;
+  if (set < 5) {
+    if (set > 0 && !warned) {
+      warned = true;
+      console.warn('Wallet is partly configured (some WALLET_* variables are missing); disabled');
+    }
+    return null;
+  }
   if (!passTypeId || !teamId || !signerCertPath || !signerKeyPath || !wwdrPath) return null;
   return {
     passTypeId,
@@ -37,25 +47,58 @@ export function walletConfig(source: Env = env): WalletConfig | null {
   };
 }
 
+/** Certificates or the model could not be loaded; the endpoint answers 503, not 500. */
+export class WalletUnavailableError extends Error {}
+
+// Loaded once per distinct config and kept in memory; a failed load is retried on the next request.
+const templates = new Map<string, Promise<PKPass>>();
+
+function loadTemplate(cfg: WalletConfig): Promise<PKPass> {
+  const key = JSON.stringify(cfg);
+  let cached = templates.get(key);
+  if (!cached) {
+    cached = (async () => {
+      const [wwdr, signerCert, signerKey] = await Promise.all([
+        readFile(cfg.wwdrPath),
+        readFile(cfg.signerCertPath),
+        readFile(cfg.signerKeyPath),
+      ]);
+      return PKPass.from(
+        {
+          model: MODEL,
+          certificates: {
+            wwdr,
+            signerCert,
+            signerKey,
+            signerKeyPassphrase: cfg.signerKeyPassphrase,
+          },
+        },
+        {
+          passTypeIdentifier: cfg.passTypeId,
+          teamIdentifier: cfg.teamId,
+          organizationName: cfg.orgName,
+          logoText: cfg.orgName,
+        },
+      );
+    })();
+    templates.set(key, cached);
+    cached.catch(() => templates.delete(key));
+  }
+  return cached;
+}
+
 export async function buildPass(cfg: WalletConfig, t: TicketView): Promise<Buffer> {
-  const [wwdr, signerCert, signerKey] = await Promise.all([
-    readFile(cfg.wwdrPath),
-    readFile(cfg.signerCertPath),
-    readFile(cfg.signerKeyPath),
-  ]);
-  const pass = await PKPass.from(
-    {
-      model: MODEL,
-      certificates: { wwdr, signerCert, signerKey, signerKeyPassphrase: cfg.signerKeyPassphrase },
-    },
-    {
-      serialNumber: t.id,
-      passTypeIdentifier: cfg.passTypeId,
-      teamIdentifier: cfg.teamId,
-      organizationName: cfg.orgName,
-      description: `${t.movie.title} ticket`,
-    },
-  );
+  let template: PKPass;
+  try {
+    template = await loadTemplate(cfg);
+  } catch (err) {
+    console.error('wallet certificates or model could not be loaded', err);
+    throw new WalletUnavailableError();
+  }
+  const pass = await PKPass.from(template, {
+    serialNumber: t.id,
+    description: `${t.movie.title} — тасалбар`,
+  });
   pass.primaryFields.push({ key: 'movie', label: 'Кино', value: t.movie.title });
   pass.secondaryFields.push(
     { key: 'hall', label: 'Танхим', value: t.hallName },
@@ -75,7 +118,12 @@ export async function buildPass(cfg: WalletConfig, t: TicketView): Promise<Buffe
     format: 'PKBarcodeFormatQR',
     messageEncoding: 'iso-8859-1',
   });
-  pass.setRelevantDate(new Date(t.showtime.startsAt));
+  const start = new Date(t.showtime.startsAt);
+  pass.setRelevantDate(start);
+  // iOS 18 replaced relevantDate with intervals
+  pass.setRelevantDates([
+    { startDate: start, endDate: new Date(start.getTime() + t.movie.durationMin * 60_000) },
+  ]);
   pass.setLocations({ latitude: t.branch.lat, longitude: t.branch.lng });
   return pass.getAsBuffer();
 }

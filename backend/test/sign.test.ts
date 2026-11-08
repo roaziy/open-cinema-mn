@@ -36,6 +36,7 @@ describe('guest link signing', () => {
     expect(verifyLink(token.replace(T, S))).toBeNull();
     expect(verifyLink(`${token}x`)).toBeNull();
     expect(verifyLink(signQr(T, S))).toBeNull();
+    expect(verifyQr(token)).toBeNull();
     expect(verifyLink('')).toBeNull();
   });
 });

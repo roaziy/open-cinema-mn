@@ -2,6 +2,7 @@ import { execFileSync } from 'node:child_process';
 import { mkdtempSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
+import { PublicTicketsSchema } from '@open-cinema/shared';
 import { eq } from 'drizzle-orm';
 import request from 'supertest';
 import { afterAll, beforeEach, describe, expect, it } from 'vitest';
@@ -317,7 +318,11 @@ describe('guest ticket link', () => {
     const show = await f.show('2026-11-08T11:00:00Z');
     const bookingId = await buy(s, f, f.alice, show.id, 1);
     const token = signLink(bookingId);
-    await request(s.app).get(`/v1/t/${token}`).expect(200);
+    const ok = await request(s.app).get(`/v1/t/${token}`).expect(200);
+    expect(PublicTicketsSchema.safeParse(ok.body).success).toBe(true);
+    const raw = JSON.stringify(ok.body);
+    expect(raw).not.toContain('97699000001');
+    expect(raw).not.toMatch(/@|contact|invoice/i);
     await request(s.app).get(`/v1/t/${token}x`).expect(404);
     await request(s.app)
       .get(`/v1/t/${token.replace(bookingId, crypto.randomUUID())}`)
@@ -407,6 +412,7 @@ describe('wallet pass', () => {
       WALLET_SIGNER_CERT_PATH: cert,
       WALLET_SIGNER_KEY_PATH: key,
       WALLET_WWDR_PATH: cert,
+      WALLET_ORG_NAME: 'Other Op',
     });
     try {
       const { s, f, t } = await owned();
@@ -430,11 +436,65 @@ describe('wallet pass', () => {
       const body = res.body as Buffer;
       expect(body.subarray(0, 2).toString()).toBe('PK');
       // pkpass entries are stored uncompressed, so the pass JSON is readable in the archive
-      const text = body.toString('latin1');
+      const text = body.toString('utf8');
       expect(text).toContain('pass.json');
       expect(text).toContain('"PKBarcodeFormatQR"');
       expect(text).toContain(t.qrToken);
       expect(text).toContain('pass.test.opencinema');
+      expect(text).toContain('manifest.json');
+      expect(text).toContain('signature');
+      const from = text.indexOf('{"formatVersion"');
+      const passJson = JSON.parse(text.slice(from, text.indexOf('PK\x03\x04', from)));
+      expect(passJson).toMatchObject({
+        logoText: 'Other Op',
+        organizationName: 'Other Op',
+        description: 'Movie — тасалбар',
+        relevantDate: '2026-11-08T11:00:00.000Z',
+        locations: [{ latitude: 47.9, longitude: 106.9 }],
+        relevantDates: [
+          { startDate: '2026-11-08T11:00:00.000Z', endDate: '2026-11-08T12:30:00.000Z' },
+        ],
+      });
+    } finally {
+      restore();
+    }
+  });
+
+  it('gives a cancelled ticket no passUrl and no pass', async () => {
+    const { cert, key } = makeCert();
+    Object.assign(env, {
+      WALLET_PASS_TYPE_ID: 'pass.test.opencinema',
+      WALLET_TEAM_ID: 'TEAM123456',
+      WALLET_SIGNER_CERT_PATH: cert,
+      WALLET_SIGNER_KEY_PATH: key,
+      WALLET_WWDR_PATH: cert,
+    });
+    try {
+      const { s, f, t } = await owned();
+      await db.update(tickets).set({ status: 'cancelled' }).where(eq(tickets.id, t.id));
+      const view = await request(s.app)
+        .get(`/v1/tickets/${t.id}`)
+        .set('Authorization', f.alice.auth)
+        .expect(200);
+      expect(view.body).toMatchObject({ status: 'cancelled', passUrl: null });
+      await request(s.app).get(signPassUrl(t.id, s.clock())).expect(404);
+    } finally {
+      restore();
+    }
+  });
+
+  it('answers 503 when a certificate file cannot be read', async () => {
+    Object.assign(env, {
+      WALLET_PASS_TYPE_ID: 'pass.test.opencinema',
+      WALLET_TEAM_ID: 'TEAM123456',
+      WALLET_SIGNER_CERT_PATH: join(dir, 'missing.pem'),
+      WALLET_SIGNER_KEY_PATH: join(dir, 'missing.key'),
+      WALLET_WWDR_PATH: join(dir, 'missing.pem'),
+    });
+    try {
+      const { s, t } = await owned();
+      const res = await request(s.app).get(signPassUrl(t.id, s.clock())).expect(503);
+      expect(res.body).toEqual({ error: 'wallet_not_configured' });
     } finally {
       restore();
     }

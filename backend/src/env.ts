@@ -4,6 +4,8 @@ import { z } from 'zod';
 const optional = <T extends z.ZodType>(schema: T) =>
   z.preprocess((v) => (v === '' ? undefined : v), schema.optional());
 
+const noSlash = (v: string) => v.replace(/\/+$/, '');
+
 const DEFAULT_ADMIN_PASSWORD = 'change-me-admin';
 
 const EnvSchema = z
@@ -15,8 +17,8 @@ const EnvSchema = z
     JWT_SECRET: z.string().min(8),
     QR_SECRET: z.string().min(8),
     LINK_SECRET: z.string().min(8),
-    API_PUBLIC_URL: z.string().default('http://localhost:4000'),
-    WEB_PUBLIC_URL: z.string().default('http://localhost:3000'),
+    API_PUBLIC_URL: z.string().default('http://localhost:4000').transform(noSlash),
+    WEB_PUBLIC_URL: z.string().default('http://localhost:3000').transform(noSlash),
     CORS_ORIGINS: z.string().default('http://localhost:3000'),
     MESSAGES_PROVIDER: z.enum(['dev', 'wesend']).default('dev'),
     WESEND_API_KEY: optional(z.string()),
