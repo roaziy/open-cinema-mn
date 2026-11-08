@@ -18,6 +18,7 @@ export function createLimiters() {
     otp: limiter(15 * 60 * 1000, 20),
     guest: limiter(60 * 60 * 1000, 30),
     login: limiter(15 * 60 * 1000, 30),
+    ticketLink: limiter(15 * 60 * 1000, 60),
   };
 }
 export type Limiters = ReturnType<typeof createLimiters>;

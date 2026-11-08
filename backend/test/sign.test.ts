@@ -1,5 +1,12 @@
 import { describe, expect, it } from 'vitest';
-import { signQr, verifyQr } from '../src/lib/sign';
+import {
+  signLink,
+  signPassUrl,
+  signQr,
+  verifyLink,
+  verifyPassSig,
+  verifyQr,
+} from '../src/lib/sign';
 
 const T = '11111111-1111-4111-8111-111111111111';
 const S = '22222222-2222-4222-8222-222222222222';
@@ -18,5 +25,40 @@ describe('QR signing', () => {
     expect(verifyQr(token.slice(0, -2))).toBeNull();
     expect(verifyQr(token.replace('oc1', 'oc2'))).toBeNull();
     expect(verifyQr('')).toBeNull();
+  });
+});
+
+describe('guest link signing', () => {
+  it('round-trips and rejects tampering and the QR format', () => {
+    const token = signLink(T);
+    expect(token).toMatch(/^ol1\.[^.]+\.[A-Za-z0-9_-]+$/);
+    expect(verifyLink(token)).toBe(T);
+    expect(verifyLink(token.replace(T, S))).toBeNull();
+    expect(verifyLink(`${token}x`)).toBeNull();
+    expect(verifyLink(signQr(T, S))).toBeNull();
+    expect(verifyLink('')).toBeNull();
+  });
+});
+
+describe('pass url signing', () => {
+  const now = new Date('2026-11-08T10:00:00Z');
+  const parse = (url: string) => {
+    const u = new URL(url, 'http://x');
+    return { exp: Number(u.searchParams.get('exp')), sig: u.searchParams.get('sig') ?? '' };
+  };
+
+  it('is valid for five minutes, then expires', () => {
+    const url = signPassUrl(T, now);
+    expect(url).toMatch(new RegExp(`^/v1/tickets/${T}/pass\\?exp=\\d+&sig=`));
+    const { exp, sig } = parse(url);
+    expect(verifyPassSig(T, exp, sig, new Date(now.getTime() + 299_000))).toBe(true);
+    expect(verifyPassSig(T, exp, sig, new Date(now.getTime() + 301_000))).toBe(false);
+  });
+
+  it('is bound to the ticket and the expiry', () => {
+    const { exp, sig } = parse(signPassUrl(T, now));
+    expect(verifyPassSig(S, exp, sig, now)).toBe(false);
+    expect(verifyPassSig(T, exp + 600, sig, now)).toBe(false);
+    expect(verifyPassSig(T, exp, `${sig}x`, now)).toBe(false);
   });
 });
