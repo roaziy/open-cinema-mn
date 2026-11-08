@@ -7,9 +7,11 @@ import { type Db, db as defaultDb } from './db/client';
 import { env } from './env';
 import { AppError } from './lib/errors';
 import { createLimiters } from './lib/rate-limit';
+import { SeatHub } from './lib/seat-hub';
 import { createMessages, type Messages } from './messages';
 import { createPayments, type PaymentProvider } from './payments/provider';
 import { createAuthRouter } from './routes/auth';
+import { createCatalogRouter } from './routes/catalog';
 import { createStorage, type StorageProvider, UPLOAD_DIR } from './storage';
 
 export type AppDeps = {
@@ -18,6 +20,7 @@ export type AppDeps = {
   payments: PaymentProvider;
   storage: StorageProvider;
   clock: () => Date;
+  seatHub: SeatHub;
 };
 
 export function createApp(over: Partial<AppDeps> = {}): Express {
@@ -27,6 +30,7 @@ export function createApp(over: Partial<AppDeps> = {}): Express {
     payments: over.payments ?? createPayments(),
     storage: over.storage ?? createStorage(),
     clock: over.clock ?? (() => new Date()),
+    seatHub: over.seatHub ?? new SeatHub(),
   };
 
   const app = express();
@@ -54,6 +58,7 @@ export function createApp(over: Partial<AppDeps> = {}): Express {
     }
   });
   v1.use(createAuthRouter(deps, createLimiters()));
+  v1.use(createCatalogRouter(deps));
   app.use('/v1', v1);
 
   app.use((_req, res) => {
