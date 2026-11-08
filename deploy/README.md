@@ -212,14 +212,19 @@ What this guarantees:
 reconnect their seat feed automatically.
 
 **What the drain does.** On SIGINT/SIGTERM the API stops accepting connections, answers any new seat
-stream with 503 and `Connection: close`, ends the open seat streams, lets running requests and a
-sweep pass that is mid-run finish, and only then closes the database pool. Connections still open
-after 25 s (the 20 s provider timeout plus 5 s) are destroyed and the process exits with code 1 after
-28 s at the latest, inside pm2's `kill_timeout` of 30 s. The limit, honestly: a provider call that
-is still running at the hard exit is killed. A refund in that state is stored as `refunding` and
-re-claimed by the sweeper after its TTL, so it is retried rather than lost; whether that retry can
-double-refund depends on the provider honoring an idempotency key, which must be confirmed when
-real payment credentials are wired in (the mock provider has no such risk).
+stream with 503 and `Connection: close`, ends the open seat streams, closes keep-alive connections as
+soon as they go idle, lets running requests finish, and only then closes the database pool. From the
+signal on, no new payment provider call starts: the sweeper stops after the item it is on, and a
+showing cancellation that is still refunding keeps its cancelled bookings and still emails the
+customers, but leaves the refunds it has not started owed. The log names each one
+(`draining: refund of <booking> left to the sweeper`) and the sweeper pays them in its first pass,
+30 s after the restart. Connections still open after 25 s (the 20 s provider timeout plus 5 s) are
+destroyed and the process exits with code 1 after 28 s at the latest, inside pm2's `kill_timeout` of
+30 s. The limit, honestly: a provider call that is still running at the hard exit is killed. A
+refund in that state is stored as `refunding` and re-claimed by the sweeper after its TTL, so it is
+retried rather than lost; whether that retry can double-refund depends on the provider honoring an
+idempotency key, which must be confirmed when real payment credentials are wired in (the mock
+provider has no such risk).
 
 **pm2 remembers its configuration.** pm2 stores the app settings
 (such as `kill_timeout`) in its process list when the process is first started, and a reload does not always pick up changes, so after the

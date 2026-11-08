@@ -66,6 +66,7 @@ describe('graceful shutdown', () => {
     const exit = vi.fn((c: number) => order.push(`exit${c}`));
     await createShutdown({
       server,
+      startDraining: () => order.push('draining'),
       endStreams: () => hub.endStreams(),
       stopSweeper: async () => {
         await sleep(150);
@@ -81,7 +82,7 @@ describe('graceful shutdown', () => {
 
     expect(await slow).toEqual({ status: 200, body: 'done' });
     await stream;
-    expect(order).toEqual(['sse-ended', 'sweep-done', 'request-done', 'pool', 'exit0']);
+    expect(order).toEqual(['draining', 'sse-ended', 'sweep-done', 'request-done', 'pool', 'exit0']);
   });
 
   it('stops accepting new connections once draining', async () => {
@@ -91,6 +92,7 @@ describe('graceful shutdown', () => {
     await sleep(30);
     const done = createShutdown({
       server,
+      startDraining: () => {},
       endStreams: () => {},
       stopSweeper: async () => {},
       closePool: async () => {},
@@ -112,6 +114,7 @@ describe('graceful shutdown', () => {
     const exit = vi.fn();
     await createShutdown({
       server,
+      startDraining: () => {},
       endStreams: () => {},
       stopSweeper: async () => {},
       closePool: async () => {},
@@ -123,12 +126,42 @@ describe('graceful shutdown', () => {
     expect(exit).toHaveBeenCalledWith(0);
   });
 
+  it('closes a keep-alive socket that goes idle mid-drain instead of waiting out its timeout', async () => {
+    silence();
+    const { server, port } = await listen((_req, res) => setTimeout(() => res.end('ok'), 200));
+    // The client keeps the socket for reuse once the in-flight response is done.
+    const agent = new http.Agent({ keepAlive: true });
+    const inFlight = new Promise<void>((resolve) => {
+      http.get({ port, host: '127.0.0.1', path: '/', agent }, (res) => {
+        res.resume();
+        res.on('end', resolve);
+      });
+    });
+    await sleep(30);
+    const started = Date.now();
+    await createShutdown({
+      server,
+      startDraining: () => {},
+      endStreams: () => {},
+      stopSweeper: async () => {},
+      closePool: async () => {},
+      exit: () => {},
+      timeoutMs: 9000,
+      forceCloseAfterMs: 8000,
+    })('SIGTERM');
+    await inFlight;
+    // server.keepAliveTimeout is 5 s; the drain must not sit on the idle socket that long.
+    expect(Date.now() - started).toBeLessThan(1000);
+    agent.destroy();
+  }, 10_000);
+
   it('exits 1 when closing the pool fails, and runs only once', async () => {
     silence();
     const { server } = await listen((_q, r) => r.end());
     const exit = vi.fn();
     const shutdown = createShutdown({
       server,
+      startDraining: () => {},
       endStreams: () => {},
       stopSweeper: async () => {},
       closePool: vi.fn().mockRejectedValue(new Error('boom')),
@@ -148,6 +181,7 @@ describe('graceful shutdown', () => {
     const exit = vi.fn();
     void createShutdown({
       server,
+      startDraining: () => {},
       endStreams: () => {},
       stopSweeper: () => new Promise(() => {}),
       closePool: async () => {},

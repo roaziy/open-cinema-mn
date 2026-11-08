@@ -2,6 +2,7 @@ import { createApp, createDeps } from './app';
 import { pool } from './db/client';
 import { env } from './env';
 import { startSweeper } from './jobs/sweeper';
+import { startDraining } from './lib/drain';
 import { createShutdown, shutdownBudget } from './lib/shutdown';
 import { PROVIDER_TIMEOUT_MS } from './services/bookings';
 
@@ -31,10 +32,12 @@ const server = env.HOST
   : app.listen(env.PORT, onListening);
 const stopSweeper = startSweeper(deps);
 
-// pm2 sends SIGINT then SIGKILL after kill_timeout (30 s, ecosystem.config.cjs). The drain outlasts
-// the provider timeout (20 s): leftover connections are destroyed at 25 s, the process exits at 28 s.
+// pm2 sends SIGINT then SIGKILL after kill_timeout (30 s, ecosystem.config.cjs). Once draining no
+// new payment provider call starts, and the drain outlasts one in flight (20 s timeout): leftover
+// connections are destroyed at 25 s, the process exits at 28 s.
 const shutdown = createShutdown({
   server,
+  startDraining,
   stopSweeper,
   endStreams: () => deps.seatHub.endStreams(),
   closePool: () => pool.end(),

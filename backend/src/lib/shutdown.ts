@@ -11,9 +11,14 @@ export function shutdownBudget(providerTimeoutMs: number) {
   };
 }
 
+/** While draining, keep-alive sockets that went idle are closed this often. */
+const IDLE_CLOSE_EVERY_MS = 250;
+
 export type ShutdownParts = {
-  server: Pick<Server, 'close' | 'closeAllConnections'>;
-  /** Stops the sweeper timer; resolves when a pass that is running has finished. */
+  server: Pick<Server, 'close' | 'closeAllConnections' | 'closeIdleConnections'>;
+  /** Raises the process-wide drain flag (lib/drain): no new payment provider call starts. */
+  startDraining: () => void;
+  /** Stops the sweeper timer; resolves once a running pass has stopped at its next item. */
   stopSweeper: () => Promise<void>;
   /** Ends long-lived SSE responses, which would otherwise keep `server.close` waiting. */
   endStreams: () => void;
@@ -26,15 +31,17 @@ export type ShutdownParts = {
 };
 
 /**
- * Returns a one-shot graceful shutdown. It stops accepting connections and ends SSE streams, then
- * lets in-flight requests and a running sweep pass finish before closing the database pool last.
- * Connections still open at `forceCloseAfterMs` are destroyed; at `timeoutMs` the process exits 1.
+ * Returns a one-shot graceful shutdown. It raises the drain flag, stops accepting connections and
+ * ends SSE streams, then lets in-flight requests and the current sweep item finish before closing
+ * the database pool last. Connections still open at `forceCloseAfterMs` are destroyed; at
+ * `timeoutMs` the process exits 1.
  */
 export function createShutdown(parts: ShutdownParts): (signal: string) => Promise<void> {
   let started = false;
   return async (signal) => {
     if (started) return;
     started = true;
+    parts.startDraining();
     console.log(`${signal} received, draining`);
     const hard = setTimeout(() => {
       console.error('shutdown timed out, forcing exit');
@@ -43,6 +50,10 @@ export function createShutdown(parts: ShutdownParts): (signal: string) => Promis
     hard.unref();
     const force = setTimeout(() => parts.server.closeAllConnections(), parts.forceCloseAfterMs);
     force.unref();
+    // close() only drops the sockets idle at that moment; one whose response finishes later (an
+    // ended SSE stream, a request that began before the drain) would sit out keepAliveTimeout.
+    const idle = setInterval(() => parts.server.closeIdleConnections(), IDLE_CLOSE_EVERY_MS);
+    idle.unref();
     let code = 0;
     try {
       const closed = new Promise<void>((resolve) => parts.server.close(() => resolve()));
@@ -55,6 +66,7 @@ export function createShutdown(parts: ShutdownParts): (signal: string) => Promis
     }
     clearTimeout(hard);
     clearTimeout(force);
+    clearInterval(idle);
     parts.exit(code);
   };
 }
