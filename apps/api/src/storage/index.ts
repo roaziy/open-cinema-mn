@@ -1,32 +1,37 @@
-import { mkdir, writeFile } from 'node:fs/promises';
-import path from 'node:path';
-import { fileURLToPath } from 'node:url';
-import { env } from '../env';
+import { type Env, env } from '../env';
+import { LocalStorage } from './local';
+import { SupabaseStorage } from './supabase';
 
 export interface StorageProvider {
   /** Stores `body` under `key` and returns its public URL. */
   put(key: string, body: Buffer, contentType: string): Promise<string>;
 }
 
-const UPLOAD_DIR = fileURLToPath(new URL('../../uploads', import.meta.url));
-
-/** Minimal local stub; the full local + supabase providers come later. */
-export class LocalStorage implements StorageProvider {
-  constructor(
-    private readonly dir = UPLOAD_DIR,
-    private readonly baseUrl = `${env.API_PUBLIC_URL}/uploads`,
-  ) {}
-
-  async put(key: string, body: Buffer, _contentType: string): Promise<string> {
-    const target = path.resolve(this.dir, key);
-    if (!target.startsWith(path.resolve(this.dir) + path.sep))
-      throw new Error('invalid storage key');
-    await mkdir(path.dirname(target), { recursive: true });
-    await writeFile(target, body);
-    return `${this.baseUrl}/${key.split(path.sep).join('/')}`;
+/** Picks the provider named by STORAGE_PROVIDER; never falls back silently. */
+export function createStorage(
+  e: Pick<
+    Env,
+    | 'STORAGE_PROVIDER'
+    | 'API_PUBLIC_URL'
+    | 'SUPABASE_URL'
+    | 'SUPABASE_SERVICE_ROLE_KEY'
+    | 'SUPABASE_BUCKET'
+  > = env,
+): StorageProvider {
+  if (e.STORAGE_PROVIDER === 'supabase') {
+    const missing = (
+      ['SUPABASE_URL', 'SUPABASE_SERVICE_ROLE_KEY', 'SUPABASE_BUCKET'] as const
+    ).filter((k) => !e[k]);
+    if (missing.length > 0) {
+      throw new Error(`STORAGE_PROVIDER=supabase requires ${missing.join(', ')}`);
+    }
+    return new SupabaseStorage(
+      e.SUPABASE_URL as string,
+      e.SUPABASE_SERVICE_ROLE_KEY as string,
+      e.SUPABASE_BUCKET as string,
+    );
   }
+  return new LocalStorage(e.API_PUBLIC_URL);
 }
 
-export function createStorage(): StorageProvider {
-  return new LocalStorage();
-}
+export { UPLOAD_DIR } from './local';
