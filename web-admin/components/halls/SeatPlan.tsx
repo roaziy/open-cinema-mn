@@ -102,10 +102,16 @@ export function SeatPlan({
         width={screenWidthM * scale}
         height={Math.max(scale * 0.18, 3)}
         rx={2}
-        fill="#F5F5F7"
+        className="fill-ink"
         opacity={0.9}
       />
-      <text x={px(screenXM)} y={py(-0.55) - 8} textAnchor="middle" fontSize="11" fill="#8E8E93">
+      <text
+        x={px(screenXM)}
+        y={py(-0.55) - 8}
+        textAnchor="middle"
+        fontSize="11"
+        className="fill-muted"
+      >
         Дэлгэц
       </text>
       {rows.map((r) => (
@@ -129,7 +135,7 @@ export function SeatPlan({
             y={py(r.y_m) + fontSize / 3}
             textAnchor="middle"
             fontSize={Math.max(fontSize, 10)}
-            fill="#8E8E93"
+            className="fill-muted"
           >
             {r.rowLabel}
           </text>
@@ -146,13 +152,10 @@ export function SeatPlan({
               width={size}
               height={size}
               rx={Math.min(size * 0.28, 5)}
-              fill={KIND_FILL[s.kind]}
-              stroke={
-                isSel ? '#2E6BF0' : s.kind === 'blocked' ? '#3A3A42' : 'rgb(255 255 255 / 0.12)'
-              }
+              style={{ fill: KIND_FILL[s.kind] }}
               strokeWidth={isSel ? 2.5 : 1}
               strokeDasharray={s.kind === 'blocked' ? '2 2' : undefined}
-              className="cursor-pointer"
+              className={`cursor-pointer ${isSel ? 'stroke-action' : s.kind === 'blocked' ? 'stroke-seat' : 'stroke-hairline'}`}
             >
               <title>{`${s.rowLabel}${s.number}`}</title>
             </rect>
@@ -161,7 +164,7 @@ export function SeatPlan({
                 cx={px(s.x_m) + size / 2}
                 cy={py(s.y_m) - size / 2}
                 r={Math.max(size * 0.14, 2.5)}
-                fill="#FBBF24"
+                className="fill-warning"
                 pointerEvents="none"
               />
             )}
@@ -171,7 +174,7 @@ export function SeatPlan({
                 y={py(s.y_m) + fontSize / 3}
                 textAnchor="middle"
                 fontSize={fontSize}
-                fill={s.kind === 'blocked' ? '#8E8E93' : '#F5F5F7'}
+                className={s.kind === 'blocked' ? 'fill-muted' : 'fill-ink'}
                 pointerEvents="none"
               >
                 {s.kind === 'blocked' ? '×' : s.number}

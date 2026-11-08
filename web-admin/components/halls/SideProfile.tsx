@@ -62,10 +62,10 @@ export function SideProfile({
         width={4}
         height={screenHeightM * scale}
         rx={2}
-        fill="#F5F5F7"
+        className="fill-ink"
       />
-      <polyline points={floor} fill="none" stroke="rgb(255 255 255 / 0.18)" strokeWidth={1.5} />
-      <line x1={x(0)} x2={x(maxY)} y1={y(0)} y2={y(0)} stroke="rgb(255 255 255 / 0.07)" />
+      <polyline points={floor} fill="none" className="stroke-white/20" strokeWidth={1.5} />
+      <line x1={x(0)} x2={x(maxY)} y1={y(0)} y2={y(0)} className="stroke-hairline" />
       {eye &&
         targets.map((t, i) => (
           <line
@@ -74,7 +74,7 @@ export function SideProfile({
             y1={y(eye.z)}
             x2={x(0)}
             y2={y(t)}
-            stroke="#2E6BF0"
+            className="stroke-action"
             strokeWidth={i === 1 ? 1.5 : 1}
             strokeDasharray={i === 1 ? undefined : '3 3'}
             opacity={i === 1 ? 0.9 : 0.55}
@@ -88,14 +88,14 @@ export function SideProfile({
               cx={x(s.y_m)}
               cy={y(s.z_m + EYE_HEIGHT_M)}
               r={on ? 4.5 : 3}
-              fill={on ? '#2E6BF0' : '#8E8E93'}
+              className={on ? 'fill-action' : 'fill-muted'}
             />
             <line
               x1={x(s.y_m)}
               x2={x(s.y_m)}
               y1={y(s.z_m + EYE_HEIGHT_M)}
               y2={y(s.z_m)}
-              stroke="rgb(255 255 255 / 0.12)"
+              className="stroke-white/10"
             />
             {(on || line.length <= 14) && (
               <text
@@ -103,7 +103,7 @@ export function SideProfile({
                 y={H - 6}
                 textAnchor="middle"
                 fontSize="10"
-                fill={on ? '#F5F5F7' : '#8E8E93'}
+                className={on ? 'fill-ink' : 'fill-muted'}
               >
                 {s.rowLabel}
               </text>

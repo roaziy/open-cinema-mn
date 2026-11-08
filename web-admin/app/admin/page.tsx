@@ -1,4 +1,4 @@
-import { formatUbTime } from '@open-cinema/shared';
+import { formatMnt, formatUbTime } from '@open-cinema/shared';
 import {
   ArrowCounterClockwise,
   ChartLineUp,
@@ -7,6 +7,7 @@ import {
 } from '@phosphor-icons/react/dist/ssr';
 import type { Metadata } from 'next';
 import Link from 'next/link';
+import { redirect } from 'next/navigation';
 import { HourlyChart } from '@/components/charts/HourlyChart';
 import { BranchPills } from '@/components/dashboard/BranchPills';
 import { Delta } from '@/components/dashboard/Delta';
@@ -15,9 +16,10 @@ import { ErrorState } from '@/components/ui/ErrorState';
 import { IconTile } from '@/components/ui/IconTile';
 import { PageHeader } from '@/components/ui/PageHeader';
 import { Poster } from '@/components/ui/Poster';
-import { getBranches, getDashboard, safely } from '@/lib/admin-data';
-import { count, mnt, pct } from '@/lib/format';
+import { getBranches, getDashboard, getShowtimes, safely } from '@/lib/admin-data';
+import { count, dayPrefix, pct, todayUb } from '@/lib/format';
 import { hueFor } from '@/lib/hues';
+import { isUuid } from '@/lib/ids';
 
 export const metadata: Metadata = { title: 'Хяналтын самбар' };
 
@@ -25,9 +27,22 @@ type Props = { searchParams: Promise<{ branch?: string }> };
 
 export default async function Dashboard({ searchParams }: Props) {
   const { branch } = await searchParams;
-  const branches = await safely(getBranches);
+  const [branches, data, todayShows] = await Promise.all([
+    safely(getBranches),
+    safely(() => getDashboard(isUuid(branch) ? branch : undefined)),
+    safely(() =>
+      getShowtimes({
+        from: todayUb(),
+        to: todayUb(),
+        branchId: isUuid(branch) ? branch : undefined,
+      }),
+    ),
+  ]);
   const active = branches?.find((b) => b.id === branch)?.id;
-  const data = await safely(() => getDashboard(active));
+  if (branch && branches && !active) redirect('/admin');
+  const live = (todayShows?.items ?? []).filter((i) => i.status === 'scheduled');
+  const seatsSold = live.reduce((n, i) => n + i.sold, 0);
+  const seatsTotal = live.reduce((n, i) => n + i.capacity, 0);
 
   const pills = (branches ?? []).map((b) => ({ id: b.id, name: b.name, hue: hueFor(b.id) }));
   const header = (
@@ -48,6 +63,7 @@ export default async function Dashboard({ searchParams }: Props) {
 
   const nowHour = Number(formatUbTime(new Date()).slice(0, 2));
   const maxFilm = Math.max(...data.topFilms.map((f) => f.revenue), 1);
+  const today = todayUb();
   const quiet = data.today.tickets === 0;
 
   return (
@@ -73,7 +89,7 @@ export default async function Dashboard({ searchParams }: Props) {
                 Өнөөдрийн борлуулалт
               </h2>
               <p className="mt-1 text-[34px] font-semibold leading-none tracking-[-0.01em] text-ink tabular-nums">
-                {mnt(data.today.revenue)}
+                {formatMnt(data.today.revenue)}
               </p>
               <div className="mt-2">
                 <Delta
@@ -101,7 +117,7 @@ export default async function Dashboard({ searchParams }: Props) {
           <Stat
             hue="purple"
             icon={<Ticket size={18} weight="fill" />}
-            label="Зарагдсан тасалбар"
+            label="Өнөөдөр зарагдсан тасалбар"
             value={count(data.today.tickets)}
             foot={
               <Delta
@@ -114,7 +130,7 @@ export default async function Dashboard({ searchParams }: Props) {
           <Stat
             hue="indigo"
             icon={<Percent size={18} weight="fill" />}
-            label="Суудлын дүүргэлт"
+            label="Өнөөдрийн сеансын дүүргэлт"
             value={pct(data.today.occupancy)}
             foot={
               <div className="mt-1">
@@ -124,8 +140,9 @@ export default async function Dashboard({ searchParams }: Props) {
                     style={{ width: `${Math.min(100, Math.round(data.today.occupancy * 100))}%` }}
                   />
                 </div>
-                <p className="mt-1.5 text-[13px] text-muted">
-                  Өчигдөр {pct(data.yesterday.occupancy)}
+                <p className="mt-1.5 text-[13px] text-muted tabular-nums">
+                  {count(seatsSold)} / {count(seatsTotal)} суудал · өчигдөр{' '}
+                  {pct(data.yesterday.occupancy)}
                 </p>
               </div>
             }
@@ -139,7 +156,7 @@ export default async function Dashboard({ searchParams }: Props) {
               <span className="text-[13px] text-muted">
                 {data.refundsToday.count === 0
                   ? 'Буцаалт хийгдээгүй'
-                  : `Нийт ${mnt(data.refundsToday.amount)}`}
+                  : `Нийт ${formatMnt(data.refundsToday.amount)}`}
               </span>
             }
           />
@@ -172,7 +189,9 @@ export default async function Dashboard({ searchParams }: Props) {
                   <div className="min-w-0 flex-1">
                     <div className="flex items-baseline justify-between gap-3">
                       <p className="truncate text-sm font-medium text-ink">{f.title}</p>
-                      <p className="shrink-0 text-sm text-ink tabular-nums">{mnt(f.revenue)}</p>
+                      <p className="shrink-0 text-sm text-ink tabular-nums">
+                        {formatMnt(f.revenue)}
+                      </p>
                     </div>
                     <div className="mt-1.5 h-1.5 overflow-hidden rounded-full bg-fill">
                       <div
@@ -226,6 +245,11 @@ export default async function Dashboard({ searchParams }: Props) {
                     return (
                       <tr key={u.id}>
                         <td className="py-2.5 pr-3 font-medium text-ink tabular-nums">
+                          {dayPrefix(u.startsAt, today) && (
+                            <span className="mr-1.5 text-xs font-normal text-muted">
+                              {dayPrefix(u.startsAt, today)}
+                            </span>
+                          )}
                           {formatUbTime(u.startsAt)}
                         </td>
                         <td className="max-w-[200px] truncate py-2.5 pr-3 text-ink">

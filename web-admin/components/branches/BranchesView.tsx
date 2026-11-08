@@ -23,7 +23,7 @@ export function BranchesView({ branches }: { branches: BranchRow[] }) {
         subtitle={`Нийт ${branches.length} салбар`}
         action={
           <Button variant="primary" onClick={() => setEditing('new')}>
-            <Plus size={16} weight="bold" aria-hidden />
+            <Plus size={16} aria-hidden />
             Шинэ салбар
           </Button>
         }
@@ -67,11 +67,11 @@ export function BranchesView({ branches }: { branches: BranchRow[] }) {
                     ['Суудал', b.seats],
                     ['Өнөөдрийн сеанс', b.today],
                   ].map(([label, v]) => (
-                    <div key={label}>
+                    <div key={label} className="flex flex-col-reverse">
+                      <dt className="truncate text-xs text-muted">{label}</dt>
                       <dd className="text-lg font-semibold text-ink tabular-nums">
                         {count(v as number)}
                       </dd>
-                      <dt className="truncate text-xs text-muted">{label}</dt>
                     </div>
                   ))}
                 </dl>

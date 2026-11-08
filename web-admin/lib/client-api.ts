@@ -56,3 +56,13 @@ export async function uploadImage(file: File): Promise<string> {
 export function messageOf(err: unknown): string {
   return err instanceof CallError ? err.message : errorMessage('unknown');
 }
+
+export const MAX_UPLOAD_BYTES = 8 * 1024 * 1024;
+const IMAGE_TYPES = new Set(['image/jpeg', 'image/png', 'image/webp']);
+
+/** Why a picked file will not be accepted (same limits as the API), or null when it will. */
+export function imageProblem(file: { size: number; type: string }): string | null {
+  if (!IMAGE_TYPES.has(file.type)) return errorMessage('unsupported_media_type');
+  if (file.size > MAX_UPLOAD_BYTES) return errorMessage('file_too_large');
+  return null;
+}

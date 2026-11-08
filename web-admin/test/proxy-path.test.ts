@@ -8,6 +8,13 @@ describe('upstreamPath', () => {
     expect(upstreamPath(['showtimes', 'a b', 'seats'])).toBe('/v1/showtimes/a%20b/seats');
   });
 
+  it('reaches admin endpoints such as the cancel preview', () => {
+    expect(upstreamPath(['admin', 'showtimes', 'abc', 'cancel-preview'])).toBe(
+      '/v1/admin/showtimes/abc/cancel-preview',
+    );
+    expect(upstreamPath(['admin', 'uploads'])).toBe('/v1/admin/uploads');
+  });
+
   it('refuses token-issuing endpoints in any case', () => {
     for (const first of ['auth', 'Auth', 'AUTH', 'aUtH']) {
       expect(upstreamPath([first, 'refresh'])).toBeNull();

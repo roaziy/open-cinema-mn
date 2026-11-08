@@ -1,6 +1,13 @@
 import { generateSeats } from '@open-cinema/shared';
 import { describe, expect, it } from 'vitest';
-import { bounds, DEFAULT_GEN, inferGen, parseAisles, sameGen } from '../lib/hall-layout';
+import {
+  bounds,
+  DEFAULT_GEN,
+  inferGen,
+  normalizeAisles,
+  parseAisles,
+  sameGen,
+} from '../lib/hall-layout';
 
 describe('inferGen', () => {
   it('recovers the parameters a hall was generated from', () => {
@@ -30,6 +37,14 @@ describe('helpers', () => {
   it('parses aisle lists, dropping junk and duplicates', () => {
     expect(parseAisles('7, 3; 7 x 0 -2 4.5')).toEqual([3, 7]);
     expect(parseAisles('')).toEqual([]);
+  });
+
+  it('normalises aisles so an identical layout compares equal', () => {
+    expect(normalizeAisles([14, 7, 7, 20, 0], 14)).toEqual([7]);
+    expect(parseAisles('7, 14', 14)).toEqual([7]);
+    const a = { ...DEFAULT_GEN, seatsPerRow: 14, aisleAfter: [7] };
+    expect(sameGen(a, { ...a, aisleAfter: [7, 14, 7] })).toBe(true);
+    expect(sameGen(a, { ...a, aisleAfter: [6] })).toBe(false);
   });
 
   it('finds seat bounds', () => {

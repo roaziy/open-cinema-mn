@@ -1,3 +1,5 @@
+import { addDays } from './format';
+
 export type TimelineItem = { id: string; hallId: string; startMin: number; endMin: number };
 
 export type TimelineRange = { fromMin: number; toMin: number };
@@ -46,4 +48,23 @@ export function hourTicks(r: TimelineRange): { label: string; left: number }[] {
     });
   }
   return out;
+}
+
+/**
+ * Where a click on an empty track lands: the day and "HH:mm" (5-minute steps). The window can run
+ * past midnight, so a click at 00:30 on the right of day D's track belongs to D+1, not to D.
+ */
+export function clickToStart(
+  date: string,
+  fraction: number,
+  r: TimelineRange,
+): { date: string; time: string } {
+  const f = Math.min(Math.max(fraction, 0), 1);
+  const min = Math.round((r.fromMin + f * (r.toMin - r.fromMin)) / 5) * 5;
+  const day = Math.floor(min / 1440);
+  const m = min - day * 1440;
+  return {
+    date: addDays(date, day),
+    time: `${String(Math.floor(m / 60)).padStart(2, '0')}:${String(m % 60).padStart(2, '0')}`,
+  };
 }

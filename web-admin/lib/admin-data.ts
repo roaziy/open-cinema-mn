@@ -29,9 +29,7 @@ export async function safely<T>(load: () => Promise<T>): Promise<T | null> {
     return await load();
   } catch (err) {
     unstable_rethrow(err);
-    if (err instanceof ApiError && (err.status === 404 || err.code === 'validation_failed')) {
-      notFound();
-    }
+    if (err instanceof ApiError && err.status === 404) notFound();
     return null;
   }
 }

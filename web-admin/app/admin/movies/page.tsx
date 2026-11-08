@@ -22,7 +22,7 @@ export default async function MoviesPage() {
   const movies = await safely(getMovies);
   const add = (
     <Link href="/admin/movies/new" className={buttonClass('primary')}>
-      <Plus size={16} weight="bold" aria-hidden />
+      <Plus size={16} aria-hidden />
       Шинэ кино
     </Link>
   );

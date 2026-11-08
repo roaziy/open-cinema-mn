@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { hourTicks, nowOffset, place, rangeFor } from '../lib/timeline';
+import { clickToStart, hourTicks, nowOffset, place, rangeFor } from '../lib/timeline';
 
 describe('timeline', () => {
   it('defaults to 10:00-24:00 and widens for late shows', () => {
@@ -29,5 +29,15 @@ describe('timeline', () => {
     expect(t.map((x) => x.label)).toEqual(['22:00', '23:00', '00:00', '01:00', '02:00']);
     expect(t[0]?.left).toBe(0);
     expect(t.at(-1)?.left).toBe(100);
+  });
+
+  it('maps a click to a start time, rolling past midnight into the next day', () => {
+    const r = { fromMin: 10 * 60, toMin: 26 * 60 };
+    expect(clickToStart('2026-11-08', 0, r)).toEqual({ date: '2026-11-08', time: '10:00' });
+    expect(clickToStart('2026-11-08', 0.5, r)).toEqual({ date: '2026-11-08', time: '18:00' });
+    // 00:30 sits at (24.5 - 10) / 16 of the track
+    expect(clickToStart('2026-11-08', 14.5 / 16, r)).toEqual({ date: '2026-11-09', time: '00:30' });
+    expect(clickToStart('2026-12-31', 15 / 16, r)).toEqual({ date: '2027-01-01', time: '01:00' });
+    expect(clickToStart('2026-11-08', 7, r).date).toBe('2026-11-09');
   });
 });

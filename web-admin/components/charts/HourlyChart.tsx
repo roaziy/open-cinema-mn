@@ -1,4 +1,5 @@
-import { count, mnt } from '@/lib/format';
+import { formatMnt } from '@open-cinema/shared';
+import { compact, count } from '@/lib/format';
 
 type Hour = { hour: number; revenue: number; tickets: number };
 
@@ -12,12 +13,6 @@ export function niceMax(v: number): number {
   const p = 10 ** Math.floor(Math.log10(v));
   for (const m of [1, 2, 2.5, 5, 10]) if (v <= m * p) return m * p;
   return 10 * p;
-}
-
-function short(v: number): string {
-  if (v >= 1_000_000) return `${+(v / 1_000_000).toFixed(1)}M`;
-  if (v >= 1000) return `${+(v / 1000).toFixed(0)}K`;
-  return String(v);
 }
 
 /** Revenue per Ulaanbaatar hour. The current hour is drawn at full strength, the rest muted. */
@@ -50,11 +45,11 @@ export function HourlyChart({ hours, nowHour }: { hours: Hour[]; nowHour: number
               x2={W - PAD.r}
               y1={y}
               y2={y}
-              stroke="rgb(255 255 255 / 0.07)"
+              className="stroke-hairline"
               strokeDasharray={t === 0 ? undefined : '2 4'}
             />
-            <text x={PAD.l - 8} y={y + 4} textAnchor="end" fontSize="11" fill="#8E8E93">
-              {short(max * t)}
+            <text x={PAD.l - 8} y={y + 4} textAnchor="end" fontSize="11" className="fill-muted">
+              {compact(max * t)}
             </text>
           </g>
         );
@@ -71,10 +66,10 @@ export function HourlyChart({ hours, nowHour }: { hours: Hour[]; nowHour: number
               width={barW}
               height={Math.max(bh, h.revenue > 0 ? 2 : 0)}
               rx={4}
-              fill="#30C46B"
+              className="fill-hue-green"
               opacity={live ? 1 : 0.55}
             >
-              <title>{`${String(h.hour).padStart(2, '0')}:00 · ${mnt(h.revenue)} · ${count(h.tickets)} тасалбар`}</title>
+              <title>{`${String(h.hour).padStart(2, '0')}:00 · ${formatMnt(h.revenue)} · ${count(h.tickets)} тасалбар`}</title>
             </rect>
             {(h.hour % 3 === 0 || live) && (
               <text
@@ -82,7 +77,7 @@ export function HourlyChart({ hours, nowHour }: { hours: Hour[]; nowHour: number
                 y={H - 6}
                 textAnchor="middle"
                 fontSize="11"
-                fill={live ? '#F5F5F7' : '#8E8E93'}
+                className={live ? 'fill-ink' : 'fill-muted'}
               >
                 {String(h.hour).padStart(2, '0')}
               </text>

@@ -9,10 +9,10 @@ export const KIND_LABEL: Record<SeatKind, string> = {
 
 /** Identity colours per seat kind (blue is reserved for the selected seat). */
 export const KIND_FILL: Record<SeatKind, string> = {
-  standard: '#3A3A42',
-  premium: '#8B5CF6',
-  wheelchair: '#38BDF8',
-  blocked: '#151517',
+  standard: 'var(--color-seat)',
+  premium: 'var(--color-hue-purple)',
+  wheelchair: 'var(--color-hue-sky)',
+  blocked: 'var(--color-surface)',
 };
 
 export const KINDS: SeatKind[] = ['standard', 'premium', 'wheelchair', 'blocked'];

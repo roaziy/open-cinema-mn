@@ -1,16 +1,20 @@
+import { formatMnt } from '@open-cinema/shared';
 import type { Metadata } from 'next';
 import Link from 'next/link';
+import { redirect } from 'next/navigation';
 import { DayBars } from '@/components/charts/DayBars';
 import { BranchPills } from '@/components/dashboard/BranchPills';
 import { RankedBars } from '@/components/reports/RankedBars';
 import { buttonClass } from '@/components/ui/Button';
 import { Empty } from '@/components/ui/Empty';
 import { ErrorState } from '@/components/ui/ErrorState';
+import { Notice } from '@/components/ui/Notice';
 import { PageHeader } from '@/components/ui/PageHeader';
 import { Tabs } from '@/components/ui/Tabs';
 import { getBranches, getReport, safely } from '@/lib/admin-data';
-import { addDays, count, dayMonth, isDate, mnt, pct, todayUb, weekdayMn } from '@/lib/format';
+import { addDays, count, dayMonth, isDate, pct, todayUb, weekdayMn } from '@/lib/format';
 import { hueFor } from '@/lib/hues';
+import { isUuid } from '@/lib/ids';
 
 export const metadata: Metadata = { title: 'Тайлан' };
 
@@ -32,15 +36,22 @@ const spanDays = (from: string, to: string) =>
 export default async function ReportsPage({ searchParams }: Props) {
   const sp = await searchParams;
   const today = todayUb();
+  const badDate =
+    (sp.from !== undefined && !isDate(sp.from)) || (sp.to !== undefined && !isDate(sp.to));
   let from = isDate(sp.from) ? sp.from : addDays(today, -6);
   let to = isDate(sp.to) ? sp.to : today;
   if (from > to) [from, to] = [to, from];
   const tooLong = spanDays(from, to) > MAX_DAYS;
   const view = VIEWS.find((v) => v.key === sp.view)?.key ?? 'day';
+  const wanted = isUuid(sp.branch) ? sp.branch : undefined;
 
-  const branches = await safely(getBranches);
-  const branchId = branches?.find((b) => b.id === sp.branch)?.id;
-  const report = tooLong ? null : await safely(() => getReport({ from, to, branchId }));
+  const [branches, report] = await Promise.all([
+    safely(getBranches),
+    tooLong ? Promise.resolve(null) : safely(() => getReport({ from, to, branchId: wanted })),
+  ]);
+  const branchId = branches?.find((b) => b.id === wanted)?.id;
+  if (sp.branch && branches && !branchId)
+    redirect(`/admin/reports?from=${from}&to=${to}&view=${view}`);
 
   const url = (o: { from?: string; to?: string; view?: string }) => {
     const p = new URLSearchParams({ from: o.from ?? from, to: o.to ?? to, view: o.view ?? view });
@@ -61,6 +72,11 @@ export default async function ReportsPage({ searchParams }: Props) {
         subtitle={`${dayMonth(from)} – ${dayMonth(to)} · ${spanDays(from, to)} хоног`}
       />
 
+      {badDate && (
+        <div className="mb-4">
+          <Notice>Огнооны хэлбэр буруу байна. Боломжит огноогоор харуулж байна.</Notice>
+        </div>
+      )}
       <div className="mb-5 flex flex-wrap items-end gap-x-6 gap-y-3">
         <form method="get" action="/admin/reports" className="flex flex-wrap items-end gap-2">
           <input type="hidden" name="view" value={view} />
@@ -125,7 +141,7 @@ export default async function ReportsPage({ searchParams }: Props) {
             className="highlight grid divide-y divide-hairline rounded-panel border border-hairline bg-raised sm:grid-cols-3 sm:divide-x sm:divide-y-0"
           >
             {[
-              ['Борлуулалт', mnt(report.totals.revenue)],
+              ['Борлуулалт', formatMnt(report.totals.revenue)],
               ['Тасалбар', count(report.totals.tickets)],
               ['Суудлын дүүргэлт', pct(report.totals.occupancy)],
             ].map(([label, value]) => (
@@ -174,7 +190,7 @@ export default async function ReportsPage({ searchParams }: Props) {
                               {count(d.tickets)}
                             </td>
                             <td className="py-2 text-right font-medium text-ink tabular-nums">
-                              {mnt(d.revenue)}
+                              {formatMnt(d.revenue)}
                             </td>
                             <td className="py-2 text-right text-body tabular-nums">
                               {pct(d.occupancy)}
