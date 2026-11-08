@@ -6,7 +6,8 @@ const optional = <T extends z.ZodType>(schema: T) =>
 
 const noSlash = (v: string) => v.replace(/\/+$/, '');
 
-const DEFAULT_ADMIN_PASSWORD = 'change-me-admin';
+/** `1` / `true` switch a flag on; anything else (including unset) leaves it off. */
+const flag = z.preprocess((v) => v === '1' || v === 'true', z.boolean());
 
 const EnvSchema = z
   .object({
@@ -16,6 +17,10 @@ const EnvSchema = z
     HOST: optional(z.string()),
     PORT: z.coerce.number().int().min(1).max(65535).default(4000),
     DATABASE_URL: z.string().min(1),
+    // Database TLS: off | require (encrypted, certificate not checked) | verify (needs DATABASE_CA_FILE).
+    // Default: require in production, off otherwise.
+    DATABASE_SSL: optional(z.enum(['off', 'require', 'verify'])),
+    DATABASE_CA_FILE: optional(z.string()),
     TEST_DATABASE_URL: optional(z.string()),
     JWT_SECRET: z.string().min(8),
     QR_SECRET: z.string().min(8),
@@ -37,6 +42,10 @@ const EnvSchema = z
     SUPABASE_SERVICE_ROLE_KEY: optional(z.string()),
     SUPABASE_BUCKET: optional(z.string()),
     PAYMENT_PROVIDER: z.enum(['mock']).default('mock'),
+    // Production refuses the mock provider (anyone can mark an order paid) unless this is set.
+    ALLOW_MOCK_PAYMENTS: flag.default(false),
+    // Product name used in customer-facing text such as the invoice description.
+    APP_NAME: z.string().min(1).default('Open Cinema'),
     WALLET_PASS_TYPE_ID: optional(z.string()),
     WALLET_TEAM_ID: optional(z.string()),
     WALLET_ORG_NAME: z.string().default('Open Cinema'),
@@ -45,7 +54,7 @@ const EnvSchema = z
     WALLET_SIGNER_KEY_PASSPHRASE: optional(z.string()),
     WALLET_WWDR_PATH: optional(z.string()),
     SEED_ADMIN_EMAIL: z.string().default('admin@example.com'),
-    SEED_ADMIN_PASSWORD: z.string().min(8).default(DEFAULT_ADMIN_PASSWORD),
+    SEED_ADMIN_PASSWORD: z.string().min(8).default('change-me-admin'),
   })
   .superRefine((e, ctx) => {
     if (e.NODE_ENV === 'production') {
@@ -58,7 +67,13 @@ const EnvSchema = z
           });
         }
       }
-      if (e.BFF_SECRET !== undefined && e.BFF_SECRET.length < 32) {
+      if (e.BFF_SECRET === undefined) {
+        ctx.addIssue({
+          code: 'custom',
+          path: ['BFF_SECRET'],
+          message: 'is required in production (the same value as the admin web app)',
+        });
+      } else if (e.BFF_SECRET.length < 32) {
         ctx.addIssue({
           code: 'custom',
           path: ['BFF_SECRET'],
@@ -75,17 +90,27 @@ const EnvSchema = z
             'JWT_SECRET, QR_SECRET, LINK_SECRET and BFF_SECRET must all differ in production',
         });
       }
-      if (e.SEED_ADMIN_PASSWORD === DEFAULT_ADMIN_PASSWORD) {
+      if (e.PAYMENT_PROVIDER === 'mock' && !e.ALLOW_MOCK_PAYMENTS) {
         ctx.addIssue({
           code: 'custom',
-          path: ['SEED_ADMIN_PASSWORD'],
-          message: 'must not be the default in production',
+          path: ['ALLOW_MOCK_PAYMENTS'],
+          message:
+            'PAYMENT_PROVIDER=mock lets any customer mark an order paid; set ALLOW_MOCK_PAYMENTS=1 to run a demo in production',
         });
       }
+    }
+    if (e.DATABASE_SSL === 'verify' && e.DATABASE_CA_FILE === undefined) {
+      ctx.addIssue({
+        code: 'custom',
+        path: ['DATABASE_CA_FILE'],
+        message: 'is required when DATABASE_SSL=verify (path to the PEM certificate authority)',
+      });
     }
   })
   .transform((e) => ({
     ...e,
+    DATABASE_SSL:
+      e.DATABASE_SSL ?? (e.NODE_ENV === 'production' ? ('require' as const) : ('off' as const)),
     HOST: e.HOST ?? (e.NODE_ENV === 'production' ? '127.0.0.1' : undefined),
   }));
 

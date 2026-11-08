@@ -45,13 +45,13 @@ the screen, how much of your view it fills, and how far off-center you sit.
 **Staff web (PWA, same app)**
 
 - Scan tickets from a phone browser: admitted, repeat, already used, wrong branch, wrong day
-- Two-minute undo for a mistaken scan, per-branch scan history
+- Two-minute undo for a mistaken scan
 
 **API** (Express + TypeScript)
 
 - zod-validated requests, Drizzle ORM migrations, role checks on every route
 - OTP rate limits, admin lockout, hashed refresh tokens with rotation
-- Provider interfaces for messages (wesend.mn), storage (local or Supabase) and payments (mock)
+- Provider interfaces for messages (wesend.mn), storage (local or Supabase) and payments (mock only in v1: anyone can mark an order paid, so production refuses to start unless `ALLOW_MOCK_PAYMENTS=1`)
 
 ## Architecture
 
@@ -102,13 +102,13 @@ cd app
 npx expo run:ios
 ```
 
-**Admin web** (once `web-admin/` is present in your checkout):
+**Admin web:**
 
 ```bash
 npm -w web-admin run dev          # http://localhost:3000
 ```
 
-Sign in with `SEED_ADMIN_EMAIL` / `SEED_ADMIN_PASSWORD` from your `.env`.
+Sign in with `SEED_ADMIN_EMAIL` / `SEED_ADMIN_PASSWORD` from your `.env` (created by `npm run db:seed`, development only). On a real deployment create the first admin with `npm -w @open-cinema/backend run admin:create:prod`; see [`deploy/README.md`](deploy/README.md).
 
 **Checks**
 

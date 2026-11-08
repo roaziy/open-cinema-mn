@@ -17,6 +17,8 @@ API uses it as a plain database (no Supabase Auth, Realtime or RLS).
 | Variable | Value |
 |---|---|
 | `DATABASE_URL` | session pooler connection string, port **5432** |
+| `DATABASE_SSL` | `verify` (recommended) or `require` |
+| `DATABASE_CA_FILE` | path to Supabase's CA certificate (for `verify`) |
 | `STORAGE_PROVIDER` | `supabase` |
 | `SUPABASE_URL` | `https://<project-ref>.supabase.co` |
 | `SUPABASE_SERVICE_ROLE_KEY` | the `service_role` key (server only) |
@@ -28,8 +30,12 @@ API uses it as a plain database (no Supabase Auth, Realtime or RLS).
    `postgresql://postgres.<ref>:<password>@<pooler-host>:5432/postgres`. Use the session pooler
    (IPv4, port 5432), not the transaction pooler (6543) and not the direct host. URL-encode special
    characters in the password.
-3. Storage, New bucket, name it, switch **Public bucket** on.
-4. Project Settings, API: copy the project URL and the `service_role` key.
+3. Project Settings, Database, SSL configuration: switch on "Enforce SSL on incoming connections" and
+   download the certificate. Save it on the VPS (for example `~/secrets/supabase-ca.crt`, mode 600),
+   set `DATABASE_CA_FILE` to its path and `DATABASE_SSL=verify`. `require` also encrypts but does not
+   check the certificate.
+4. Storage, New bucket, name it, switch **Public bucket** on.
+5. Project Settings, API: copy the project URL and the `service_role` key.
 
 **Verify.**
 ```bash
@@ -150,44 +156,45 @@ Use a different value for each:
 openssl rand -base64 48
 ```
 In production the API refuses to start unless `JWT_SECRET`, `QR_SECRET`, `LINK_SECRET` and
-`BFF_SECRET` (when set) are at least 32 characters; `openssl rand -base64 48` gives 64.
+`BFF_SECRET` are at least 32 characters; `openssl rand -base64 48` gives 64.
 
 **Verify.** `pm2 logs open-cinema-api` shows a validation error if a secret is missing or too short. After setting them, sign in
 to the admin web app and scan a test ticket.
 
 **Rotate / revoke.** Changing `JWT_SECRET` signs everybody out. Changing `QR_SECRET` invalidates
-printed or saved QR codes (the app fetches fresh ones; do it when no show is about to start).
+printed or saved QR codes (the app fetches fresh ones; do it when no show is about to start). It also
+derives the short check codes used for manual entry, so those change too.
 Changing `LINK_SECRET` breaks already shared ticket and pass links. Changing `BFF_SECRET` means
 updating the VPS and the Vercel project together, then redeploying both.
 
-## 5. Seed admin
+## 5. First admin
 
-**What it is.** The first administrator, created by `db:seed`.
+**What it is.** The first administrator, created by a script that never touches other data.
 
-| Variable | Value |
-|---|---|
-| `SEED_ADMIN_EMAIL` | your admin email |
-| `SEED_ADMIN_PASSWORD` | a strong unique password (the API refuses the example default in production) |
-
-**Obtain.** Set both, then `npm -w @open-cinema/backend run db:seed`. The seed also loads the
-fictional demo cinemas and films; remove or edit them in the admin app for a real launch.
+**Obtain.** On the VPS, after the migrations:
+```bash
+npm -w @open-cinema/backend run admin:create:prod -- --email you@example.com --name "Your Name"
+```
+It asks for the password twice without echoing it. For a scripted setup set `ADMIN_PASSWORD`
+instead. It refuses to overwrite an existing admin. The demo seed (`db:seed`) is for development
+only and refuses to run in production.
 
 **Verify.** Sign in to the admin web app with that email and password.
 
-**Rotate / revoke.** Change the password from the admin app. Keep `SEED_ADMIN_PASSWORD` in `.env` set to
-any non-default value: in production the API refuses to start while it is the example default.
+**Rotate / revoke.** Change the password in the admin app (gear icon next to your name); this signs
+out every other device. A lost password: run the command again with `--reset-password`.
 
 ## Go-live checklist
 
 - [ ] `NODE_ENV=production`, `API_PUBLIC_URL`, `WEB_PUBLIC_URL`, `CORS_ORIGINS` use the real https domains
-- [ ] `DATABASE_URL` is the Supabase session pooler (port 5432); migrations applied
+- [ ] `DATABASE_URL` is the Supabase session pooler (port 5432); `DATABASE_SSL=verify` with the CA file; migrations applied
 - [ ] `JWT_SECRET`, `QR_SECRET`, `LINK_SECRET`, `BFF_SECRET` are four different random values
 - [ ] Same `BFF_SECRET` and `API_INTERNAL_URL` set in the Vercel project
 - [ ] `TRUST_PROXY=1` behind the reverse proxy and `HOST` unset (binds `127.0.0.1`); port 4000 is not reachable from outside; no startup warning in the log
 - [ ] `MESSAGES_PROVIDER=wesend` with a live key; a real code was received
 - [ ] `STORAGE_PROVIDER=supabase`; a poster upload loads from its public URL
 - [ ] Wallet certificates in `~/secrets/wallet` with mode 600 (or Wallet intentionally off)
-- [ ] Seed admin signed in and password changed; `SEED_ADMIN_PASSWORD` in `.env` is not the example default
+- [ ] First admin created with `admin:create:prod`, signed in, password changed
 - [ ] `.env` is mode 600 and not in git; `git log -p -- .env` is empty
 - [ ] `pm2 save` done, boot start verified (`pm2 startup` or the `@reboot` crontab)
 - [ ] `https://cinema-api.roaziy.cloud/v1/health` answers; live seat updates work through the proxy

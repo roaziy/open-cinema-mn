@@ -54,19 +54,35 @@ nano .env
 
 Set at least these for production (every variable is described in `.env.example`):
 
-| Variable                                  | Value                                                                                      |
-| ----------------------------------------- | ------------------------------------------------------------------------------------------ |
-| `NODE_ENV`                                | `production` (pm2 also sets it)                                                            |
-| `HOST`                                    | leave unset (binds `127.0.0.1` in production); never `0.0.0.0` behind the proxy            |
-| `PORT`                                    | `4000` (any free port; keep the proxy in step)                                             |
-| `DATABASE_URL`                            | the Supabase **session pooler** URL, port 5432                                             |
-| `JWT_SECRET`, `QR_SECRET`, `LINK_SECRET`  | three different random strings of 32+ characters (`openssl rand -base64 48`)               |
-| `BFF_SECRET`                              | random, 32+ characters; the same value goes into the Vercel project                        |
-| `API_PUBLIC_URL`                          | `https://cinema-api.roaziy.cloud`                                                          |
-| `WEB_PUBLIC_URL`                          | `https://cinema.roaziy.cloud`                                                              |
-| `CORS_ORIGINS`                            | `https://cinema.roaziy.cloud`                                                              |
-| `TRUST_PROXY`                             | `1` when the API sits behind one reverse proxy (see 1.5)                                   |
-| `SEED_ADMIN_EMAIL`, `SEED_ADMIN_PASSWORD` | the first admin account (the API refuses to start in production with the example password) |
+| Variable                                 | Value                                                                                    |
+| ---------------------------------------- | ---------------------------------------------------------------------------------------- |
+| `NODE_ENV`                               | `production` (pm2 also sets it)                                                          |
+| `HOST`                                   | leave unset (binds `127.0.0.1` in production); never `0.0.0.0` behind the proxy          |
+| `PORT`                                   | `4000` (any free port; keep the proxy in step)                                           |
+| `DATABASE_URL`                           | the Supabase **session pooler** URL, port 5432                                           |
+| `JWT_SECRET`, `QR_SECRET`, `LINK_SECRET` | three different random strings of 32+ characters (`openssl rand -base64 48`)             |
+| `BFF_SECRET`                             | random, 32+ characters, required; the same value goes into the Vercel project            |
+| `DATABASE_SSL`                           | `verify` with `DATABASE_CA_FILE` (recommended), or `require`; see 1.2.1                  |
+| `ALLOW_MOCK_PAYMENTS`                    | `1`: v1 has only the mock payment provider, which production refuses without this opt-in |
+| `APP_NAME`                               | optional product name shown to customers (default `Open Cinema`)                         |
+| `API_PUBLIC_URL`                         | `https://cinema-api.roaziy.cloud`                                                        |
+| `WEB_PUBLIC_URL`                         | `https://cinema.roaziy.cloud`                                                            |
+| `CORS_ORIGINS`                           | `https://cinema.roaziy.cloud`                                                            |
+| `TRUST_PROXY`                            | `1` when the API sits behind one reverse proxy (see 1.5)                                 |
+
+#### 1.2.1 Database TLS
+
+`DATABASE_SSL` controls the connection to Supabase (a `sslmode` in the URL is ignored):
+
+- `verify` (recommended): encrypted and the server certificate is checked against
+  `DATABASE_CA_FILE`. Download the CA from Supabase, Project Settings, Database, SSL configuration,
+  "Download certificate", copy it to the VPS (for example `~/secrets/supabase-ca.crt`, mode 600) and
+  set `DATABASE_CA_FILE` to that path.
+- `require` (the production default): encrypted, but the certificate is not checked, so it does not
+  stop an active attacker. Fine to get started.
+- `off`: plaintext. Local development only (the default outside production).
+
+Also switch on "Enforce SSL on incoming connections" in the same Supabase page.
 
 The API reads `.env` from the repository root (pm2 passes `--env-file-if-exists=../.env` to node).
 Variables already set in the environment win over the file.
@@ -74,15 +90,23 @@ Variables already set in the environment win over the file.
 ### 1.3 Build, migrate, start
 
 ```bash
-npm -w @open-cinema/backend run build        # backend/dist/index.js + dist/migrate.js
+npm -w @open-cinema/backend run build        # backend/dist/index.js, dist/migrate.js, dist/admin-create.js
 npm -w @open-cinema/backend run db:migrate:prod
-# first deploy only: demo data and the admin account (uses tsx, installed by npm ci)
-npm -w @open-cinema/backend run db:seed
+# first deploy only: the first admin account (asks for the password without echoing it)
+npm -w @open-cinema/backend run admin:create:prod -- --email you@example.com --name "Your Name"
 
 pm2 start backend/ecosystem.config.cjs
 pm2 save
 curl -s http://127.0.0.1:4000/v1/health      # {"ok":true,"db":true}
 ```
+
+`admin:create:prod` never touches other data. For a scripted setup pass the password in
+`ADMIN_PASSWORD` instead of typing it. It refuses to overwrite an existing admin; to recover a lost
+password run it again with `--reset-password` (this also clears a lockout). The admin changes the
+password later from the gear icon next to their name in the admin app.
+
+Demo data (fictional cinemas and films) is for development only: `db:seed` refuses to run with
+`NODE_ENV=production` and truncates every table, so never use it on a live database.
 
 The build bundles the API with esbuild into `backend/dist/index.js` (shared code inlined, other
 packages loaded from `node_modules`). `db:migrate:prod` runs the bundled `dist/migrate.js` with plain
@@ -195,6 +219,11 @@ pm2 startOrReload backend/ecosystem.config.cjs
 curl -s http://127.0.0.1:4000/v1/health
 ```
 
+**Deploy order.** Always release the API first, then the admin web (Vercel), then rebuild the
+device app. The clients validate responses strictly, so a client that expects a field the API does
+not send yet shows an error instead of the screen. New fields therefore ship in the API one release
+before any client requires them.
+
 What this guarantees:
 
 - **No half-built tree.** The build writes `backend/dist.next/`, then renames `dist` to `dist.old`
@@ -281,6 +310,7 @@ The admin web app (`web-admin/`, Next.js) is deployed from the same repository a
    | ------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
    | `API_INTERNAL_URL`  | `https://cinema-api.roaziy.cloud`                                                                                                                                                            |
    | `BFF_SECRET`        | the same value as on the VPS                                                                                                                                                                 |
+   | `APP_NAME`          | optional product name (default `Open Cinema`)                                                                                                                                                |
    | `ADMIN_FONT_DIR`    | leave unset on Vercel (licensed fonts are never committed; the app falls back to Onest)                                                                                                      |
    | `WALLET_BADGE_FILE` | set to `1` only after you put Apple's "Add to Apple Wallet" artwork at `web-admin/public/wallet-badge-mn.svg` (Apple's licence applies; until then the guest page shows a plain text button) |
 
@@ -294,8 +324,12 @@ The admin web app (`web-admin/`, Next.js) is deployed from the same repository a
 6. Domain: add `cinema.roaziy.cloud` under Project, Settings, Domains and create the DNS record
    Vercel shows. The same hostname goes into `WEB_PUBLIC_URL` and `CORS_ORIGINS` on the VPS.
 
-After the first deploy, open `https://cinema.roaziy.cloud`, sign in with `SEED_ADMIN_EMAIL` and
-change the password.
+After the first deploy, open `https://cinema.roaziy.cloud` and sign in with the account you created
+in 1.3. Change the password under the gear icon next to your name.
+
+Poster uploads travel through a Vercel Function, which rejects request bodies over 4.5 MB. The
+admin app therefore shrinks a picture in the browser (longest side 2400 px, re-encoded as WebP or
+JPEG) before sending it, and refuses a file that is still over 4 MB.
 
 ## 3. Customer app
 
@@ -307,3 +341,10 @@ EXPO_PUBLIC_API_URL=https://cinema-api.roaziy.cloud npx expo run:ios --device
 ```
 
 `EXPO_PUBLIC_API_URL` is baked in at build time; change it and rebuild to point somewhere else.
+
+## 4. CI notes
+
+`.github/workflows/ci.yml` runs typecheck, lint, tests, the production build and a secret scan
+(gitleaks). While the repository belongs to a personal account the scan needs nothing. If it moves
+to a GitHub organization, `gitleaks-action` requires a licence key: add it as the repository secret
+`GITLEAKS_LICENSE` (free for open-source use at gitleaks.io), or the job fails.

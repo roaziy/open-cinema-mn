@@ -45,7 +45,7 @@ jobs:
         run: npm run typecheck
       - name: Lint (biome)
         run: npm run lint
-      - name: Tests (shared, backend, web-admin when present)
+      - name: Tests (shared, backend, web-admin, app)
         run: npm test
       - name: Backend production build
         run: npm -w @open-cinema/backend run build
@@ -59,12 +59,14 @@ jobs:
           QR_SECRET: ci-qr-secret-0123456789-abcdefghijklmnopq
           LINK_SECRET: ci-link-secret-0123456789-abcdefghijklmn
           BFF_SECRET: ci-bff-secret-0123456789-abcdefghijklmno
-          SEED_ADMIN_PASSWORD: ci-admin-password-not-default
+          ALLOW_MOCK_PAYMENTS: 1
+          DATABASE_SSL: off
           TRUST_PROXY: 1
         run: |
           set -e
           cd backend
           npm run db:migrate:prod
+          ADMIN_PASSWORD=ci-admin-password-1 node dist/admin-create.js --email ci@example.com
           node dist/index.js &
           pid=$!
           for _ in $(seq 1 20); do
@@ -78,11 +80,9 @@ jobs:
           kill "$pid" || true
           exit 1
       - name: App lint (expo)
-        if: hashFiles('app/package.json') != ''
         working-directory: app
         run: npx expo lint
       - name: Web admin build
-        if: hashFiles('web-admin/package.json') != ''
         run: npm run build --workspace web-admin --if-present
         env:
           API_INTERNAL_URL: http://localhost:4000

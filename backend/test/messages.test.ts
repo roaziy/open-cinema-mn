@@ -150,7 +150,8 @@ describe('env hardening', () => {
     JWT_SECRET: 'j'.repeat(32),
     QR_SECRET: 'q'.repeat(32),
     LINK_SECRET: 'l'.repeat(32),
-    SEED_ADMIN_PASSWORD: 'a-real-password',
+    BFF_SECRET: 'b'.repeat(32),
+    ALLOW_MOCK_PAYMENTS: '1',
   };
 
   it('accepts a strong production config', () => {
@@ -179,12 +180,36 @@ describe('env hardening', () => {
     expect(parseEnv({ ...base, HOST: '' }).HOST).toBe('127.0.0.1');
   });
 
-  it('rejects the default admin password in production', () => {
-    expect(() => parseEnv({ ...base, SEED_ADMIN_PASSWORD: 'change-me-admin' })).toThrow(
-      /SEED_ADMIN_PASSWORD/,
-    );
-    const { SEED_ADMIN_PASSWORD: _omit, ...noPassword } = base;
-    expect(() => parseEnv(noPassword)).toThrow(/SEED_ADMIN_PASSWORD/);
+  it('requires BFF_SECRET in production only', () => {
+    const { BFF_SECRET: _omit, ...noBff } = base;
+    expect(() => parseEnv(noBff)).toThrow(/BFF_SECRET/);
+    expect(() => parseEnv({ ...noBff, BFF_SECRET: '' })).toThrow(/BFF_SECRET/);
+    expect(() => parseEnv({ ...noBff, BFF_SECRET: 'short' })).toThrow(/BFF_SECRET/);
+    expect(() => parseEnv({ ...noBff, NODE_ENV: 'development' })).not.toThrow();
+  });
+
+  it('defaults DATABASE_SSL to require in production and off otherwise', () => {
+    expect(parseEnv(base).DATABASE_SSL).toBe('require');
+    expect(parseEnv({ ...base, NODE_ENV: 'development' }).DATABASE_SSL).toBe('off');
+    expect(parseEnv({ ...base, DATABASE_SSL: 'off' }).DATABASE_SSL).toBe('off');
+    expect(() => parseEnv({ ...base, DATABASE_SSL: 'maybe' })).toThrow(/DATABASE_SSL/);
+  });
+
+  it('verify needs a CA file', () => {
+    expect(() => parseEnv({ ...base, DATABASE_SSL: 'verify' })).toThrow(/DATABASE_CA_FILE/);
+    expect(
+      parseEnv({ ...base, DATABASE_SSL: 'verify', DATABASE_CA_FILE: '/etc/ca.pem' })
+        .DATABASE_CA_FILE,
+    ).toBe('/etc/ca.pem');
+  });
+
+  it('refuses mock payments in production unless explicitly allowed', () => {
+    const { ALLOW_MOCK_PAYMENTS: _omit, ...strict } = base;
+    expect(() => parseEnv(strict)).toThrow(/ALLOW_MOCK_PAYMENTS/);
+    expect(parseEnv(base).ALLOW_MOCK_PAYMENTS).toBe(true);
+    expect(() =>
+      parseEnv({ ...base, NODE_ENV: 'development', PAYMENT_PROVIDER: 'mock' }),
+    ).not.toThrow();
   });
 
   it('createMessages refuses wesend without an api key', async () => {
