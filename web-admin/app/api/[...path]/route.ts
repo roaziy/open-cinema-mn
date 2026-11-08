@@ -13,6 +13,7 @@ import { readCapped } from '@/lib/body-limit';
 import { isSameOrigin } from '@/lib/csrf';
 import { apiUrl } from '@/lib/env';
 import { upstreamPath } from '@/lib/proxy-path';
+import { isTimeout, upstreamTimeoutMs } from '@/lib/upstream';
 
 /**
  * Backend-for-frontend proxy for client components: `/api/<path>` -> `API_INTERNAL_URL/v1/<path>`.
@@ -58,6 +59,7 @@ async function handle(req: NextRequest, { params }: Ctx): Promise<Response> {
   const target = upstreamPath(path);
   if (!target) return json(404, 'not_found');
   const url = `${apiUrl()}${target}${req.nextUrl.search}`;
+  const timeout = upstreamTimeoutMs(target);
 
   const forwarded = new Headers();
   for (const name of FORWARD_REQUEST) {
@@ -79,7 +81,7 @@ async function handle(req: NextRequest, { params }: Ctx): Promise<Response> {
       body,
       cache: 'no-store',
       redirect: 'manual',
-      signal: req.signal,
+      signal: AbortSignal.any([req.signal, AbortSignal.timeout(timeout)]),
     });
   };
 
@@ -117,8 +119,9 @@ async function handle(req: NextRequest, { params }: Ctx): Promise<Response> {
     if (next) setAuthCookies(res.cookies, next, readClaims(next.accessToken)?.exp);
     if (expired && upstream.status === 401) clearAuthCookies(res.cookies);
     return res;
-  } catch {
+  } catch (err) {
     if (req.signal.aborted) return new Response(null, { status: 499 });
+    if (isTimeout(err)) return json(504, 'upstream_timeout');
     return json(502, 'upstream_unavailable');
   }
 }

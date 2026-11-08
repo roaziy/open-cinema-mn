@@ -1,20 +1,15 @@
-import { existsSync } from 'node:fs';
-import { join } from 'node:path';
-
 /**
  * Apple's official "Add to Apple Wallet" artwork may only be used unmodified and under Apple's
  * licence, so it is never drawn here: the operator drops the file they were given at
- * `public/wallet-badge-mn.svg`. Until then this is a plain text button.
+ * `public/wallet-badge-mn.svg` and sets `WALLET_BADGE_FILE=1`. Until then this is a plain text button.
  */
 const BADGE = 'wallet-badge-mn.svg';
 
-function hasBadge(): boolean {
-  try {
-    return existsSync(join(process.cwd(), 'public', BADGE));
-  } catch {
-    return false;
-  }
-}
+/**
+ * Set `WALLET_BADGE_FILE=1` once the file is in `public/`. It is a flag, not a file check at
+ * request time, because hosts such as Vercel do not ship `public/` to the server's filesystem.
+ */
+const hasBadge = (): boolean => process.env.WALLET_BADGE_FILE === '1';
 
 export function WalletButton({ href }: { href: string }) {
   const label = 'Apple Wallet-д нэмэх';
