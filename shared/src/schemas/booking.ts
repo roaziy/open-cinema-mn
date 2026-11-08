@@ -34,6 +34,7 @@ export type BookingStatus = z.infer<typeof BookingStatusSchema>;
 
 export const BookingViewSchema = z.object({
   id: z.string(),
+  orderNo: z.string(),
   status: BookingStatusSchema,
   total: z.number().int(),
   expiresAt: z.string(),

@@ -8,6 +8,7 @@ import {
   integer,
   jsonb,
   pgEnum,
+  pgSequence,
   pgTable,
   text,
   timestamp,
@@ -43,6 +44,9 @@ export const scanResult = pgEnum('scan_result', [
   'invalid',
   'undone',
 ]);
+
+/** Human-facing order numbers: OC-10000, OC-10001, ... */
+export const bookingOrderSeq = pgSequence('booking_order_seq', { startWith: 10000 });
 
 export const branches = pgTable('branches', {
   id: id(),
@@ -193,12 +197,16 @@ export const bookings = pgTable(
     total: integer('total').notNull(),
     contactEmail: text('contact_email'),
     idempotencyKey: uuid('idempotency_key').notNull(),
+    orderNo: text('order_no').notNull().default(sql`'OC-' || nextval('booking_order_seq')`),
+    // The seats this booking is for; the holds disappear on confirm, this record stays.
+    seatIds: uuid('seat_ids').array().notNull().default(sql`'{}'::uuid[]`),
     expiresAt: ts('expires_at'),
     seatsLost: boolean('seats_lost').notNull().default(false),
     createdAt: createdAt(),
   },
   (t) => [
     uniqueIndex('bookings_idempotency_key_unique').on(t.idempotencyKey),
+    uniqueIndex('bookings_order_no_unique').on(t.orderNo),
     index('bookings_user_idx').on(t.userId),
     index('bookings_status_expires_idx').on(t.status, t.expiresAt),
   ],

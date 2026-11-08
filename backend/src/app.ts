@@ -11,6 +11,7 @@ import { SeatHub } from './lib/seat-hub';
 import { createMessages, type Messages } from './messages';
 import { createPayments, type PaymentProvider } from './payments/provider';
 import { createAuthRouter } from './routes/auth';
+import { createBookingsRouter } from './routes/bookings';
 import { createCatalogRouter } from './routes/catalog';
 import { createHoldsRouter } from './routes/holds';
 import { createStorage, type StorageProvider, UPLOAD_DIR } from './storage';
@@ -24,15 +25,22 @@ export type AppDeps = {
   seatHub: SeatHub;
 };
 
-export function createApp(over: Partial<AppDeps> = {}): Express {
+export function createDeps(over: Partial<AppDeps> = {}): AppDeps {
+  const db = over.db ?? defaultDb;
+  const clock = over.clock ?? (() => new Date());
   const deps: AppDeps = {
-    db: over.db ?? defaultDb,
+    db,
     messages: over.messages ?? createMessages(),
-    payments: over.payments ?? createPayments(),
+    payments: over.payments ?? createPayments(db, clock),
     storage: over.storage ?? createStorage(),
-    clock: over.clock ?? (() => new Date()),
+    clock,
     seatHub: over.seatHub ?? new SeatHub(),
   };
+  return deps;
+}
+
+export function createApp(over: Partial<AppDeps> = {}): Express {
+  const deps = createDeps(over);
 
   const app = express();
   app.disable('x-powered-by');
@@ -61,6 +69,7 @@ export function createApp(over: Partial<AppDeps> = {}): Express {
   v1.use(createAuthRouter(deps, createLimiters()));
   v1.use(createCatalogRouter(deps));
   v1.use(createHoldsRouter(deps));
+  v1.use(createBookingsRouter(deps));
   app.use('/v1', v1);
 
   app.use((_req, res) => {

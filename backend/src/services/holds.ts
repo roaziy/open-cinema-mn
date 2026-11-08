@@ -2,7 +2,7 @@ import type { Hold, SeatDelta } from '@open-cinema/shared';
 import { and, count, eq, gt, inArray, lte, ne, sql } from 'drizzle-orm';
 import type { Db } from '../db/client';
 import { seatHolds, seats, showtimes, tickets } from '../db/schema';
-import { AppError, badRequest, isUniqueViolation, notFound } from '../lib/errors';
+import { AppError, badRequest, conflict, isUniqueViolation, notFound } from '../lib/errors';
 
 export const HOLD_TTL_MS = 10 * 60_000;
 export const MAX_SEATS_PER_BOOKING = 10;
@@ -81,12 +81,12 @@ const isDeadlock = (err: unknown): boolean => {
 };
 
 /** Serialises all hold changes of one user on one showtime (cap check, re-hold, release). */
-const lockUserShowtime = (tx: Tx, userId: string, showtimeId: string) =>
+export const lockUserShowtime = (tx: Tx, userId: string, showtimeId: string) =>
   tx.execute(
     sql`select pg_advisory_xact_lock(hashtextextended(${userId} || ':' || ${showtimeId}, 0))`,
   );
 
-type Tx = Parameters<Parameters<Db['transaction']>[0]>[0];
+export type Tx = Parameters<Parameters<Db['transaction']>[0]>[0];
 
 async function holdInTransaction(
   tx: Tx,
@@ -211,9 +211,14 @@ export async function releaseHold(
   return db.transaction(async (tx) => {
     await lockUserShowtime(tx, userId, found.showtimeId);
     const [row] = await tx
-      .delete(seatHolds)
+      .select()
+      .from(seatHolds)
       .where(and(eq(seatHolds.id, holdId), eq(seatHolds.userId, userId)))
-      .returning();
-    return row ? { showtimeId: row.showtimeId, seatId: row.seatId } : null;
+      .for('update');
+    if (!row) return null;
+    // A hold that backs a booking is released by that booking's confirm, failure or expiry.
+    if (row.bookingId) throw conflict('hold_in_booking');
+    await tx.delete(seatHolds).where(eq(seatHolds.id, holdId));
+    return { showtimeId: row.showtimeId, seatId: row.seatId };
   });
 }
