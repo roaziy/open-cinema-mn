@@ -1,4 +1,5 @@
 import { z } from 'zod';
+import { avoidOrange } from '../palette';
 
 export const SeatKindSchema = z.enum(['standard', 'premium', 'wheelchair', 'blocked']);
 export type SeatKind = z.infer<typeof SeatKindSchema>;
@@ -20,6 +21,8 @@ export type HallGenParams = z.infer<typeof HallGenParams>;
 
 const Uuid = z.string().uuid();
 const Hex = z.string().regex(/^#[0-9a-fA-F]{6}$/);
+/** A film tone: whatever is typed, it is stored without orange. */
+const Tone = Hex.transform(avoidOrange);
 const IsoInstant = z.string().datetime({ offset: true });
 /** Ulaanbaatar calendar date, YYYY-MM-DD. */
 export const UbDate = z
@@ -111,7 +114,7 @@ export const AdminMovieBody = z.object({
   posterUrl: HttpUrl,
   backdropUrl: HttpUrl.nullable().default(null),
   trailerUrl: HttpUrl.nullable().default(null),
-  tone: Hex.default('#2E6BF0'),
+  tone: Tone.default('#2E6BF0'),
   releaseDate: UbDate,
   status: z.enum(['now', 'soon', 'archived']).default('soon'),
 });
@@ -127,7 +130,7 @@ export const AdminMoviePatch = z
     posterUrl: HttpUrl,
     backdropUrl: HttpUrl.nullable(),
     trailerUrl: HttpUrl.nullable(),
-    tone: Hex,
+    tone: Tone,
     releaseDate: UbDate,
     status: z.enum(['now', 'soon', 'archived']),
   })
