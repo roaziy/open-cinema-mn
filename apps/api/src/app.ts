@@ -6,8 +6,10 @@ import { ZodError } from 'zod';
 import { type Db, db as defaultDb } from './db/client';
 import { env } from './env';
 import { AppError } from './lib/errors';
+import { createLimiters } from './lib/rate-limit';
 import { createMessages, type Messages } from './messages';
 import { createPayments, type PaymentProvider } from './payments/provider';
+import { createAuthRouter } from './routes/auth';
 import { createStorage, type StorageProvider, UPLOAD_DIR } from './storage';
 
 export type AppDeps = {
@@ -51,6 +53,7 @@ export function createApp(over: Partial<AppDeps> = {}): Express {
       res.status(503).json({ ok: false, db: false });
     }
   });
+  v1.use(createAuthRouter(deps, createLimiters()));
   app.use('/v1', v1);
 
   app.use((_req, res) => {
