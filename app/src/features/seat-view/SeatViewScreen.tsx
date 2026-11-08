@@ -1,6 +1,6 @@
 import { type SeatState, seatViewStats } from '@open-cinema/shared';
 import { Stack, useLocalSearchParams } from 'expo-router';
-import { lazy, Suspense, useEffect, useMemo, useState } from 'react';
+import { lazy, Suspense, useCallback, useEffect, useMemo, useState } from 'react';
 import {
   ActivityIndicator,
   ScrollView,
@@ -85,10 +85,19 @@ export function SeatViewScreen() {
   );
 
   // Watchdog: the first frame must land soon after the canvas mounts, or fall back to 2D.
-  const canvasMounted = !!data && !!current && gl === 'loading';
+  const [canvasMounted, setCanvasMounted] = useState(false);
+  const onMount = useCallback(() => setCanvasMounted(true), []);
   useEffect(() => {
     if (!canvasMounted) return;
-    const timer = setTimeout(() => setGl((s) => (s === 'loading' ? 'failed' : s)), WATCHDOG_MS);
+    const timer = setTimeout(
+      () =>
+        setGl((s) => {
+          if (s !== 'loading') return s;
+          if (__DEV__) console.warn('[seat-view] 2D fallback: watchdog, no frame within 3 s');
+          return 'failed';
+        }),
+      WATCHDOG_MS,
+    );
     return () => clearTimeout(timer);
   }, [canvasMounted]);
 
@@ -193,7 +202,12 @@ export function SeatViewScreen() {
     <View style={styles.root}>
       {header}
       <View style={styles.canvas}>
-        <GlBoundary onError={() => setGl('failed')}>
+        <GlBoundary
+          onError={(e) => {
+            if (__DEV__) console.warn('[seat-view] 2D fallback: render/import error', String(e));
+            setGl('failed');
+          }}
+        >
           <Suspense fallback={null}>
             <Hall3D
               seats={data.seats}
@@ -204,6 +218,7 @@ export function SeatViewScreen() {
               currentId={current.id}
               reduceMotion={reduceMotion}
               hold={__DEV__ && hold === '1'}
+              onMount={onMount}
               onReady={() => setGl('ready')}
             />
           </Suspense>
