@@ -8,6 +8,7 @@ import { IconTile } from '@/components/icon-tile';
 import { Pressable } from '@/components/pressable';
 import { useI18n } from '@/i18n';
 import { getContactEmail, setContactEmail } from '@/lib/checkout-store';
+import { confirmGuestLogin } from '@/lib/guest-login';
 import { formatCountdown, liveHolds, useCountdown, useMyHolds } from '@/lib/seats';
 import { colors, hues, radius, space } from '@/theme/tokens';
 import { fonts, type } from '@/theme/type';
@@ -38,6 +39,7 @@ export default function GateScreen() {
 
   const [email, setEmail] = useState(() => getContactEmail(id) ?? '');
   const [touched, setTouched] = useState(false);
+  const [checkingLogin, setCheckingLogin] = useState(false);
   const normalized = normalizeEmail(email);
   const invalid = touched && !normalized;
 
@@ -72,10 +74,18 @@ export default function GateScreen() {
         </View>
 
         <Pressable
-          style={[styles.loginCard, closed && styles.disabled]}
-          disabled={closed}
-          accessibilityState={{ disabled: closed }}
-          onPress={() => router.push(`/login?showtimeId=${id}&next=checkout`)}
+          style={[styles.loginCard, (closed || checkingLogin) && styles.disabled]}
+          disabled={closed || checkingLogin}
+          accessibilityState={{ disabled: closed || checkingLogin, busy: checkingLogin }}
+          onPress={async () => {
+            if (checkingLogin) return;
+            setCheckingLogin(true);
+            try {
+              if (await confirmGuestLogin(t)) router.push(`/login?showtimeId=${id}&next=checkout`);
+            } finally {
+              setCheckingLogin(false);
+            }
+          }}
           accessibilityRole="button"
         >
           <IconTile sf="person.crop.circle.fill" phosphor={SignIn} hue={hues.purple} size={40} />
