@@ -6,9 +6,10 @@ import { useEffect } from 'react';
 import { GestureHandlerRootView } from 'react-native-gesture-handler';
 import { ToastHost } from '@/components/toast-host';
 import { hydrateLocale, useI18n } from '@/i18n';
-import { hydrateAuth } from '@/lib/auth';
+import { getUserId, hydrateAuth } from '@/lib/auth';
 import { hydrateBranch } from '@/lib/branch';
 import { queryClient } from '@/lib/queries';
+import { sweepTicketCache } from '@/lib/ticket-cache';
 import { colors } from '@/theme/tokens';
 import { fonts } from '@/theme/type';
 
@@ -32,6 +33,8 @@ export default function RootLayout() {
   const { t } = useI18n();
 
   useEffect(() => {
+    // Auth known: drop stored tickets of any other account (or all of them with no session).
+    hydrateAuth().then(() => sweepTicketCache(getUserId()));
     Promise.all([hydrateAuth(), hydrateLocale(), hydrateBranch()]).finally(() => {
       SplashScreen.hideAsync().catch(() => {});
     });
