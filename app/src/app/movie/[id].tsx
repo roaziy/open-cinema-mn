@@ -24,8 +24,8 @@ export default function MovieScreen() {
   const { id } = useLocalSearchParams<{ id: string }>();
   const movie = useMovie(id);
   const days = useMemo(() => nextUbDays(7), []);
-  // "From" price: cheapest bookable slot across the loaded week; only for films already showing.
-  const fromPrice = useFromPrice(id, days, movie.data?.status === 'now');
+  // "From" price: cheapest bookable slot across the loaded week (also covers presale for soon films).
+  const fromPrice = useFromPrice(id, days, movie.isSuccess);
 
   const back = (
     <Pressable
@@ -128,7 +128,7 @@ export default function MovieScreen() {
       <View style={[styles.cta, { bottom: insets.bottom + space.sm }]} pointerEvents="box-none">
         <GlassBar>
           <View style={styles.ctaRow}>
-            {m.status === 'soon' ? (
+            {m.status === 'soon' && fromPrice === null ? (
               <Text style={styles.soon}>
                 {t('home.opens', { date: formatMonthDay(m.releaseDate, locale) })}
               </Text>

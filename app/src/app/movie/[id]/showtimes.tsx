@@ -72,6 +72,7 @@ export default function ShowtimesScreen() {
           <PosterBackdrop
             uri={movie.data.backdropUrl ?? movie.data.posterUrl}
             tone={movie.data.tone}
+            fadeHeight={160}
           />
           <Poster uri={movie.data.posterUrl} width={60} radius={10} />
           <View style={styles.filmText}>
