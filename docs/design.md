@@ -81,7 +81,7 @@ packages/shared zod schemas + inferred types used by all three apps
 | Web | Next.js App Router, PWA manifest + service worker, `barcode-detector` polyfill for QR scanning (iOS Safari ships the native API disabled) |
 | API | Express + TypeScript **(owner)**, zod request validation, Drizzle ORM **(builder call)**, Server-Sent Events for live seats, `passkit-generator` |
 | DB | PostgreSQL hosted on Supabase **(owner)**, used as a plain database (no Supabase Auth, Realtime or RLS). The API connects through the Supavisor **session pooler** (IPv4). Migrations live in the repo. |
-| Hosting | The owner's VPS: Docker Compose (api, admin) behind Caddy (automatic HTTPS) **(owner: VPS; builder call: Compose/Caddy)**. Domains `cinema.roaziy.cloud` (admin app) and `cinema-api.roaziy.cloud` (API), kept single-level so the `*.roaziy.cloud` wildcard certificate covers them. A nightly `pg_dump` runs from the VPS. |
+| Hosting | **Backend** on a VPS the owner can use but does not administer (no database there): run with **pm2** (no Docker): `backend` is bundled with esbuild into `dist/index.js` (shared code inlined) and pm2 runs `node dist/index.js`, behind the VPS's existing reverse proxy, domain `cinema-api.roaziy.cloud`. **web-admin** on Vercel (monorepo root, project root `web-admin/`), domain `cinema.roaziy.cloud`. **App** runs as a development build on the owner's devices. The database is Supabase only; backups use Supabase's own or a scheduled GitHub Action `pg_dump`, not the VPS **(owner)**. |
 | CI | GitHub Actions: typecheck, lint, tests, gitleaks |
 
 Package manager and test runner are left to the builder.
