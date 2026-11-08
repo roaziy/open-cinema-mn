@@ -47,6 +47,7 @@ export function createApp(over: Partial<AppDeps> = {}): Express {
 
   const app = express();
   app.disable('x-powered-by');
+  app.set('trust proxy', env.TRUST_PROXY);
   // Local uploads are loaded cross-origin by the web and mobile apps.
   app.use(
     '/media',

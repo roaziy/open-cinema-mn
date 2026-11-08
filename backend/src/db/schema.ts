@@ -107,6 +107,10 @@ export const sessions = pgTable(
     refreshTokenHash: text('refresh_token_hash').notNull(),
     expiresAt: ts('expires_at').notNull(),
     revokedAt: ts('revoked_at'),
+    // 'rotated' (replaced by a refresh), 'logout', or 'revoked_all' (reuse detected / forced).
+    revokedReason: text('revoked_reason'),
+    // When a refresh replaced this session; drives the short replay grace.
+    rotatedAt: ts('rotated_at'),
     createdAt: createdAt(),
   },
   (t) => [

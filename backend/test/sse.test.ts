@@ -94,6 +94,19 @@ async function open(path: string, hub: SeatHub, appDb: Db = db) {
 }
 
 describe('seat stream', () => {
+  it('sends a named ping event every 20 s so clients can watch liveness', async () => {
+    const f = await setup();
+    vi.useFakeTimers({ toFake: ['setInterval', 'clearInterval'] });
+    try {
+      const { next } = await open(`/v1/showtimes/${f.show.id}/seats/stream`, new SeatHub());
+      expect((await next()).event).toBe('snapshot');
+      vi.advanceTimersByTime(20_000);
+      expect(await next()).toEqual({ event: 'ping', data: {} });
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
   it('sends the SSE headers and a snapshot of non-free seats first', async () => {
     const f = await setup();
     await db.insert(seatHolds).values({

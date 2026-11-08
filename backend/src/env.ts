@@ -19,6 +19,11 @@ const EnvSchema = z
     LINK_SECRET: z.string().min(8),
     API_PUBLIC_URL: z.string().default('http://localhost:4000').transform(noSlash),
     WEB_PUBLIC_URL: z.string().default('http://localhost:3000').transform(noSlash),
+    // Shared with the web BFF: requests carrying it in `x-oc-bff-secret` may name the real
+    // client in `x-oc-client-ip`, which the per-IP rate limits then use.
+    BFF_SECRET: optional(z.string()),
+    // Reverse-proxy hops in front of the API for direct app traffic (`trust proxy`).
+    TRUST_PROXY: z.coerce.number().int().min(0).default(0),
     CORS_ORIGINS: z.string().default('http://localhost:3000'),
     MESSAGES_PROVIDER: z.enum(['dev', 'wesend']).default('dev'),
     WESEND_API_KEY: optional(z.string()),
@@ -49,6 +54,13 @@ const EnvSchema = z
             message: 'must be at least 32 characters in production',
           });
         }
+      }
+      if (e.BFF_SECRET !== undefined && e.BFF_SECRET.length < 32) {
+        ctx.addIssue({
+          code: 'custom',
+          path: ['BFF_SECRET'],
+          message: 'must be at least 32 characters in production',
+        });
       }
       if (e.SEED_ADMIN_PASSWORD === DEFAULT_ADMIN_PASSWORD) {
         ctx.addIssue({

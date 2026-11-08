@@ -194,7 +194,7 @@ export function createCatalogRouter(deps: AppDeps): Router {
       if (ready) sseWrite(res, 'delta', { changes });
       else queued.push(changes);
     });
-    const heartbeat = setInterval(() => res.write(': ping\n\n'), HEARTBEAT_MS);
+    const heartbeat = setInterval(() => sseWrite(res, 'ping', {}), HEARTBEAT_MS);
     cleanupFns.push(unsubscribe, () => clearInterval(heartbeat));
 
     try {
