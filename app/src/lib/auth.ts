@@ -8,6 +8,7 @@ import {
 import * as SecureStore from 'expo-secure-store';
 import { useSyncExternalStore } from 'react';
 import { ApiError, rawRequest } from './http';
+import { retryTransient } from './retry';
 
 // SecureStore keys: alphanumeric, ".", "-", "_" only.
 const KEY_ACCESS = 'oc.access';
@@ -136,6 +137,15 @@ export function getUserId(): string | null {
   return state.session?.user.id ?? null;
 }
 
+/** Replace the signed-in user's profile (e.g. after verifying an email) without touching the tokens. */
+export async function updateUser(user: PublicUser): Promise<void> {
+  const cur = state.session;
+  if (!cur || cur.user.id !== user.id) return;
+  const session = { ...cur, user };
+  setState({ ready: true, session });
+  await persistSession(session);
+}
+
 let guestInFlight: Promise<PublicUser> | null = null;
 
 /** Make sure a session exists, creating an anonymous guest if there is none. Single-flight. */
@@ -175,10 +185,13 @@ async function doRefresh(): Promise<boolean> {
   const startedAt = generation;
   try {
     const tokens = AuthTokensSchema.parse(
-      await rawRequest('/auth/refresh', {
-        method: 'POST',
-        json: { refreshToken: current.refreshToken },
-      }),
+      // 429 / 5xx are transient: wait and retry with the same token instead of ending the session.
+      await retryTransient(() =>
+        rawRequest('/auth/refresh', {
+          method: 'POST',
+          json: { refreshToken: current.refreshToken },
+        }),
+      ),
     );
     // Logged out or signed in again while waiting: drop the result.
     if (startedAt !== generation) return false;
