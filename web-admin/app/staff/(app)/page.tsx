@@ -9,7 +9,7 @@ import { buttonClass } from '@/components/ui/Button';
 import { ErrorState } from '@/components/ui/ErrorState';
 import { PageHeader } from '@/components/ui/PageHeader';
 import { apiGet } from '@/lib/api';
-import { count, dayMonth, todayUb, weekdayMn } from '@/lib/format';
+import { businessToday, count, dayMonth, weekdayMn } from '@/lib/format';
 import { type TodayShowtime, TodayShowtimeSchema } from '@/lib/schemas';
 
 export const metadata: Metadata = { title: 'Өнөөдөр' };
@@ -26,7 +26,7 @@ async function load(): Promise<TodayShowtime[] | null> {
 export default async function StaffToday() {
   const rows = await load();
   const now = Date.now();
-  const today = todayUb(new Date(now));
+  const today = businessToday(new Date(now));
   const title = `${weekdayMn(today)}, ${dayMonth(today)}`;
   const scanButton = (
     <Link href="/staff/scan" className={`${buttonClass('primary')} h-14 w-full text-[17px]`}>

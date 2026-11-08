@@ -1,4 +1,4 @@
-import { AdminShowtimeListQuery, ubDate, ubDayRange } from '@open-cinema/shared';
+import { AdminShowtimeListQuery, ubBusinessDate, ubDate, ubDayRange } from '@open-cinema/shared';
 
 /** Plain count grouped like money (`1,200`), so numbers on one screen read alike. */
 export function count(n: number): string {
@@ -19,6 +19,11 @@ export function pct(ratio: number): string {
 
 export function todayUb(now: Date = new Date()): string {
   return ubDate(now);
+}
+
+/** The cinema's current day: runs 05:00 to 05:00, so a 00:30 show still belongs to the evening before. */
+export function businessToday(now: Date = new Date()): string {
+  return ubBusinessDate(now);
 }
 
 export function addDays(date: string, days: number): string {
