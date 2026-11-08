@@ -13,13 +13,14 @@ import {
   View,
 } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
+import { OfflineNote } from '@/components/offline-note';
 import { Pressable } from '@/components/pressable';
 import { Skeleton } from '@/components/skeleton';
 import { ErrorState } from '@/components/state-views';
 import { TicketStub } from '@/components/ticket-stub';
 import { useI18n } from '@/i18n';
 import { haptic } from '@/lib/haptics';
-import { useBooking, useTicket } from '@/lib/orders';
+import { offlineSince, useBooking, useTicket } from '@/lib/orders';
 import { addToCalendar, addToWallet } from '@/lib/ticket-actions';
 import { showToast } from '@/lib/toast';
 import { WALLET_BADGE_SOURCE } from '@/lib/wallet-badge';
@@ -117,6 +118,7 @@ function TicketBlock({ id, index, total }: { id: string; index: number | null; t
       {index !== null ? (
         <Text style={styles.count}>{t('ticket.n', { n: index + 1, total })}</Text>
       ) : null}
+      <OfflineNote since={offlineSince(ticket)} />
       <TicketStub ticket={ticket} />
       {live ? (
         <View style={styles.actions}>

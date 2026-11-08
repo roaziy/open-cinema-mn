@@ -6,7 +6,9 @@ import {
 } from '@open-cinema/shared';
 import { useQuery } from '@tanstack/react-query';
 import { ApiError, api } from './api';
-import { useAuth } from './auth';
+import { getUserId, useAuth } from './auth';
+import { loadCache, saveList, saveTicket } from './ticket-cache';
+import { isOfflineError, listFrom, ticketFrom } from './ticket-cache-core';
 
 export const orderKeys = {
   booking: (id: string) => ['booking', id] as const,
@@ -64,11 +66,34 @@ export async function fetchTicket(id: string): Promise<TicketView> {
   return TicketViewSchema.parse(await api(`/tickets/${id}`));
 }
 
+/** Data served from the stored copy (no connection), mapped to when that copy was read. */
+const offlineCopies = new WeakMap<object, string>();
+
+/** When the stored copy behind `data` was last read from the server, or null for live data. */
+export function offlineSince(data: object | undefined): string | null {
+  return (data && offlineCopies.get(data)) ?? null;
+}
+
 export function useTicket(id: string) {
   return useQuery({
     queryKey: orderKeys.ticket(id),
-    queryFn: async () => withoutPassUrl(await fetchTicket(id)),
+    queryFn: async () => {
+      const userId = getUserId();
+      try {
+        const ticket = withoutPassUrl(await fetchTicket(id));
+        if (userId) void saveTicket(userId, ticket);
+        return ticket;
+      } catch (e) {
+        // No signal: the QR comes from the copy stored when the ticket was last seen.
+        const stored = userId && isOfflineError(e) ? ticketFrom(await loadCache(userId), id) : null;
+        if (!stored) throw e;
+        offlineCopies.set(stored.ticket, stored.savedAt);
+        return stored.ticket;
+      }
+    },
     staleTime: 0,
+    // Identity matters here: a stored copy is recognised by its object.
+    structuralSharing: false,
   });
 }
 
@@ -76,9 +101,22 @@ export function useTickets(scope: 'upcoming' | 'past') {
   const { ready, user } = useAuth();
   return useQuery({
     queryKey: orderKeys.tickets(user?.id ?? null, scope),
-    queryFn: async (): Promise<TicketView[]> =>
-      ticketList.parse(await api(`/me/tickets?scope=${scope}`)).map(withoutPassUrl),
+    queryFn: async (): Promise<TicketView[]> => {
+      const userId = getUserId();
+      try {
+        const list = ticketList.parse(await api(`/me/tickets?scope=${scope}`)).map(withoutPassUrl);
+        if (userId) void saveList(userId, scope, list);
+        return list;
+      } catch (e) {
+        const stored =
+          userId && isOfflineError(e) ? listFrom(await loadCache(userId), scope) : null;
+        if (!stored) throw e;
+        offlineCopies.set(stored.tickets, stored.savedAt);
+        return stored.tickets;
+      }
+    },
     enabled: ready && !!user,
     staleTime: 0,
+    structuralSharing: false,
   });
 }

@@ -2,6 +2,7 @@ import { type PublicUser, PublicUserSchema } from '@open-cinema/shared';
 import { QueryClient, useQuery } from '@tanstack/react-query';
 import { api } from './api';
 import { getUserId, subscribeAuth } from './auth';
+import { clearTicketCache } from './ticket-cache';
 
 export const queryClient = new QueryClient({
   defaultOptions: {
@@ -13,7 +14,11 @@ export const queryClient = new QueryClient({
 let lastUserId: string | null | undefined;
 subscribeAuth(() => {
   const id = getUserId();
-  if (lastUserId !== undefined && id !== lastUserId) queryClient.clear();
+  if (lastUserId !== undefined && id !== lastUserId) {
+    queryClient.clear();
+    // Stored tickets belong to one account too.
+    void clearTicketCache();
+  }
   lastUserId = id;
 });
 
