@@ -8,7 +8,7 @@ import { env } from './env';
 import { AppError } from './lib/errors';
 import { createMessages, type Messages } from './messages';
 import { createPayments, type PaymentProvider } from './payments/provider';
-import { createStorage, type StorageProvider } from './storage';
+import { createStorage, type StorageProvider, UPLOAD_DIR } from './storage';
 
 export type AppDeps = {
   db: Db;
@@ -29,6 +29,12 @@ export function createApp(over: Partial<AppDeps> = {}): Express {
 
   const app = express();
   app.disable('x-powered-by');
+  // Local uploads are loaded cross-origin by the web and mobile apps.
+  app.use(
+    '/media',
+    helmet({ crossOriginResourcePolicy: { policy: 'cross-origin' } }),
+    express.static(UPLOAD_DIR, { index: false }),
+  );
   app.use(helmet());
   const origins = env.CORS_ORIGINS.split(',')
     .map((s) => s.trim())
