@@ -1,4 +1,4 @@
-import { ScanResultSchema } from '@open-cinema/shared';
+import { AdminScanPageSchema, ScanResultSchema, TodayShowtimeSchema } from '@open-cinema/shared';
 import { eq } from 'drizzle-orm';
 import request from 'supertest';
 import { beforeEach, describe, expect, it } from 'vitest';
@@ -160,12 +160,17 @@ async function scan(
   s: S,
   who: { id: string; role: 'staff' | 'admin' | 'customer' | 'guest' },
   token: string,
-  opts: { scanId?: string; deviceId?: string; status?: number } = {},
+  opts: { scanId?: string; deviceId?: string; deviceLabel?: string; status?: number } = {},
 ) {
   return request(s.app)
     .post('/v1/staff/scan')
     .set('Authorization', await bearer(s, who))
-    .send({ token, scanId: opts.scanId ?? uuid(), deviceId: opts.deviceId ?? DEV_A })
+    .send({
+      token,
+      scanId: opts.scanId ?? uuid(),
+      deviceId: opts.deviceId ?? DEV_A,
+      deviceLabel: opts.deviceLabel,
+    })
     .expect(opts.status ?? 200);
 }
 
@@ -571,26 +576,29 @@ describe('scan', () => {
     expect(admin.body.result).toBe('admitted');
   });
 
-  it('judges the day in Ulaanbaatar, across UB midnight', async () => {
+  it('judges the cinema business day (05:00 to 05:00 UB), across UB midnight', async () => {
     const s = setup();
     const f = await fixture();
-    // Sold at 18:00 UB on the 8th for a 23:30 UB show (15:30Z) and a 00:45 UB show on the 9th (16:45Z).
+    // Sold at 18:00 UB on the 8th for a 23:30 UB show (15:30Z), a 00:45 UB show on the 9th (16:45Z)
+    // and a 05:30 UB show on the 9th (21:30Z), which already belongs to the next business day.
     const late = await f.show('2026-11-08T15:30:00Z');
     const after = await f.show('2026-11-08T16:45:00Z');
+    const morning = await f.show('2026-11-08T21:30:00Z');
     const [tLate] = await buy(s, f, late.id, 1);
     const [tAfter] = await buy(s, f, after.id, 2);
+    const [tMorning] = await buy(s, f, morning.id, 3);
 
     // 00:30 UB on the 9th, still the 8th in UTC.
     s.clock.advance(6.5 * 60 * MIN);
     expect(s.clock().toISOString()).toBe('2026-11-08T16:30:00.000Z');
-    const wrongDay = await scan(s, f.staffA, one(tLate).qrToken);
+    expect((await scan(s, f.staffA, one(tLate).qrToken)).body.result).toBe('admitted');
+    expect((await scan(s, f.staffA, one(tAfter).qrToken)).body.result).toBe('admitted');
+    const wrongDay = await scan(s, f.staffA, one(tMorning).qrToken);
     expect(wrongDay.body.result).toBe('wrong_day');
-    const ok = await scan(s, f.staffA, one(tAfter).qrToken);
-    expect(ok.body.result).toBe('admitted');
     const [untouched] = await db
       .select()
       .from(tickets)
-      .where(eq(tickets.id, one(tLate).id));
+      .where(eq(tickets.id, one(tMorning).id));
     expect(untouched?.usedAt).toBeNull();
   });
 
@@ -729,7 +737,9 @@ describe('scan by order number and seat', () => {
     const right = checkCode(one(ts.find((t) => t.seatId === f.seatId(1))).id);
     const other = checkCode(one(ts.find((t) => t.seatId === f.seatId(2))).id);
     const missing = (await scanByOrder(s, f.staffA, 'OC-99999999', 'F1')).body;
-    for (const code of ['ZZZZ', other, right.toLowerCase().replace(/./, 'z')]) {
+    // Change the first character to one that differs from it, so the code can never equal the right one.
+    const wrong = `${right.startsWith('Z') ? 'Y' : 'Z'}${right.slice(1)}`.toLowerCase();
+    for (const code of [right.startsWith('Z') ? 'YYYY' : 'ZZZZ', other, wrong]) {
       const res = await scanByOrder(s, f.staffA, orderNo, 'F1', { code });
       expect(res.body).toMatchObject({ result: 'invalid', ticket: null, previous: null });
       expect({ ...res.body, scanId: '' }).toEqual({ ...missing, scanId: '' });
@@ -895,7 +905,8 @@ describe('recent and today', () => {
     const f = await fixture();
     const evening = await f.show('2026-11-08T11:00:00Z');
     const morning = await f.show('2026-11-08T02:00:00Z'); // 10:00 UB
-    const midnight = await f.show('2026-11-07T16:30:00Z'); // 00:30 UB on the 8th, UTC the 7th
+    const late = await f.show('2026-11-08T16:30:00Z'); // 00:30 UB on the 9th: still tonight's business day
+    await f.show('2026-11-07T16:30:00Z'); // 00:30 UB on the 8th: last night's
     await f.show('2026-11-09T02:00:00Z'); // tomorrow in UB
     await f.show('2026-11-07T15:00:00Z'); // 23:00 UB yesterday
     const tickets3 = await buy(s, f, evening.id, 1, 2, 3);
@@ -907,12 +918,13 @@ describe('recent and today', () => {
       .set('Authorization', await bearer(s, f.staffA))
       .expect(200);
     expect(res.body).toEqual([
-      expect.objectContaining({ id: midnight.id, admitted: 0, sold: 0 }),
       expect.objectContaining({ id: morning.id, admitted: 0, sold: 0, capacity: 6 }),
       {
         id: evening.id,
         startsAt: '2026-11-08T11:00:00.000Z',
         hallName: 'Hall 1',
+        branchId: f.staffA.branchId,
+        branchName: 'Central',
         movieTitle: 'Movie',
         posterUrl: 'p.jpg',
         tone: '#112233',
@@ -920,6 +932,7 @@ describe('recent and today', () => {
         sold: 3,
         capacity: 6,
       },
+      expect.objectContaining({ id: late.id, admitted: 0, sold: 0 }),
     ]);
     const otherBranch = await request(s.app)
       .get('/v1/staff/today')
@@ -936,5 +949,135 @@ describe('recent and today', () => {
       .set('Authorization', await bearer(s, f.admin))
       .expect(200);
     expect(adminAll.body).toHaveLength(3);
+    for (const row of adminAll.body) TodayShowtimeSchema.parse(row);
+  });
+});
+
+describe('business day', () => {
+  it('admits a 00:10 show scanned at 23:50 the evening before', async () => {
+    const s = setup();
+    const f = await fixture();
+    const show = await f.show('2026-11-08T16:10:00Z'); // 00:10 UB on the 9th
+    const [t] = await buy(s, f, show.id, 1);
+    // 23:50 UB on the 8th is 15:50Z
+    s.clock.advance(new Date('2026-11-08T15:50:00Z').getTime() - s.clock().getTime());
+    const res = await scan(s, f.staffA, one(t).qrToken);
+    expect(res.body.result).toBe('admitted');
+  });
+
+  it('still refuses a ticket for the next business day', async () => {
+    const s = setup();
+    const f = await fixture();
+    const show = await f.show('2026-11-09T11:00:00Z');
+    const [t] = await buy(s, f, show.id, 1);
+    expect((await scan(s, f.staffA, one(t).qrToken)).body.result).toBe('wrong_day');
+  });
+
+  it('finds a 00:10 show by order number before midnight', async () => {
+    const s = setup();
+    const f = await fixture();
+    const show = await f.show('2026-11-08T16:10:00Z');
+    const ts = await buy(s, f, show.id, 1);
+    const orderNo = await orderNoOf(one(ts[0]).bookingId);
+    s.clock.advance(new Date('2026-11-08T15:50:00Z').getTime() - s.clock().getTime());
+    expect((await scanByOrder(s, f.staffA, orderNo, 'F1')).body.result).toBe('admitted');
+  });
+});
+
+describe('admin scan history', () => {
+  const get = async (s: S, f: F, qs = '', status = 200, who: 'admin' | 'staff' = 'admin') =>
+    request(s.app)
+      .get(`/v1/admin/scans${qs}`)
+      .set('Authorization', await bearer(s, who === 'admin' ? f.admin : f.staffA))
+      .expect(status);
+
+  it('is admin only', async () => {
+    const s = setup();
+    const f = await fixture();
+    await get(s, f, '', 403, 'staff');
+    await request(s.app).get('/v1/admin/scans').expect(401);
+  });
+
+  it('lists scans newest first with staff, door, ticket and undone, and filters them', async () => {
+    const s = setup();
+    const f = await fixture();
+    const show = await f.show('2026-11-08T11:00:00Z');
+    const ts = await buy(s, f, show.id, 1, 2, 3);
+    s.clock.advance(1000);
+    const first = await scan(s, f.staffA, one(ts[0]).qrToken, { deviceLabel: 'Хаалга 1' });
+    s.clock.advance(1000);
+    await scan(s, f.staffA, one(ts[1]).qrToken);
+    s.clock.advance(1000);
+    await request(s.app)
+      .post(`/v1/staff/scan/${first.body.scanId}/undo`)
+      .set('Authorization', await bearer(s, f.staffA))
+      .expect(200);
+    s.clock.advance(1000);
+    await scan(s, f.staffC, one(ts[2]).qrToken); // wrong branch
+    s.clock.advance(1000);
+    await scan(s, f.staffB, 'garbage'); // matches no ticket
+
+    const all = (await get(s, f)).body;
+    AdminScanPageSchema.parse(all);
+    expect(all.nextCursor).toBeNull();
+    expect(all.items.map((i: { result: string }) => i.result)).toEqual([
+      'invalid',
+      'wrong_branch',
+      'undone',
+      'admitted',
+      'admitted',
+    ]);
+    const admitted = all.items.find(
+      (i: { deviceLabel: string | null; result: string }) =>
+        i.deviceLabel === 'Хаалга 1' && i.result === 'admitted',
+    );
+    expect(admitted).toMatchObject({
+      result: 'admitted',
+      undone: true,
+      staffName: 'Staff A',
+      branchName: 'Central',
+      ticket: { seatCode: 'F1', hallName: 'Hall 1', movieTitle: 'Movie', showtimeId: show.id },
+    });
+    expect(all.items[0]).toMatchObject({
+      ticket: null,
+      staffName: 'Staff B',
+      branchName: 'Central',
+    });
+
+    const branchC = (await get(s, f, `?branchId=${f.staffC.branchId}`)).body;
+    expect(branchC.items.map((i: { result: string }) => i.result)).toEqual([]);
+    const branchA = (await get(s, f, `?branchId=${f.staffA.branchId}&result=admitted`)).body;
+    expect(branchA.items).toHaveLength(2);
+    const byShow = (await get(s, f, `?showtimeId=${show.id}`)).body;
+    expect(byShow.items).toHaveLength(4); // the garbage scan has no ticket
+    const today = (await get(s, f, '?date=2026-11-08')).body;
+    expect(today.items).toHaveLength(5);
+    const other = (await get(s, f, '?date=2026-11-09')).body;
+    expect(other.items).toEqual([]);
+    await get(s, f, '?date=nope', 400);
+    await get(s, f, '?cursor=@@@', 400);
+  });
+
+  it('pages with a stable cursor', async () => {
+    const s = setup();
+    const f = await fixture();
+    const show = await f.show('2026-11-08T11:00:00Z');
+    const ts = await buy(s, f, show.id, 1, 2, 3, 4, 5);
+    for (const t of ts) {
+      s.clock.advance(1000);
+      await scan(s, f.staffA, t.qrToken);
+    }
+    const seen: string[] = [];
+    let cursor: string | null = null;
+    for (let i = 0; i < 3; i++) {
+      const qs: string = `?limit=2${cursor ? `&cursor=${cursor}` : ''}`;
+      const page = (await get(s, f, qs)).body;
+      seen.push(...page.items.map((x: { id: string }) => x.id));
+      cursor = page.nextCursor;
+      if (!cursor) break;
+    }
+    expect(seen).toHaveLength(5);
+    expect(new Set(seen).size).toBe(5);
+    expect(cursor).toBeNull();
   });
 });

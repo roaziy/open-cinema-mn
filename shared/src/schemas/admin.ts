@@ -22,7 +22,7 @@ const Uuid = z.string().uuid();
 const Hex = z.string().regex(/^#[0-9a-fA-F]{6}$/);
 const IsoInstant = z.string().datetime({ offset: true });
 /** Ulaanbaatar calendar date, YYYY-MM-DD. */
-const UbDate = z
+export const UbDate = z
   .string()
   .regex(/^\d{4}-\d{2}-\d{2}$/)
   .refine((v) => {

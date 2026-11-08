@@ -1,5 +1,11 @@
 import { randomUUID } from 'node:crypto';
-import type { BookingCreateBody, BookingView, SeatDelta } from '@open-cinema/shared';
+import {
+  type BookingCreateBody,
+  type BookingView,
+  MAX_SEATS_PER_BOOKING,
+  type SeatDelta,
+  seatPrice,
+} from '@open-cinema/shared';
 import { and, asc, eq, gt, inArray, lt, or, sql } from 'drizzle-orm';
 import type { AppDeps } from '../app';
 import type { Db } from '../db/client';
@@ -23,7 +29,7 @@ import { withTimeout } from '../lib/timeout';
 import { bookingConfirmedEmail } from '../messages/templates';
 import type { MockRaw } from '../payments/mock';
 import { heldCount, SLOT_COLUMNS, toBranch, toSlot, toSummary } from './catalog-views';
-import { lockUserShowtime, MAX_SEATS_PER_BOOKING, SeatTakenError, type Tx } from './holds';
+import { lockUserShowtime, SeatTakenError, type Tx } from './holds';
 import { nonFreeSeats } from './seat-state';
 
 type Deps = Pick<AppDeps, 'messages' | 'payments' | 'seatHub' | 'clock'>;
@@ -156,10 +162,7 @@ async function createInTransaction(
     .select({ id: seats.id, kind: seats.kind })
     .from(seats)
     .where(inArray(seats.id, seatIds));
-  const total = kinds.reduce(
-    (sum, s) => sum + (s.kind === 'premium' ? show.pricePremium : show.priceStandard),
-    0,
-  );
+  const total = kinds.reduce((sum, s) => sum + seatPrice(s.kind, show), 0);
   const expiresAt = new Date(Math.min(...holds.map((h) => h.expiresAt.getTime())));
 
   const [created] = await tx
@@ -202,11 +205,15 @@ async function ensureInvoice(db: Db, deps: Deps, bookingId: string): Promise<voi
   if (await has()) return;
   const [b] = await db.select().from(bookings).where(eq(bookings.id, bookingId)).limit(1);
   if (b?.status !== 'pending') return;
-  const inv = await deps.payments.createInvoice({
-    bookingId,
-    amount: b.total,
-    description: `Open Cinema ${b.orderNo}`,
-  });
+  const inv = await withTimeout(
+    deps.payments.createInvoice({
+      bookingId,
+      amount: b.total,
+      description: `${env.APP_NAME} ${b.orderNo}`,
+    }),
+    PROVIDER_TIMEOUT_MS,
+    'createInvoice',
+  );
   // An invoice never outlives the seats it was issued for.
   const expiresAt = new Date(
     Math.min(inv.expiresAt.getTime(), (b.expiresAt ?? inv.expiresAt).getTime()),

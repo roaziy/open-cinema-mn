@@ -8,7 +8,10 @@ import {
   normalizeEmail,
   normalizePhone,
   OtpVerifyBody,
+  seatPrice,
   seatViewStats,
+  ubBusinessDate,
+  ubBusinessDayRange,
   ubDate,
   ubDayRange,
 } from '../src/index';
@@ -36,6 +39,30 @@ describe('time', () => {
     expect(r.end.toISOString()).toBe('2026-11-09T16:00:00.000Z');
     expect(ubDate(r.start)).toBe('2026-11-09');
     expect(ubDate(new Date(r.end.getTime() - 1))).toBe('2026-11-09');
+  });
+});
+
+describe('business day', () => {
+  it('a show after midnight belongs to the evening before', () => {
+    // 00:10 on 9 Nov UB is 16:10Z on 8 Nov
+    expect(ubBusinessDate('2026-11-08T16:10:00Z')).toBe('2026-11-08');
+    expect(ubBusinessDate('2026-11-08T23:50:00Z')).toBe('2026-11-09'); // 07:50 UB on 9 Nov
+    expect(ubBusinessDate('2026-11-08T20:59:00Z')).toBe('2026-11-08'); // 04:59 UB on 9 Nov
+    expect(ubBusinessDate('2026-11-08T21:00:00Z')).toBe('2026-11-09'); // 05:00 UB on 9 Nov
+  });
+  it('range runs from 05:00 to 05:00 UB', () => {
+    const r = ubBusinessDayRange('2026-11-09');
+    expect(r.start.toISOString()).toBe('2026-11-08T21:00:00.000Z');
+    expect(r.end.toISOString()).toBe('2026-11-09T21:00:00.000Z');
+  });
+});
+
+describe('seatPrice', () => {
+  it('charges premium seats the premium price and every other kind the standard one', () => {
+    const prices = { priceStandard: 12000, pricePremium: 19000 };
+    expect(seatPrice('premium', prices)).toBe(19000);
+    expect(seatPrice('standard', prices)).toBe(12000);
+    expect(seatPrice('wheelchair', prices)).toBe(12000);
   });
 });
 
