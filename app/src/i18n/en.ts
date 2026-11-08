@@ -166,6 +166,7 @@ export const en: Record<TKey, string> = {
   'ticket.calendarDenied': 'Calendar access was not allowed',
   'ticket.calendarFail': 'Could not add to calendar',
   'ticket.n': '{n} of {total}',
+  'tickets.offline': 'Offline · updated {time}',
   'tickets.upcoming': 'Upcoming',
   'tickets.past': 'Past',
   'tickets.emptyUpcoming': 'No upcoming tickets.',

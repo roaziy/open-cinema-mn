@@ -165,6 +165,7 @@ export const mn = {
   'ticket.calendarDenied': 'Календарь руу хандах эрх олгогдоогүй',
   'ticket.calendarFail': 'Календарьт нэмж чадсангүй',
   'ticket.n': '{n} / {total}',
+  'tickets.offline': 'Офлайн · {time}-д шинэчлэгдсэн',
   'tickets.upcoming': 'Удахгүй',
   'tickets.past': 'Өнгөрсөн',
   'tickets.emptyUpcoming': 'Удахгүй үзэх тасалбар алга.',

@@ -2,6 +2,7 @@ import { formatUbTime, type TicketView, ubDate } from '@open-cinema/shared';
 import { router, useFocusEffect } from 'expo-router';
 import { useCallback, useState } from 'react';
 import { FlatList, RefreshControl, StyleSheet, Text, View } from 'react-native';
+import { OfflineNote } from '@/components/offline-note';
 import { Poster } from '@/components/poster';
 import { Pressable } from '@/components/pressable';
 import { Skeleton } from '@/components/skeleton';
@@ -9,7 +10,7 @@ import { EmptyState, ErrorState } from '@/components/state-views';
 import { ticketSummary } from '@/components/ticket-stub';
 import { useI18n } from '@/i18n';
 import { formatMonthDay } from '@/lib/format';
-import { useTickets } from '@/lib/orders';
+import { offlineSince, useTickets } from '@/lib/orders';
 import { colors, radius, space } from '@/theme/tokens';
 import { type } from '@/theme/type';
 
@@ -49,6 +50,7 @@ export default function TicketsScreen() {
           </Pressable>
         ))}
       </View>
+      <OfflineNote since={offlineSince(q.data)} />
     </View>
   );
 
