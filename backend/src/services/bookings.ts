@@ -16,6 +16,7 @@ import {
   users,
 } from '../db/schema';
 import { env } from '../env';
+import { isDraining } from '../lib/drain';
 import { badRequest, conflict, isUniqueViolation, notFound } from '../lib/errors';
 import { signLink, signQr } from '../lib/sign';
 import { withTimeout } from '../lib/timeout';
@@ -417,7 +418,8 @@ export const REFUND_CLAIM_TTL_MS = 2 * 60_000;
  * Pays back a failed or cancelled booking whose payment is still `paid`. Runs outside any
  * transaction; a provider error is logged and the sweeper tries again. Safe to call repeatedly
  * and concurrently: the payment row is claimed (`refunding`) before the provider is called, so
- * the cancel loop and the sweeper never both call it.
+ * the cancel loop and the sweeper never both call it. Once draining it starts no refund and leaves
+ * the payment owed (unclaimed) for the first sweep after the restart.
  */
 export async function refundOwed(
   db: Db,
@@ -432,9 +434,18 @@ export async function refundOwed(
     .from(payments)
     .innerJoin(bookings, eq(bookings.id, payments.bookingId))
     .where(
-      and(eq(payments.bookingId, bookingId), inArray(bookings.status, ['failed', 'cancelled'])),
+      and(
+        eq(payments.bookingId, bookingId),
+        inArray(bookings.status, ['failed', 'cancelled']),
+        inArray(payments.status, ['paid', 'refunding']),
+      ),
     );
   if (!owed) return;
+  // Before the claim, so the payment stays owed; after the lookup, so only real deferrals log.
+  if (isDraining()) {
+    console.warn(`draining: refund of ${bookingId} left to the sweeper`);
+    return;
+  }
   const [p] = await db
     .update(payments)
     .set({ status: 'refunding', refundClaimedAt: now })

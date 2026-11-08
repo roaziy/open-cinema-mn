@@ -214,9 +214,13 @@ reconnect their seat feed automatically.
 **What the drain does.** On SIGINT/SIGTERM the API stops accepting connections, answers any new seat
 stream with 503 and `Connection: close`, ends the open seat streams, closes keep-alive connections as
 soon as they go idle, lets running requests finish, and only then closes the database pool. From the
-signal on, no new payment provider call starts: the sweeper stops after the item it is on, and a
-showing cancellation that is still refunding keeps its cancelled bookings and still emails the
-customers, but leaves the refunds it has not started owed. The log names each one
+signal on, no refund starts and neither the sweeper nor a showing cancellation starts a new payment
+provider call: the sweeper stops after the item it is on, and a showing cancellation that is still
+refunding keeps its cancelled bookings and still emails the customers, but leaves the refunds it has
+not started owed. A request already being served (one that started before the signal, or arrives on
+a keep-alive connection that is still open) may still make its own provider call, such as a booking
+poll checking its invoice within the 20 s provider timeout; a refund that check turns up is left owed
+the same way. The log names each deferred refund
 (`draining: refund of <booking> left to the sweeper`) and the sweeper pays them in its first pass,
 30 s after the restart. Connections still open after 25 s (the 20 s provider timeout plus 5 s) are
 destroyed and the process exits with code 1 after 28 s at the latest, inside pm2's `kill_timeout` of
