@@ -134,7 +134,13 @@ export function createAuthRouter(deps: AppDeps, limiters: Limiters): Router {
       .where(eq(sessions.refreshTokenHash, hash))
       .limit(1);
     if (!session) throw unauthorized('invalid_refresh');
-    // Expired tokens are refused before rotating, so a client retry never looks like reuse.
+    // A revoked token coming back is reuse, expired or not: assume it leaked and end every
+    // session of the user.
+    if (session.revokedAt) {
+      await revokeAllSessions(db, session.userId, now);
+      throw unauthorized('invalid_refresh');
+    }
+    // An expired token that was never used is refused without touching other sessions.
     if (session.expiresAt <= now) throw unauthorized('refresh_expired');
     // Rotate atomically: only one caller can flip an active session to revoked.
     const [rotated] = await db
@@ -143,7 +149,6 @@ export function createAuthRouter(deps: AppDeps, limiters: Limiters): Router {
       .where(and(eq(sessions.id, session.id), sql`${sessions.revokedAt} is null`))
       .returning({ id: sessions.id });
     if (!rotated) {
-      // A used or revoked token came back: assume it leaked and end every session of the user.
       await revokeAllSessions(db, session.userId, now);
       throw unauthorized('invalid_refresh');
     }
