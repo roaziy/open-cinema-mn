@@ -460,6 +460,56 @@ describe('wallet pass', () => {
     }
   });
 
+  it('mints a fresh pass url for a link holder, only for tickets of that booking', async () => {
+    const { cert, key } = makeCert();
+    Object.assign(env, {
+      WALLET_PASS_TYPE_ID: 'pass.test.opencinema',
+      WALLET_TEAM_ID: 'TEAM123456',
+      WALLET_SIGNER_CERT_PATH: cert,
+      WALLET_SIGNER_KEY_PATH: key,
+      WALLET_WWDR_PATH: cert,
+    });
+    try {
+      const { s, f, t } = await owned();
+      const link = signLink(t.bookingId);
+      const res = await request(s.app).get(`/v1/t/${link}/pass/${t.id}`).expect(200);
+      expect(res.headers['cache-control']).toContain('no-store');
+      expect(res.body.url).toMatch(
+        new RegExp(`^${env.API_PUBLIC_URL}/v1/tickets/${t.id}/pass\\?exp=\\d+&sig=`),
+      );
+      // the url is short-lived and minted per tap
+      s.clock.advance(200_000);
+      const later = await request(s.app).get(`/v1/t/${link}/pass/${t.id}`).expect(200);
+      expect(later.body.url).not.toBe(res.body.url);
+      s.clock.advance(150_000);
+      await request(s.app).get(res.body.url.slice(env.API_PUBLIC_URL.length)).expect(403);
+      await request(s.app).get(later.body.url.slice(env.API_PUBLIC_URL.length)).expect(200);
+
+      // another booking's ticket, a bad link and a cancelled ticket are all 404
+      const showB = await f.show('2026-11-08T13:00:00Z');
+      const otherBooking = await buy(s, f, f.alice, showB.id, 2);
+      await request(s.app)
+        .get(`/v1/t/${signLink(otherBooking)}/pass/${t.id}`)
+        .expect(404);
+      await request(s.app).get(`/v1/t/${link}x/pass/${t.id}`).expect(404);
+      await request(s.app).get(`/v1/t/${link}/pass/not-a-uuid`).expect(404);
+      await db.update(tickets).set({ status: 'cancelled' }).where(eq(tickets.id, t.id));
+      await request(s.app).get(`/v1/t/${link}/pass/${t.id}`).expect(404);
+    } finally {
+      restore();
+    }
+  });
+
+  it('answers 503 for the link pass url while wallet is not configured', async () => {
+    restore();
+    Object.assign(env, { WALLET_SIGNER_CERT_PATH: undefined });
+    const { s, t } = await owned();
+    const res = await request(s.app)
+      .get(`/v1/t/${signLink(t.bookingId)}/pass/${t.id}`)
+      .expect(503);
+    expect(res.body).toEqual({ error: 'wallet_not_configured' });
+  });
+
   it('gives a cancelled ticket no passUrl and no pass', async () => {
     const { cert, key } = makeCert();
     Object.assign(env, {
