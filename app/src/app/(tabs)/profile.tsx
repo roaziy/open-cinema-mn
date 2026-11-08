@@ -17,6 +17,7 @@ export default function ProfileScreen() {
   const insets = useSafeAreaInsets();
   const { user, logout } = useAuth();
   const [loggingOut, setLoggingOut] = useState(false);
+  const [checkingLogin, setCheckingLogin] = useState(false);
   const signedIn = !!user && user.role !== 'guest';
   const top = process.env.EXPO_OS === 'ios' ? 0 : insets.top;
 
@@ -84,13 +85,25 @@ export default function ProfileScreen() {
             </View>
           </View>
           <Pressable
-            style={styles.primary}
+            style={[styles.primary, checkingLogin && styles.disabled]}
+            disabled={checkingLogin}
             onPress={async () => {
-              if (await confirmGuestLogin(t)) router.push('/login');
+              if (checkingLogin) return;
+              setCheckingLogin(true);
+              try {
+                if (await confirmGuestLogin(t)) router.push('/login');
+              } finally {
+                setCheckingLogin(false);
+              }
             }}
             accessibilityRole="button"
+            accessibilityState={{ busy: checkingLogin, disabled: checkingLogin }}
           >
-            <Text style={styles.primaryText}>{t('login.title')}</Text>
+            {checkingLogin ? (
+              <ActivityIndicator color={colors.onAction} />
+            ) : (
+              <Text style={styles.primaryText}>{t('login.title')}</Text>
+            )}
           </Pressable>
         </View>
       )}

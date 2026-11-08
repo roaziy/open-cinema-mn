@@ -183,6 +183,7 @@ export const en: Record<TKey, string> = {
   'profile.language': 'Language',
   'profile.err.email_taken': 'That email belongs to another account.',
 
+  'checkout.pendingOrder': 'You have an unpaid order for these seats.',
   'checkout.holdExpired': 'One of your seat holds ran out. Check your seats and continue again.',
   'pay.markFailed': 'Could not confirm the payment. Try again.',
   'pay.cancelled': 'This order was cancelled.',

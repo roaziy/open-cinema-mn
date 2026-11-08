@@ -67,8 +67,7 @@ export async function fetchTicket(id: string): Promise<TicketView> {
 export function useTicket(id: string) {
   return useQuery({
     queryKey: orderKeys.ticket(id),
-    queryFn: () => fetchTicket(id),
-    select: withoutPassUrl,
+    queryFn: async () => withoutPassUrl(await fetchTicket(id)),
     staleTime: 0,
   });
 }
@@ -78,8 +77,7 @@ export function useTickets(scope: 'upcoming' | 'past') {
   return useQuery({
     queryKey: orderKeys.tickets(user?.id ?? null, scope),
     queryFn: async (): Promise<TicketView[]> =>
-      ticketList.parse(await api(`/me/tickets?scope=${scope}`)),
-    select: (list) => list.map(withoutPassUrl),
+      ticketList.parse(await api(`/me/tickets?scope=${scope}`)).map(withoutPassUrl),
     enabled: ready && !!user,
     staleTime: 0,
   });

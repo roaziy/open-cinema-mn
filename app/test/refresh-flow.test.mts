@@ -68,3 +68,31 @@ test('a result that arrives after logout is dropped', async () => {
   assert.equal(await h.run(), false);
   assert.deepEqual(h.log, []);
 });
+
+test('logout during the 429 backoff: the revoked token is never sent again', async () => {
+  let calls = 0;
+  let loggedOut = false;
+  const log: string[] = [];
+  await assert.rejects(
+    runRefresh({
+      call: async () => {
+        calls++;
+        throw err(429);
+      },
+      isStale: () => loggedOut,
+      apply: async () => {
+        log.push('apply');
+      },
+      clear: async () => {
+        log.push('clear');
+      },
+      sleep: async () => {
+        loggedOut = true;
+      },
+      delays: [1, 1],
+    }),
+    (e: { status: number }) => e.status === 429,
+  );
+  assert.equal(calls, 1);
+  assert.deepEqual(log, []);
+});

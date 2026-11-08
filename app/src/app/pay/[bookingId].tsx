@@ -169,7 +169,7 @@ export default function PayScreen() {
           <Text style={styles.group}>{t('pay.banks')}</Text>
           <View style={styles.grid}>
             {BANKS.map(([id, key]) => (
-              <View key={id} style={styles.bank}>
+              <View key={id} style={styles.bank} accessible accessibilityLabel={t(key)}>
                 <View style={styles.bankTile}>
                   <Text style={styles.bankInitials}>{initials(t(key))}</Text>
                 </View>

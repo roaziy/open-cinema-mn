@@ -15,6 +15,7 @@ test('429 is retried with backoff, then succeeds', async () => {
       return 'ok';
     },
     {
+      retryable: isTransient,
       delays: [10, 20, 40],
       sleep: async (ms) => {
         waits.push(ms);
@@ -34,7 +35,7 @@ test('gives up with the last error after the delays run out', async () => {
         calls++;
         throw err(429);
       },
-      { delays: [1, 1], sleep: noSleep },
+      { retryable: isTransient, delays: [1, 1], sleep: noSleep },
     ),
     (e: { status: number }) => e.status === 429,
   );
@@ -49,7 +50,7 @@ test('401 is not transient and is thrown at once', async () => {
         calls++;
         throw err(401);
       },
-      { delays: [1, 1], sleep: noSleep },
+      { retryable: isTransient, delays: [1, 1], sleep: noSleep },
     ),
   );
   assert.equal(calls, 1);
@@ -69,6 +70,7 @@ test('Retry-After replaces the backoff delay but is capped', async () => {
       return 'ok';
     },
     {
+      retryable: isTransient,
       delays: [10, 10],
       sleep: async (ms) => {
         waits.push(ms);
@@ -86,8 +88,32 @@ test('stops retrying once the caller no longer wants the result', async () => {
         calls++;
         throw err(429);
       },
-      { delays: [1, 1], sleep: noSleep, shouldContinue: () => false },
+      { retryable: isTransient, delays: [1, 1], sleep: noSleep, shouldContinue: () => false },
     ),
+  );
+  assert.equal(calls, 1);
+});
+
+test('a caller who stops wanting the result DURING the wait gets no further request', async () => {
+  let wanted = true;
+  let calls = 0;
+  await assert.rejects(
+    retryTransient(
+      async () => {
+        calls++;
+        throw err(429);
+      },
+      {
+        retryable: isTransient,
+        delays: [1, 1],
+        // e.g. the user logs out while the backoff sleeps
+        sleep: async () => {
+          wanted = false;
+        },
+        shouldContinue: () => wanted,
+      },
+    ),
+    (e: { status: number }) => e.status === 429,
   );
   assert.equal(calls, 1);
 });

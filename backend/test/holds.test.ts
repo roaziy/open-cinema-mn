@@ -124,6 +124,34 @@ describe('seat holds', () => {
     expect(mine.body).toHaveLength(2);
   });
 
+  it('shows the unpaid order a hold belongs to', async () => {
+    const f = await fixture();
+    const app = makeTestApp({ clock });
+    const held = await post(app, f.show.id, f.alice.auth, [f.seatId(1), f.seatId(2)]).expect(200);
+    const mine = () =>
+      request(app).get(`/v1/showtimes/${f.show.id}/holds/mine`).set('Authorization', f.alice.auth);
+    expect((await mine()).body.map((h: { bookingId: unknown }) => h.bookingId)).toEqual([
+      null,
+      null,
+    ]);
+    const booking = await request(app)
+      .post('/v1/bookings')
+      .set('Authorization', f.alice.auth)
+      .send({
+        holdIds: held.body.holds.map((h: { id: string }) => h.id),
+        idempotencyKey: '7b0f3a52-6f0a-4f43-9d6e-3f2b1f0c9a11',
+      })
+      .expect(200);
+    const after = (await mine()).body as { bookingId: string }[];
+    expect(after).toHaveLength(2);
+    expect(after.every((h) => h.bookingId === booking.body.id)).toBe(true);
+    // Releasing a seat that is inside the order is refused.
+    await request(app)
+      .delete(`/v1/holds/${held.body.holds[0].id}`)
+      .set('Authorization', f.alice.auth)
+      .expect(409);
+  });
+
   it('requires auth', async () => {
     const f = await fixture();
     await request(makeTestApp({ clock }))
