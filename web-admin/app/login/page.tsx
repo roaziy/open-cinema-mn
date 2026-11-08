@@ -1,7 +1,8 @@
 import type { Metadata } from 'next';
 import Link from 'next/link';
 import { AdminLoginForm } from '@/components/auth/AdminLoginForm';
-import { AuthShell, LOGIN_NOTICES } from '@/components/auth/AuthShell';
+import { AuthShell, noticeFor } from '@/components/auth/AuthShell';
+import { EndSession } from '@/components/auth/EndSession';
 import { safeNext } from '@/lib/auth/redirects';
 
 export const metadata: Metadata = { title: 'Админ нэвтрэх' };
@@ -14,12 +15,10 @@ export default async function LoginPage({
   const { next, error } = await searchParams;
   return (
     <AuthShell>
+      {error === 'expired' || error === 'forbidden' ? <EndSession /> : null}
       <h1 className="text-[26px] font-semibold tracking-[-0.01em] text-ink">Админ нэвтрэх</h1>
       <p className="mb-6 mt-1.5 text-[15px] text-muted">Имэйл, нууц үгээрээ нэвтэрнэ үү.</p>
-      <AdminLoginForm
-        next={safeNext(next, '/admin')}
-        notice={error ? LOGIN_NOTICES[error] : undefined}
-      />
+      <AdminLoginForm next={safeNext(next, '/admin')} notice={noticeFor(error)} />
       <p className="mt-8 text-sm text-muted">
         Ажилтан уу?{' '}
         <Link

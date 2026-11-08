@@ -1,9 +1,13 @@
-/*
+/**
  * Minimal service worker. It exists so the staff PWA installs and so a dropped connection shows a
  * calm offline page instead of the browser's error. It never caches API responses, pages or
  * anything behind a login: only the static build output and the offline page.
+ *
+ * The cache name carries the build id, so a new deploy starts a fresh cache and `activate`
+ * deletes every older one.
  */
-const CACHE = 'oc-shell-v1';
+export function swSource(version: string): string {
+  return `const CACHE = 'oc-shell-${version.replace(/[^\w.-]/g, '')}';
 const OFFLINE_URL = '/offline.html';
 const PRECACHE = [OFFLINE_URL, '/icons/icon-192.png'];
 
@@ -51,3 +55,5 @@ self.addEventListener('fetch', (event) => {
     );
   }
 });
+`;
+}

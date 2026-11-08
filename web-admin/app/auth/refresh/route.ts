@@ -8,38 +8,36 @@ import {
 } from '@/lib/auth/cookies';
 import { loginPathFor, safeNext } from '@/lib/auth/redirects';
 import { refreshSession } from '@/lib/auth/refresh';
+import { clientIp } from '@/lib/bff';
 
 /**
- * Where server components send the browser when the access token is gone or rejected.
- * Rotates the tokens (cookies can be written here) and returns to the page.
- * `signout=1` drops the session instead and lands on the right login page.
+ * Where server components send the browser when the access token is gone or rejected. Rotates the
+ * tokens (cookies can be written here) and returns to the page. Read-only apart from that: ending
+ * a session is a POST (`endSession`), never a link.
  */
 export async function GET(req: NextRequest) {
-  const params = req.nextUrl.searchParams;
-  const next = safeNext(params.get('next'), '/admin');
+  const next = safeNext(req.nextUrl.searchParams.get('next'), '/admin');
   const login = loginPathFor(next);
-  const back = (path: string, query = '') => new URL(`${path}${query}`, req.url);
+  const to = (path: string) => new URL(path, req.url);
 
-  const fail = (reason: string) => {
-    const res = NextResponse.redirect(
-      back(next.endsWith('/login') ? next : login, `?error=${reason}`),
-    );
+  const refreshToken = req.cookies.get(REFRESH_COOKIE)?.value;
+  const expired = () => {
+    // The API already refused this token (or there was none), so there is nothing left to revoke.
+    const res = NextResponse.redirect(to(`${login}?error=expired`));
     clearAuthCookies(res.cookies);
     return res;
   };
+  if (!refreshToken) return expired();
 
-  const refreshToken = req.cookies.get(REFRESH_COOKIE)?.value;
-  if (params.get('signout') === '1') return fail(params.get('error') ?? 'expired');
-  if (!refreshToken) return fail('expired');
-
-  const result = await refreshSession(refreshToken);
+  const result = await refreshSession(refreshToken, clientIp(req.headers));
   if (!result.ok) {
-    if (result.reason === 'unavailable') {
-      return NextResponse.redirect(back(login, '?error=unavailable'));
-    }
-    return fail('expired');
+    // Superseded: a parallel request just rotated it. Cookies are kept, the newer one arrives.
+    if (result.reason === 'invalid') return expired();
+    return NextResponse.redirect(
+      to(result.reason === 'superseded' ? next : `${login}?error=unavailable`),
+    );
   }
-  const res = NextResponse.redirect(back(next));
+  const res = NextResponse.redirect(to(next));
   setAuthCookies(res.cookies, result.tokens, readClaims(result.tokens.accessToken)?.exp);
   markRefreshed(res.cookies);
   return res;

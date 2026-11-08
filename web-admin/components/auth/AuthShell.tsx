@@ -68,8 +68,13 @@ export function AuthShell({ children }: { children: ReactNode }) {
   );
 }
 
-export const LOGIN_NOTICES: Record<string, string> = {
+const LOGIN_NOTICES: Record<string, string> = {
   expired: 'Нэвтэрсэн хугацаа дууссан байна. Дахин нэвтэрнэ үү.',
   forbidden: 'Энэ хэсэгт орох эрх таньд алга.',
   unavailable: 'Серверт холбогдож чадсангүй. Түр хүлээгээд дахин оролдоно уу.',
 };
+
+/** Message for the `?error=` code in the URL, only for codes we know (never reflects input). */
+export function noticeFor(code: string | undefined): string | undefined {
+  return code && Object.hasOwn(LOGIN_NOTICES, code) ? LOGIN_NOTICES[code] : undefined;
+}

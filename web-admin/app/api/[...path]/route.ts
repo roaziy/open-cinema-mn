@@ -1,5 +1,5 @@
 import { type NextRequest, NextResponse } from 'next/server';
-import { isFresh, readClaims } from '@/lib/auth/claims';
+import { readClaims } from '@/lib/auth/claims';
 import {
   ACCESS_COOKIE,
   clearAuthCookies,
@@ -8,13 +8,16 @@ import {
   type Tokens,
 } from '@/lib/auth/cookies';
 import { refreshSession } from '@/lib/auth/refresh';
+import { bffHeaders, clientIp } from '@/lib/bff';
 import { isSameOrigin } from '@/lib/csrf';
-import { API_URL } from '@/lib/env';
+import { apiUrl } from '@/lib/env';
+import { upstreamPath } from '@/lib/proxy-path';
 
 /**
  * Backend-for-frontend proxy for client components: `/api/<path>` -> `API_INTERNAL_URL/v1/<path>`.
- * The browser only ever holds httpOnly cookies; this adds the bearer, refreshes on 401 and
- * rotates the cookie. Token-issuing endpoints are not reachable here.
+ * The browser only ever holds httpOnly cookies; this adds the bearer. `proxy.ts` refreshes ahead
+ * of time (it is the only module that does), so here a 401 gets at most one retry with a rotated
+ * pair. Only allowlisted API areas are reachable; token-issuing endpoints are not.
  */
 export const dynamic = 'force-dynamic';
 
@@ -46,27 +49,22 @@ type Ctx = { params: Promise<{ path: string[] }> };
 
 const json = (status: number, error: string) => NextResponse.json({ error }, { status });
 
-function upstreamUrl(segments: string[], search: string): string | null {
-  if (segments.length === 0 || segments[0] === 'auth') return null;
-  if (segments.some((s) => s === '' || s === '.' || s === '..' || /[\\/]/.test(s))) return null;
-  return `${API_URL}/v1/${segments.map(encodeURIComponent).join('/')}${search}`;
-}
-
 async function handle(req: NextRequest, { params }: Ctx): Promise<Response> {
   const method = req.method;
   if (method !== 'GET' && !isSameOrigin(req.headers)) return json(403, 'bad_origin');
 
   const { path } = await params;
-  const url = upstreamUrl(path, req.nextUrl.search);
-  if (!url) return json(404, 'not_found');
+  const target = upstreamPath(path);
+  if (!target) return json(404, 'not_found');
+  const url = `${apiUrl()}${target}${req.nextUrl.search}`;
 
   const forwarded = new Headers();
   for (const name of FORWARD_REQUEST) {
     const value = req.headers.get(name);
     if (value) forwarded.set(name, value);
   }
-  const ip = req.headers.get('x-forwarded-for');
-  if (ip) forwarded.set('x-forwarded-for', ip);
+  const ip = clientIp(req.headers);
+  for (const [k, v] of Object.entries(bffHeaders(ip))) forwarded.set(k, v);
   const body = method === 'GET' ? undefined : await req.arrayBuffer();
 
   const send = (access: string | undefined) => {
@@ -89,18 +87,18 @@ async function handle(req: NextRequest, { params }: Ctx): Promise<Response> {
 
   const rotate = async () => {
     if (!refreshToken) return false;
-    const result = await refreshSession(refreshToken);
+    const result = await refreshSession(refreshToken, ip);
     if (result.ok) {
       rotated = result.tokens;
       access = result.tokens.accessToken;
       return true;
     }
+    // Only a refused token ends the session. `superseded` means a newer cookie is on its way.
     expired = result.reason === 'invalid';
     return false;
   };
 
   try {
-    if (!isFresh(access) && refreshToken) await rotate();
     let upstream = await send(access);
     if (upstream.status === 401 && !rotated && (await rotate())) upstream = await send(access);
 

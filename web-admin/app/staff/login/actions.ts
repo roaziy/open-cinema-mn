@@ -8,8 +8,12 @@ import { setAuthCookies } from '@/lib/auth/cookies';
 import { safeNext } from '@/lib/auth/redirects';
 import { postForTokens, postJson } from '@/lib/auth/server';
 
-export type RequestState = { error?: string; phone?: string; sentAt?: number };
+/** `retryAfterSec` is a duration, so the browser's clock never matters. */
+export type RequestState = { error?: string; phone?: string; ok?: true; retryAfterSec?: number };
 export type VerifyState = { error?: string };
+
+/** The API allows a new code 60 s after the last one. */
+const RESEND_AFTER_S = 60;
 
 const REQUEST_ERRORS: Record<string, string> = {
   invalid_target: 'Утасны дугаараа шалгана уу.',
@@ -36,7 +40,7 @@ export async function requestOtp(_prev: RequestState, form: FormData): Promise<R
   if (!out.ok) {
     return { phone, error: REQUEST_ERRORS[out.code] ?? 'Код илгээж чадсангүй. Дахин оролдоно уу.' };
   }
-  return { phone, sentAt: Date.now() };
+  return { ok: true, phone, retryAfterSec: RESEND_AFTER_S };
 }
 
 export async function verifyOtp(_prev: VerifyState, form: FormData): Promise<VerifyState> {

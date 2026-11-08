@@ -4,7 +4,7 @@ import { unstable_rethrow } from 'next/navigation';
 import { cache } from 'react';
 import { z } from 'zod';
 import { apiGet } from './api';
-import { assignHues, type HueKey } from './hues';
+import { type HueKey, hueFor } from './hues';
 import { type TodayShowtime, TodayShowtimeSchema } from './schemas';
 
 export type ShellBranch = {
@@ -18,6 +18,8 @@ export type ShellBranch = {
 };
 
 export type ShellData = {
+  /** The numbers could not be loaded. Zeros here would be a lie, so the UI shows a marker. */
+  failed: boolean;
   branches: ShellBranch[];
   today: {
     showtimes: number;
@@ -39,13 +41,14 @@ function needsAttention(rows: TodayShowtime[], now: number): boolean {
 }
 
 const EMPTY: ShellData = {
+  failed: true,
   branches: [],
   today: { showtimes: 0, admitted: 0, sold: 0, capacity: 0, attention: false },
 };
 
 /**
- * Numbers for the admin sidebar. A failing call must not take the whole shell down, so any error
- * degrades to an empty sidebar instead of an error page.
+ * Numbers for the admin sidebar. A failing call must not take the whole shell down, so an error
+ * degrades to `failed: true` (shown as a quiet marker) instead of an error page or fake zeros.
  */
 export const loadAdminShellData = cache(async (): Promise<ShellData> => {
   try {
@@ -56,15 +59,15 @@ export const loadAdminShellData = cache(async (): Promise<ShellData> => {
       ),
     );
     const now = Date.now();
-    const hues = assignHues(branches.map((b) => b.id));
     const all = perBranch.flat();
     return {
+      failed: false,
       branches: branches.map((b, i) => {
         const rows = perBranch[i] ?? [];
         return {
           id: b.id,
           name: b.name,
-          hue: hues.get(b.id) ?? 'purple',
+          hue: hueFor(b.id),
           showtimes: rows.length,
           attention: needsAttention(rows, now),
         };

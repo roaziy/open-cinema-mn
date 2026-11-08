@@ -27,6 +27,17 @@ export function Sidebar({
   const pathname = usePathname();
   const [collapsed, setCollapsed] = useState(initialCollapsed);
   const [open, setOpen] = useState(false);
+  // On phones a closed drawer is off-screen but must not be reachable by Tab or screen readers.
+  // Unknown until mounted, so the desktop sidebar never starts out inert.
+  const [phone, setPhone] = useState(false);
+
+  useEffect(() => {
+    const query = window.matchMedia('(max-width: 1023px)');
+    const sync = () => setPhone(query.matches);
+    sync();
+    query.addEventListener('change', sync);
+    return () => query.removeEventListener('change', sync);
+  }, []);
 
   useEffect(() => {
     if (!open) return;
@@ -48,7 +59,7 @@ export function Sidebar({
     href: `/admin/branches/${b.id}`,
     label: b.name,
     hue: b.hue,
-    count: b.showtimes,
+    count: data.failed ? undefined : b.showtimes,
     attention: b.attention,
   }));
   const activeChild = branchChildren.find((c) => isActive(pathname, c.href))?.href ?? null;
@@ -81,6 +92,7 @@ export function Sidebar({
       )}
 
       <aside
+        inert={phone && !open}
         aria-label="Үндсэн цэс"
         className={`fixed inset-y-0 left-0 z-50 w-[288px] max-w-[88vw] p-2 transition-transform duration-200 lg:sticky lg:top-0 lg:z-auto lg:h-dvh lg:w-auto lg:max-w-none lg:translate-x-0 lg:pr-0 ${open ? 'translate-x-0' : '-translate-x-full'}`}
       >
@@ -123,11 +135,11 @@ export function Sidebar({
                         item={item}
                         active={isActive(pathname, item.href)}
                         count={
-                          item.count === 'showtimes'
-                            ? data.today.showtimes
-                            : item.count === 'admitted'
-                              ? data.today.admitted
-                              : undefined
+                          item.count === undefined
+                            ? undefined
+                            : data.failed
+                              ? '–'
+                              : data.today[item.count]
                         }
                         attention={item.count === 'admitted' ? data.today.attention : undefined}
                         childItems={item.branches ? branchChildren : undefined}
@@ -141,7 +153,11 @@ export function Sidebar({
             </nav>
 
             <div className="flex flex-col gap-2 p-2">
-              <TodayProgress sold={data.today.sold} capacity={data.today.capacity} />
+              <TodayProgress
+                sold={data.today.sold}
+                capacity={data.today.capacity}
+                failed={data.failed}
+              />
               <AccountCard
                 id={user.id}
                 name={displayName}

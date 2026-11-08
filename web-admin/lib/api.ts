@@ -4,7 +4,8 @@ import { redirect } from 'next/navigation';
 import type { ZodType } from 'zod';
 import { ACCESS_COOKIE, REFRESH_COOKIE, REFRESHED_COOKIE } from './auth/cookies';
 import { loginPathFor } from './auth/redirects';
-import { API_URL } from './env';
+import { bffHeaders, clientIp } from './bff';
+import { apiUrl } from './env';
 
 export class ApiError extends Error {
   constructor(
@@ -24,30 +25,36 @@ async function currentPath(): Promise<string> {
  *
  * Server components cannot write cookies, so a 401 here sends the browser through
  * `/auth/refresh`, which rotates the tokens and comes back. If that already happened a moment ago
- * and the API still says 401, the session is dead and we sign out instead of looping.
+ * and the API still says 401, the session is dead: the login page ends it (POST) instead of looping.
  */
 export async function apiFetch(path: string, init: RequestInit = {}): Promise<Response> {
   const jar = await cookies();
   const access = jar.get(ACCESS_COOKIE)?.value;
-  const next = encodeURIComponent(await currentPath());
+  const path0 = await currentPath();
+  const next = encodeURIComponent(path0);
+  const toLogin = (): never => redirect(`${loginPathFor(path0)}?error=expired`);
 
   if (!access) {
     if (jar.has(REFRESH_COOKIE) && !jar.has(REFRESHED_COOKIE)) {
       redirect(`/auth/refresh?next=${next}`);
     }
-    redirect(loginPathFor(await currentPath()));
+    toLogin();
   }
 
-  const res = await fetch(`${API_URL}/v1${path}`, {
+  const res = await fetch(`${apiUrl()}/v1${path}`, {
     ...init,
     cache: 'no-store',
-    headers: { ...init.headers, authorization: `Bearer ${access}` },
+    headers: {
+      ...init.headers,
+      ...bffHeaders(clientIp(await headers())),
+      authorization: `Bearer ${access}`,
+    },
     signal: init.signal ?? AbortSignal.timeout(10_000),
   });
 
   if (res.status === 401) {
-    const dead = jar.has(REFRESHED_COOKIE) || !jar.has(REFRESH_COOKIE);
-    redirect(`/auth/refresh?next=${next}${dead ? '&signout=1' : ''}`);
+    if (jar.has(REFRESHED_COOKIE) || !jar.has(REFRESH_COOKIE)) toLogin();
+    redirect(`/auth/refresh?next=${next}`);
   }
   return res;
 }

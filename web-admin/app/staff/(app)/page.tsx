@@ -1,10 +1,12 @@
 import { Armchair } from '@phosphor-icons/react/dist/ssr';
 import type { Metadata } from 'next';
+import { unstable_rethrow } from 'next/navigation';
 import { z } from 'zod';
+import { ErrorState } from '@/components/ui/ErrorState';
 import { IconTile } from '@/components/ui/IconTile';
 import { PageHeader } from '@/components/ui/PageHeader';
 import { apiGet } from '@/lib/api';
-import { TodayShowtimeSchema } from '@/lib/schemas';
+import { type TodayShowtime, TodayShowtimeSchema } from '@/lib/schemas';
 
 export const metadata: Metadata = { title: 'Өнөөдөр' };
 
@@ -15,8 +17,25 @@ const time = new Intl.DateTimeFormat('mn', {
   timeZone: 'Asia/Ulaanbaatar',
 });
 
+async function load(): Promise<TodayShowtime[] | null> {
+  try {
+    return await apiGet('/staff/today', z.array(TodayShowtimeSchema));
+  } catch (err) {
+    unstable_rethrow(err);
+    return null;
+  }
+}
+
 export default async function StaffToday() {
-  const rows = await apiGet('/staff/today', z.array(TodayShowtimeSchema)).catch(() => []);
+  const rows = await load();
+  if (!rows) {
+    return (
+      <>
+        <PageHeader title="Өнөөдрийн сеанс" />
+        <ErrorState message="Өнөөдрийн сеансыг ачаалж чадсангүй." />
+      </>
+    );
+  }
   return (
     <>
       <PageHeader
@@ -41,11 +60,16 @@ export default async function StaffToday() {
                 <p className="truncate text-[15px] font-medium text-ink">{r.movieTitle}</p>
                 <p className="text-[13px] text-muted">{r.hallName}</p>
               </div>
-              <div className="flex items-center gap-2 text-[13px] text-body tabular-nums">
+              <div className="flex items-center gap-2 text-body">
                 <IconTile hue="teal" size={22}>
                   <Armchair size={13} weight="fill" />
                 </IconTile>
-                {r.admitted}/{r.sold}
+                <div className="text-right">
+                  <p className="text-[13px] leading-tight tabular-nums">
+                    {r.admitted}/{r.sold}
+                  </p>
+                  <p className="text-[11px] leading-tight text-muted">орсон/зарсан</p>
+                </div>
               </div>
             </li>
           ))}

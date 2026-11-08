@@ -15,15 +15,13 @@ export const getUser = cache(async (): Promise<PublicUser> => {
 
 /**
  * Authoritative role gate for layouts. `proxy.ts` only routes on an unverified token claim; this
- * asks the API. A wrong role means the stored session is not for this area, so it is dropped.
+ * asks the API. A wrong role sends the browser to the login page, which ends that session.
  */
 export async function requireRole(...roles: Role[]): Promise<PublicUser> {
   const path = (await headers()).get('x-pathname') ?? '/admin';
   const user = await getUser();
   if (!roles.includes(user.role)) {
-    redirect(
-      `/auth/refresh?next=${encodeURIComponent(loginPathFor(path))}&signout=1&error=forbidden`,
-    );
+    redirect(`${loginPathFor(path)}?error=forbidden`);
   }
   return user;
 }

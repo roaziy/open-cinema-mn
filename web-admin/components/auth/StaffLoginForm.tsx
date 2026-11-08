@@ -13,17 +13,22 @@ import { Notice } from '../ui/Notice';
 import { SubmitButton } from '../ui/SubmitButton';
 import { OtpInput } from './OtpInput';
 
-const RESEND_S = 60;
-
-function useCountdown(since: number | undefined): number {
+/** Seconds left until a new code may be requested, counted down from a server-given duration. */
+function useCountdown(state: RequestState): number {
   const [left, setLeft] = useState(0);
   useEffect(() => {
-    if (!since) return;
-    const tick = () => setLeft(Math.max(0, RESEND_S - Math.floor((Date.now() - since) / 1000)));
+    if (!state.ok || !state.retryAfterSec) {
+      setLeft(0);
+      return;
+    }
+    const total = state.retryAfterSec;
+    const started = performance.now();
+    const tick = () =>
+      setLeft(Math.max(0, total - Math.floor((performance.now() - started) / 1000)));
     tick();
     const id = setInterval(tick, 1000);
     return () => clearInterval(id);
-  }, [since]);
+  }, [state]);
   return left;
 }
 
@@ -31,13 +36,16 @@ export function StaffLoginForm({ next, notice }: { next: string; notice?: string
   const [sent, send] = useActionState<RequestState, FormData>(requestOtp, {});
   const [checked, verify] = useActionState<VerifyState, FormData>(verifyOtp, {});
   const [editing, setEditing] = useState(false);
-  const left = useCountdown(sent.sentAt);
+  // The send result a wrong-code message belongs to: a fresh code makes that message stale.
+  const [errorFor, setErrorFor] = useState<RequestState | null>(null);
+  const left = useCountdown(sent);
 
   // A fresh code was sent: leave the phone step.
   // biome-ignore lint/correctness/useExhaustiveDependencies: keyed on the send result
-  useEffect(() => setEditing(false), [sent.sentAt]);
+  useEffect(() => setEditing(false), [sent]);
 
-  const onCodeStep = Boolean(sent.sentAt && sent.phone) && !editing;
+  const onCodeStep = Boolean(sent.ok && sent.phone) && !editing;
+  const verifyError = checked.error && errorFor === sent ? checked.error : undefined;
 
   if (!onCodeStep) {
     return (
@@ -72,10 +80,16 @@ export function StaffLoginForm({ next, notice }: { next: string; notice?: string
 
   return (
     <div className="flex flex-col gap-4">
-      <form action={verify} className="flex flex-col gap-4">
+      <form
+        action={(data) => {
+          setErrorFor(sent);
+          verify(data);
+        }}
+        className="flex flex-col gap-4"
+      >
         <input type="hidden" name="phone" value={sent.phone} />
         <input type="hidden" name="next" value={next} />
-        {checked.error && <Notice>{checked.error}</Notice>}
+        {verifyError && <Notice>{verifyError}</Notice>}
         <div>
           <p className="mb-2.5 text-[13px] font-medium text-body">
             <span className="tabular-nums">{sent.phone}</span> дугаарт очсон код
