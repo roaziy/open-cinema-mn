@@ -19,7 +19,7 @@ export function BranchChip() {
       style={styles.chip}
       onPress={() => router.push('/branches')}
       accessibilityRole="button"
-      accessibilityLabel={t('branch.title')}
+      accessibilityLabel={`${t('branch.title')}: ${branch ? branch.name : t('branch.all')}`}
     >
       <View style={[styles.dot, { backgroundColor: branch ? hueFor(branch.id) : colors.muted }]} />
       <Text style={styles.label} numberOfLines={1}>
@@ -39,9 +39,9 @@ const styles = StyleSheet.create({
     paddingHorizontal: space.md,
     height: 36,
     borderRadius: radius.pill,
-    backgroundColor: 'rgba(11,11,13,0.55)',
+    backgroundColor: colors.scrim,
     borderWidth: 1,
-    borderColor: 'rgba(255,255,255,0.14)',
+    borderColor: colors.scrimBorder,
   },
   dot: { width: 8, height: 8, borderRadius: 4 },
   label: { ...type.footnote, color: colors.ink, flexShrink: 1 },

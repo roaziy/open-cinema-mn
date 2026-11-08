@@ -1,7 +1,7 @@
-import { formatMnt, ubDate } from '@open-cinema/shared';
+import { formatMnt } from '@open-cinema/shared';
 import { router, useLocalSearchParams } from 'expo-router';
 import { CalendarBlank, CaretLeft, Clock, ShieldCheck, Tag } from 'phosphor-react-native';
-import type { ReactNode } from 'react';
+import { type ReactNode, useMemo } from 'react';
 import { ScrollView, StyleSheet, Text, View } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { AgeBadge } from '@/components/age-badge';
@@ -13,20 +13,19 @@ import { Pressable } from '@/components/pressable';
 import { Skeleton } from '@/components/skeleton';
 import { ErrorState } from '@/components/state-views';
 import { useI18n } from '@/i18n';
-import { useMovie, useShowtimes } from '@/lib/catalog';
-import { formatDuration } from '@/lib/format';
+import { useFromPrice, useMovie } from '@/lib/catalog';
+import { formatDuration, formatMonthDay, nextUbDays } from '@/lib/format';
 import { colors, hairlineWidth, hues, radius, space } from '@/theme/tokens';
 import { type } from '@/theme/type';
 
 export default function MovieScreen() {
-  const { t } = useI18n();
+  const { t, locale } = useI18n();
   const insets = useSafeAreaInsets();
   const { id } = useLocalSearchParams<{ id: string }>();
   const movie = useMovie(id);
-  // Today's slots give the "from" price; an empty day simply hides it.
-  const today = useShowtimes(id, ubDate(new Date()));
-  const prices = today.data?.flatMap((b) => b.showtimes.map((s) => s.priceStandard)) ?? [];
-  const fromPrice = prices.length > 0 ? Math.min(...prices) : null;
+  const days = useMemo(() => nextUbDays(7), []);
+  // "From" price: cheapest bookable slot across the loaded week; only for films already showing.
+  const fromPrice = useFromPrice(id, days, movie.data?.status === 'now');
 
   const back = (
     <Pressable
@@ -100,9 +99,16 @@ export default function MovieScreen() {
                 value={m.genres.join(', ')}
               />
               <InfoRow
-                tile={<IconTile sf="calendar" phosphor={CalendarBlank} hue={hues.teal} size={28} />}
+                tile={
+                  <IconTile
+                    sf="calendar.circle.fill"
+                    phosphor={CalendarBlank}
+                    hue={hues.teal}
+                    size={28}
+                  />
+                }
                 label={t('movie.release')}
-                value={m.releaseDate}
+                value={formatMonthDay(m.releaseDate, locale)}
               />
               <InfoRow
                 tile={
@@ -175,9 +181,9 @@ const styles = StyleSheet.create({
     borderRadius: 20,
     alignItems: 'center',
     justifyContent: 'center',
-    backgroundColor: 'rgba(11,11,13,0.55)',
+    backgroundColor: colors.scrim,
     borderWidth: 1,
-    borderColor: 'rgba(255,255,255,0.14)',
+    borderColor: colors.scrimBorder,
   },
   hero: {
     alignItems: 'center',
