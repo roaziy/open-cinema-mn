@@ -1,10 +1,11 @@
 import { readFile } from 'node:fs/promises';
-import { fileURLToPath } from 'node:url';
+import path from 'node:path';
 import { formatUbTime, type TicketView, ubDate } from '@open-cinema/shared';
 import { PKPass } from 'passkit-generator';
 import { type Env, env } from '../env';
+import { BACKEND_ROOT } from '../lib/paths';
 
-const MODEL = fileURLToPath(new URL('./model/OpenCinema.pass', import.meta.url));
+const MODEL = path.join(BACKEND_ROOT, 'src/wallet/model/OpenCinema.pass');
 
 export type WalletConfig = {
   passTypeId: string;

@@ -1,14 +1,14 @@
 import { readFile } from 'node:fs/promises';
 import path from 'node:path';
-import { fileURLToPath } from 'node:url';
 import { hash } from '@node-rs/argon2';
 import { generateSeats, type HallGenParams, ubDate, ubDayRange } from '@open-cinema/shared';
 import { sql } from 'drizzle-orm';
+import { BACKEND_ROOT } from '../lib/paths';
 import type { StorageProvider } from '../storage';
 import type { Db } from './client';
 import { branches, halls, movies, seats, showtimes, users } from './schema';
 
-const MEDIA_DIR = fileURLToPath(new URL('../../seed/media', import.meta.url));
+const MEDIA_DIR = path.join(BACKEND_ROOT, 'seed/media');
 const DAY_MS = 24 * 60 * 60 * 1000;
 const MIN_MS = 60 * 1000;
 const PREMIUM_EXTRA = 7000;

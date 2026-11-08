@@ -1,0 +1,85 @@
+name: ci
+
+on:
+  push:
+  pull_request:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  check:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    services:
+      postgres:
+        image: postgres:17
+        env:
+          POSTGRES_USER: postgres
+          POSTGRES_PASSWORD: postgres
+          POSTGRES_DB: open_cinema_test
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U postgres -d open_cinema_test"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
+    env:
+      TEST_DATABASE_URL: postgresql://postgres:postgres@localhost:5432/open_cinema_test
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version: 24
+          cache: npm
+      - run: npm ci
+      - name: Typecheck (all workspaces)
+        run: npm run typecheck
+      - name: Lint (biome)
+        run: npm run lint
+      - name: Tests (shared, backend, web-admin when present)
+        run: npm test
+      - name: Backend production build
+        run: npm -w @open-cinema/backend run build
+      - name: Backend bundle starts
+        run: |
+          set -e
+          cd backend
+          DATABASE_URL="$TEST_DATABASE_URL" npm run db:migrate:prod
+          DATABASE_URL="$TEST_DATABASE_URL" JWT_SECRET=ci-jwt-secret-0123456789 QR_SECRET=ci-qr-secret-0123456789 \
+            LINK_SECRET=ci-link-secret-0123456789 PORT=4010 node dist/index.js &
+          pid=$!
+          for _ in $(seq 1 20); do
+            if curl -fsS http://localhost:4010/v1/health; then kill "$pid"; exit 0; fi
+            sleep 1
+          done
+          kill "$pid" || true
+          exit 1
+      - name: App lint (expo)
+        if: hashFiles('app/package.json') != ''
+        working-directory: app
+        run: npx expo lint
+      - name: Web admin build
+        if: hashFiles('web-admin/package.json') != ''
+        run: npm run build --workspace web-admin --if-present
+        env:
+          API_INTERNAL_URL: http://localhost:4000
+
+  gitleaks:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      pull-requests: read
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          fetch-depth: 0
+      - uses: gitleaks/gitleaks-action@ff98106e4c7b2bc287b24eaf42907196329070c7 # v2.3.9
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
