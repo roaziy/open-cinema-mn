@@ -33,8 +33,8 @@ export default function GateScreen() {
   const noSeats = holds.data !== undefined && earliest === null;
   const closed = noSeats || left === 0;
   useEffect(() => {
-    if (focused && (noSeats || left === 0)) router.dismissTo(`/showtime/${id}`);
-  }, [focused, noSeats, left, id]);
+    if (focused && closed) router.dismissTo(`/showtime/${id}`);
+  }, [focused, closed, id]);
 
   const [email, setEmail] = useState(() => getContactEmail(id) ?? '');
   const [touched, setTouched] = useState(false);
@@ -121,7 +121,7 @@ export default function GateScreen() {
           {invalid ? <Text style={styles.error}>{t('gate.emailInvalid')}</Text> : null}
           <Pressable
             style={[styles.secondary, (!normalized || closed) && styles.disabled]}
-            disabled={closed}
+            disabled={!normalized || closed}
             onPress={asGuest}
             accessibilityRole="button"
             accessibilityState={{ disabled: !normalized || closed }}

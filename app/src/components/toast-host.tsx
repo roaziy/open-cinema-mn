@@ -1,5 +1,5 @@
 import { Platform, StyleSheet, Text, View } from 'react-native';
-import Animated, { FadeInUp, FadeOutUp } from 'react-native-reanimated';
+import Animated, { FadeInUp } from 'react-native-reanimated';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { FullWindowOverlay } from 'react-native-screens';
 import { useToast } from '@/lib/toast';
@@ -8,7 +8,9 @@ import { type } from '@/theme/type';
 
 /**
  * The one toast layer, mounted at the root. On iOS it sits in a full-window overlay, which is
- * painted above native sheets and modals (gate, login); elsewhere a plain absolute layer is enough.
+ * painted above native sheets and modals (gate, login). That overlay is only mounted while a
+ * toast is showing, and is not marked modal, so it never takes VoiceOver away from the screen
+ * underneath; elsewhere a plain absolute layer is enough.
  */
 export function ToastHost() {
   const toast = useToast();
@@ -19,8 +21,15 @@ export function ToastHost() {
         <Animated.View
           key={toast.id}
           entering={FadeInUp.duration(180)}
-          exiting={FadeOutUp.duration(160)}
-          style={[styles.toast, toast.tone === 'error' && styles.error]}
+          style={[
+            styles.toast,
+            toast.tone === 'error' && styles.error,
+            {
+              opacity: toast.leaving ? 0 : 1,
+              transitionProperty: 'opacity',
+              transitionDuration: '160ms',
+            },
+          ]}
           accessibilityLiveRegion="polite"
         >
           <View
@@ -34,7 +43,13 @@ export function ToastHost() {
       ) : null}
     </View>
   );
-  return Platform.OS === 'ios' ? <FullWindowOverlay>{layer}</FullWindowOverlay> : layer;
+  if (Platform.OS !== 'ios') return layer;
+  if (!toast) return null;
+  return (
+    <FullWindowOverlay unstable_accessibilityContainerViewIsModal={false}>
+      {layer}
+    </FullWindowOverlay>
+  );
 }
 
 const styles = StyleSheet.create({
