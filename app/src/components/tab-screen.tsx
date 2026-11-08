@@ -14,12 +14,14 @@ type Props = {
 
 /** Dark canvas with a large title and one layered panel: placeholder chrome for tab roots. */
 export function TabScreen({ title, message, tile, children }: Props) {
+  // iOS adds the safe area itself (contentInsetAdjustmentBehavior); Android does not.
   const insets = useSafeAreaInsets();
+  const top = process.env.EXPO_OS === 'ios' ? 0 : insets.top;
   return (
     <ScrollView
       style={styles.root}
       contentInsetAdjustmentBehavior="automatic"
-      contentContainerStyle={{ paddingTop: insets.top + space.lg, paddingHorizontal: space.lg }}
+      contentContainerStyle={{ paddingTop: top + space.lg, paddingHorizontal: space.lg }}
     >
       <Text style={styles.title} accessibilityRole="header">
         {title}

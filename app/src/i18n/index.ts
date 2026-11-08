@@ -1,4 +1,4 @@
-import * as SecureStore from 'expo-secure-store';
+import Storage from 'expo-sqlite/kv-store';
 import { useCallback, useSyncExternalStore } from 'react';
 import { en } from './en';
 import { mn, type TKey } from './mn';
@@ -7,6 +7,7 @@ export type Locale = 'mn' | 'en';
 export type { TKey };
 
 const dictionaries: Record<Locale, Record<TKey, string>> = { mn, en };
+// Plain storage, not the keychain: a language choice is not a secret.
 const STORAGE_KEY = 'oc.locale';
 
 let current: Locale = 'mn'; // Mongolian is the default
@@ -22,7 +23,7 @@ const subscribe = (cb: () => void) => {
 /** Restore the saved language. Called once at startup; failures keep the default. */
 export async function hydrateLocale(): Promise<void> {
   try {
-    const saved = await SecureStore.getItemAsync(STORAGE_KEY);
+    const saved = await Storage.getItem(STORAGE_KEY);
     if (saved === 'mn' || saved === 'en') setLocaleState(saved);
   } catch {}
 }
@@ -35,7 +36,7 @@ function setLocaleState(next: Locale) {
 
 export function setLocale(next: Locale) {
   setLocaleState(next);
-  SecureStore.setItemAsync(STORAGE_KEY, next).catch(() => {});
+  Storage.setItem(STORAGE_KEY, next).catch(() => {});
 }
 
 export function translate(

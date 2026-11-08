@@ -1,10 +1,9 @@
+/// <reference types="node" />
 import { existsSync } from 'node:fs';
 import { resolve } from 'node:path';
 import type { ConfigContext, ExpoConfig } from 'expo/config';
 
-const GILROY = ['Regular', 'Medium', 'SemiBold', 'Bold'].map(
-  (w) => `./assets/fonts/private/GIP-${w}.otf`,
-);
+const GILROY = ['Regular', 'Medium', 'SemiBold'].map((w) => `./assets/fonts/private/GIP-${w}.otf`);
 const ONEST = ['Regular', 'Medium', 'SemiBold'].map((w) => `./assets/fonts/Onest-${w}.ttf`);
 
 // Gilroy is commercial and never committed: it is embedded only when the gitignored
@@ -51,7 +50,6 @@ export default ({ config }: ConfigContext): ExpoConfig => ({
   ],
   experiments: { typedRoutes: true, reactCompiler: true },
   extra: {
-    apiUrl: process.env.EXPO_PUBLIC_API_URL ?? 'http://localhost:4000',
     gilroy: hasGilroy,
   },
 });
