@@ -74,7 +74,7 @@ export function createApp(over: Partial<AppDeps> = {}): Express {
   v1.use(createHoldsRouter(deps));
   v1.use(createBookingsRouter(deps));
   v1.use(createTicketsRouter(deps, limiters));
-  v1.use(createStaffRouter(deps));
+  v1.use(createStaffRouter(deps, limiters));
   app.use('/v1', v1);
 
   app.use((_req, res) => {

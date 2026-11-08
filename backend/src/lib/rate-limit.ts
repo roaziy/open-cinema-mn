@@ -1,10 +1,15 @@
-import type { RequestHandler } from 'express';
+import type { Request, RequestHandler } from 'express';
 import { rateLimit } from 'express-rate-limit';
 
-const limiter = (windowMs: number, limit: number): RequestHandler =>
+const limiter = (
+  windowMs: number,
+  limit: number,
+  keyGenerator?: (req: Request) => string,
+): RequestHandler =>
   rateLimit({
     windowMs,
     limit,
+    ...(keyGenerator && { keyGenerator }),
     standardHeaders: 'draft-8',
     legacyHeaders: false,
     handler: (_req, res) => {
@@ -19,6 +24,8 @@ export function createLimiters() {
     guest: limiter(60 * 60 * 1000, 30),
     login: limiter(15 * 60 * 1000, 30),
     ticketLink: limiter(15 * 60 * 1000, 60),
+    // Generous: a busy door scans a few tickets a second. Keyed by staff, since a cinema shares one IP.
+    scan: limiter(60_000, 120, (req) => req.user?.id ?? 'anonymous'),
   };
 }
 export type Limiters = ReturnType<typeof createLimiters>;

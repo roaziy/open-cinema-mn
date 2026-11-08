@@ -1,4 +1,4 @@
-import { type SeatKind, SeatKindSchema } from '@open-cinema/shared';
+import { type ScanResult, type SeatKind, SeatKindSchema } from '@open-cinema/shared';
 import { sql } from 'drizzle-orm';
 import {
   boolean,
@@ -296,10 +296,14 @@ export const ticketScans = pgTable(
     scanId: uuid('scan_id').notNull(),
     result: scanResult('result').notNull(),
     previousScanId: uuid('previous_scan_id'),
+    // The exact answer sent to the door, so a replayed scan id returns it unchanged.
+    response: jsonb('response').$type<ScanResult>().notNull(),
     createdAt: createdAt(),
   },
   (t) => [
     uniqueIndex('ticket_scans_scan_id_unique').on(t.scanId),
     index('ticket_scans_ticket_idx').on(t.ticketId),
+    index('ticket_scans_previous_idx').on(t.previousScanId),
+    index('ticket_scans_staff_device_idx').on(t.staffId, t.deviceId, t.createdAt.desc()),
   ],
 );

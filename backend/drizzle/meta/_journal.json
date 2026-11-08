@@ -22,6 +22,13 @@
       "when": 1794145135433,
       "tag": "0002_payments_booking_unique",
       "breakpoints": true
+    },
+    {
+      "idx": 3,
+      "version": "7",
+      "when": 1794147440726,
+      "tag": "0003_scan_response_indexes",
+      "breakpoints": true
     }
   ]
 }

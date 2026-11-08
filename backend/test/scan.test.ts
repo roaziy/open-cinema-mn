@@ -216,6 +216,31 @@ describe('scan', () => {
     expect(await scanRows()).toHaveLength(1);
   });
 
+  it('replays the first body verbatim after the movie, hall, staff and ticket changed', async () => {
+    const s = setup();
+    const f = await fixture();
+    const show = await f.show('2026-11-08T11:00:00Z');
+    const ts = await buy(s, f, show.id, 1, 2);
+    const [t, other] = [one(ts[0]), one(ts[1])];
+    const scanId = uuid();
+    const first = await scan(s, f.staffA, t.qrToken, { scanId });
+    // A second guest is turned away by another door: its "previous" names Staff A.
+    const rej = await scan(s, f.staffB, t.qrToken, { deviceId: DEV_B });
+    expect(rej.body.previous.staffName).toBe('Staff A');
+    await db.update(movies).set({ posterUrl: 'new.jpg', title: 'Renamed', tone: '#ffffff' });
+    await db.update(halls).set({ name: 'Hall 9' });
+    await db.update(users).set({ name: 'Renamed Staff' }).where(eq(users.id, f.staffA.id));
+    await db.update(tickets).set({ status: 'cancelled' }).where(eq(tickets.id, other.id));
+    await db.update(showtimes).set({ status: 'cancelled' });
+    const again = await scan(s, f.staffA, t.qrToken, { scanId });
+    expect(again.body).toEqual(first.body);
+    const rejAgain = await scan(s, f.staffB, t.qrToken, {
+      deviceId: DEV_B,
+      scanId: rej.body.scanId,
+    });
+    expect(rejAgain.body).toEqual(rej.body);
+  });
+
   it('rejects a scanId used by another staff member', async () => {
     const s = setup();
     const f = await fixture();
@@ -315,6 +340,137 @@ describe('scan', () => {
     expect(one(rows.find((r) => r.result === 'undone')).previousScanId).toBe(
       one(rows.find((r) => r.scanId === first.body.scanId)).id,
     );
+  });
+
+  it('refuses a scanId reused with a different ticket', async () => {
+    const s = setup();
+    const f = await fixture();
+    const show = await f.show('2026-11-08T11:00:00Z');
+    const [a, b] = await buy(s, f, show.id, 1, 2);
+    const scanId = uuid();
+    await scan(s, f.staffA, one(a).qrToken, { scanId });
+    const res = await scan(s, f.staffA, one(b).qrToken, { scanId, status: 409 });
+    expect(res.body.error).toBe('scan_id_conflict');
+  });
+
+  it('never shows a phone number as the staff name', async () => {
+    const s = setup();
+    const f = await fixture();
+    await db.update(users).set({ name: null }).where(eq(users.id, f.staffA.id));
+    const show = await f.show('2026-11-08T11:00:00Z');
+    const [t] = await buy(s, f, show.id, 1);
+    await scan(s, f.staffA, one(t).qrToken, { deviceId: DEV_A });
+    const res = await scan(s, f.staffB, one(t).qrToken, { deviceId: DEV_B });
+    expect(res.body.previous.staffName).toBe('Ажилтан');
+    expect(JSON.stringify(res.body)).not.toContain('+976');
+  });
+
+  it('answers invalid for a cancelled showtime', async () => {
+    const s = setup();
+    const f = await fixture();
+    const show = await f.show('2026-11-08T11:00:00Z');
+    const [t] = await buy(s, f, show.id, 1);
+    await db.update(showtimes).set({ status: 'cancelled' });
+    const res = await scan(s, f.staffA, one(t).qrToken);
+    expect(res.body).toMatchObject({ result: 'invalid', ticket: null });
+  });
+
+  it('answers invalid, not already_used, when the ticket is cancelled while the admit waits', async () => {
+    const s = setup();
+    const f = await fixture();
+    const show = await f.show('2026-11-08T11:00:00Z');
+    const [t] = await buy(s, f, show.id, 1);
+    let release!: () => void;
+    const held = new Promise<void>((r) => {
+      release = r;
+    });
+    // Lock the ticket row, let the scan read it as valid and block on its UPDATE, then cancel.
+    const blocker = db.transaction(async (tx) => {
+      await tx
+        .update(tickets)
+        .set({ usedBy: null })
+        .where(eq(tickets.id, one(t).id));
+      await held;
+      await tx
+        .update(tickets)
+        .set({ status: 'cancelled' })
+        .where(eq(tickets.id, one(t).id));
+    });
+    await new Promise((r) => setTimeout(r, 50));
+    const pending = scan(s, f.staffA, one(t).qrToken);
+    await new Promise((r) => setTimeout(r, 300));
+    release();
+    await blocker;
+    expect((await pending).body).toMatchObject({ result: 'invalid', previous: null });
+  });
+
+  it('treats a staff account without a branch as wrong_branch with an empty today', async () => {
+    const s = setup();
+    const f = await fixture();
+    const show = await f.show('2026-11-08T11:00:00Z');
+    const [t] = await buy(s, f, show.id, 1);
+    const lost = one(
+      (
+        await db
+          .insert(users)
+          .values({ role: 'staff', name: 'Lost', phone: '+97688000009' })
+          .returning()
+      )[0],
+    );
+    expect((await scan(s, lost, one(t).qrToken)).body.result).toBe('wrong_branch');
+    const today = await request(s.app)
+      .get('/v1/staff/today')
+      .set('Authorization', await bearer(s, lost))
+      .expect(200);
+    expect(today.body).toEqual([]);
+  });
+
+  it('keeps the repeat window inclusive at exactly 2:00 and ends it 1 ms later', async () => {
+    const s = setup();
+    const f = await fixture();
+    const show = await f.show('2026-11-08T11:00:00Z');
+    const [t] = await buy(s, f, show.id, 1);
+    await scan(s, f.staffA, one(t).qrToken);
+    s.clock.advance(2 * MIN);
+    expect((await scan(s, f.staffA, one(t).qrToken)).body.result).toBe('repeat');
+    s.clock.advance(1);
+    // 2:00.001 after the admit; the repeat did not move the window.
+    expect((await scan(s, f.staffA, one(t).qrToken)).body.result).toBe('already_used');
+  });
+
+  it('lets an admin undo another staff member’s admit', async () => {
+    const s = setup();
+    const f = await fixture();
+    const show = await f.show('2026-11-08T11:00:00Z');
+    const [t] = await buy(s, f, show.id, 1);
+    const a = await scan(s, f.staffA, one(t).qrToken);
+    const res = await request(s.app)
+      .post(`/v1/staff/scan/${a.body.scanId}/undo`)
+      .set('Authorization', await bearer(s, f.admin))
+      .expect(200);
+    expect(res.body.result).toBe('undone');
+  });
+
+  it('cannot undo a repeat or already_used scan', async () => {
+    const s = setup();
+    const f = await fixture();
+    const show = await f.show('2026-11-08T11:00:00Z');
+    const [t] = await buy(s, f, show.id, 1);
+    await scan(s, f.staffA, one(t).qrToken, { deviceId: DEV_A });
+    const repeat = await scan(s, f.staffA, one(t).qrToken, { deviceId: DEV_A });
+    const used = await scan(s, f.staffA, one(t).qrToken, { deviceId: DEV_B });
+    expect([repeat.body.result, used.body.result]).toEqual(['repeat', 'already_used']);
+    for (const r of [repeat, used]) {
+      await request(s.app)
+        .post(`/v1/staff/scan/${r.body.scanId}/undo`)
+        .set('Authorization', await bearer(s, f.staffA))
+        .expect(403);
+    }
+    const [still] = await db
+      .select()
+      .from(tickets)
+      .where(eq(tickets.id, one(t).id));
+    expect(still?.usedAt).not.toBeNull();
   });
 
   it('refuses undo after the window', async () => {
@@ -512,6 +668,7 @@ describe('recent and today', () => {
     const f = await fixture();
     const evening = await f.show('2026-11-08T11:00:00Z');
     const morning = await f.show('2026-11-08T02:00:00Z'); // 10:00 UB
+    const midnight = await f.show('2026-11-07T16:30:00Z'); // 00:30 UB on the 8th, UTC the 7th
     await f.show('2026-11-09T02:00:00Z'); // tomorrow in UB
     await f.show('2026-11-07T15:00:00Z'); // 23:00 UB yesterday
     const tickets3 = await buy(s, f, evening.id, 1, 2, 3);
@@ -523,6 +680,7 @@ describe('recent and today', () => {
       .set('Authorization', await bearer(s, f.staffA))
       .expect(200);
     expect(res.body).toEqual([
+      expect.objectContaining({ id: midnight.id, admitted: 0, sold: 0 }),
       expect.objectContaining({ id: morning.id, admitted: 0, sold: 0, capacity: 6 }),
       {
         id: evening.id,
@@ -550,6 +708,6 @@ describe('recent and today', () => {
       .get('/v1/staff/today')
       .set('Authorization', await bearer(s, f.admin))
       .expect(200);
-    expect(adminAll.body).toHaveLength(2);
+    expect(adminAll.body).toHaveLength(3);
   });
 });
