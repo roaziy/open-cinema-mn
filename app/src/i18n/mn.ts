@@ -33,6 +33,7 @@ export const mn = {
   'movie.age': 'Насны ангилал',
   'movie.fromPrice': '{price}-аас',
   'movie.pickTime': 'Цаг сонгох',
+  'movie.trailer': 'Трейлер',
   'movie.back': 'Буцах',
   'duration.hm': '{h}ц {m}м',
   'duration.m': '{m}м',

@@ -8,6 +8,7 @@ import {
 import { keepPreviousData, useQueries, useQuery } from '@tanstack/react-query';
 import { api } from './api';
 
+/** The catalog is public: browsing must not create a guest account. The first hold does. */
 export const catalogKeys = {
   branches: ['branches'] as const,
   movies: (status: 'now' | 'soon') => ['movies', status] as const,
@@ -18,7 +19,7 @@ export const catalogKeys = {
 export function useBranches() {
   return useQuery({
     queryKey: catalogKeys.branches,
-    queryFn: async () => BranchSchema.array().parse(await api('/branches')),
+    queryFn: async () => BranchSchema.array().parse(await api('/branches', { auth: false })),
     staleTime: 5 * 60_000,
   });
 }
@@ -26,19 +27,22 @@ export function useBranches() {
 export function useMovies(status: 'now' | 'soon') {
   return useQuery({
     queryKey: catalogKeys.movies(status),
-    queryFn: async () => MovieSummarySchema.array().parse(await api(`/movies?status=${status}`)),
+    queryFn: async () =>
+      MovieSummarySchema.array().parse(await api(`/movies?status=${status}`, { auth: false })),
   });
 }
 
 export function useMovie(id: string) {
   return useQuery({
     queryKey: catalogKeys.movie(id),
-    queryFn: async () => MovieDetailSchema.parse(await api(`/movies/${id}`)),
+    queryFn: async () => MovieDetailSchema.parse(await api(`/movies/${id}`, { auth: false })),
   });
 }
 
 async function fetchShowtimes(id: string, date: string): Promise<BranchShowtimes[]> {
-  return BranchShowtimesSchema.array().parse(await api(`/movies/${id}/showtimes?date=${date}`));
+  return BranchShowtimesSchema.array().parse(
+    await api(`/movies/${id}/showtimes?date=${date}`, { auth: false }),
+  );
 }
 
 export function useShowtimes(id: string, date: string) {

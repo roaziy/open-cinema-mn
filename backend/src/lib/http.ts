@@ -1,4 +1,4 @@
-import type { NextFunction, Request, RequestHandler, Response } from 'express';
+import type { Request, RequestHandler, Response } from 'express';
 import { z } from 'zod';
 import { notFound } from './errors';
 
@@ -17,15 +17,6 @@ export function validate<S extends z.ZodType>(schema: S, source: Source = 'body'
     next();
   };
 }
-
-type AsyncHandler = (req: Request, res: Response, next: NextFunction) => Promise<unknown>;
-
-/** Explicit async wrapper; Express 5 already forwards rejections, this keeps intent obvious. */
-export const asyncRoute =
-  (fn: AsyncHandler): RequestHandler =>
-  (req, res, next) => {
-    fn(req, res, next).catch(next);
-  };
 
 const UUID = z.string().uuid();
 

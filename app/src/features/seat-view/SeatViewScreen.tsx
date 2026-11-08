@@ -192,7 +192,7 @@ export function SeatViewScreen() {
         </ScrollView>
       ) : null}
       <View style={styles.statsWrap}>
-        <StatsCard seatLabel={seatLabel(current)} stats={stats} />
+        <StatsCard seatLabel={seatLabel(current)} kind={current.kind} stats={stats} />
       </View>
     </View>
   );

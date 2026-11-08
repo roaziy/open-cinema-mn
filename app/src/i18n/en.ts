@@ -34,6 +34,7 @@ export const en: Record<TKey, string> = {
   'movie.age': 'Age rating',
   'movie.fromPrice': 'from {price}',
   'movie.pickTime': 'Pick a time',
+  'movie.trailer': 'Trailer',
   'movie.back': 'Back',
   'duration.hm': '{h}h {m}m',
   'duration.m': '{m}m',

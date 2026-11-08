@@ -2,7 +2,7 @@ import { formatMnt } from '@open-cinema/shared';
 import { router, useLocalSearchParams } from 'expo-router';
 import { CalendarBlank, CaretLeft, Clock, ShieldCheck, Tag } from 'phosphor-react-native';
 import { type ReactNode, useMemo } from 'react';
-import { ScrollView, StyleSheet, Text, View } from 'react-native';
+import { Linking, ScrollView, StyleSheet, Text, View } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { AgeBadge } from '@/components/age-badge';
 import { GlassBar } from '@/components/glass-bar';
@@ -58,6 +58,18 @@ export default function MovieScreen() {
   }
 
   const m = movie.data;
+  const trailerUrl = m.trailerUrl;
+  const trailer = trailerUrl ? (
+    <Pressable
+      style={styles.trailerButton}
+      onPress={() => {
+        Linking.openURL(trailerUrl).catch(() => {});
+      }}
+      accessibilityRole="link"
+    >
+      <Text style={styles.trailerText}>{t('movie.trailer')}</Text>
+    </Pressable>
+  ) : null;
   return (
     <View style={styles.root}>
       <ScrollView
@@ -129,9 +141,12 @@ export default function MovieScreen() {
         <GlassBar>
           <View style={styles.ctaRow}>
             {m.status === 'soon' && fromPrice === null ? (
-              <Text style={styles.soon}>
-                {t('home.opens', { date: formatMonthDay(m.releaseDate, locale) })}
-              </Text>
+              <>
+                <Text style={styles.soon}>
+                  {t('home.opens', { date: formatMonthDay(m.releaseDate, locale) })}
+                </Text>
+                {trailer}
+              </>
             ) : (
               <>
                 {fromPrice !== null ? (
@@ -139,6 +154,7 @@ export default function MovieScreen() {
                     {t('movie.fromPrice', { price: formatMnt(fromPrice) })}
                   </Text>
                 ) : null}
+                {trailer}
                 <Pressable
                   style={styles.button}
                   onPress={() => router.push(`/movie/${id}/showtimes`)}
@@ -235,6 +251,15 @@ const styles = StyleSheet.create({
     paddingVertical: space.md,
   },
   price: { ...type.number, color: colors.ink, paddingLeft: space.md },
+  trailerButton: {
+    height: 48,
+    paddingHorizontal: space.lg,
+    borderRadius: radius.pill,
+    backgroundColor: colors.fill,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  trailerText: { ...type.headline, color: colors.ink },
   button: {
     flex: 1,
     height: 48,

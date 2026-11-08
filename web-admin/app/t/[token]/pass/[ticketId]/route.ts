@@ -1,3 +1,4 @@
+import { PassUrlResponseSchema } from '@open-cinema/shared';
 import { NextResponse } from 'next/server';
 import { bffHeaders, clientOf } from '@/lib/bff';
 import { apiUrl } from '@/lib/env';
@@ -29,9 +30,9 @@ export async function GET(
       },
     );
     if (!res.ok) return back(res.status === 503 ? 'off' : 'error');
-    const { url } = (await res.json()) as { url?: unknown };
-    if (typeof url !== 'string' || !/^https?:\/\//.test(url)) return back('error');
-    return NextResponse.redirect(url, { status: 303, headers: NO_STORE });
+    const parsed = PassUrlResponseSchema.safeParse(await res.json());
+    if (!parsed.success || !/^https?:\/\//.test(parsed.data.url)) return back('error');
+    return NextResponse.redirect(parsed.data.url, { status: 303, headers: NO_STORE });
   } catch {
     return back('error');
   }
