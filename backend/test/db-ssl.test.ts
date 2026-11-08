@@ -92,4 +92,36 @@ describe('resolveDbSsl', () => {
     expect(resolveDbSsl(cfg(`${base}?sslmode=require`, 'verify')).level).toBe('verify');
     expect(resolveDbSsl(cfg(`${base}?sslmode=disable`, 'off')).ssl).toBe(false);
   });
+
+  it('refuses DATABASE_SSL=verify with ssl=0 in the URL', () => {
+    expect(() => resolveDbSsl(cfg(`${base}?ssl=0`, 'verify'))).toThrow(
+      /DATABASE_SSL=verify.*ssl=0/,
+    );
+    expect(() => resolveDbSsl(cfg(`${base}?ssl=false`, 'require'))).toThrow(/ssl=false/);
+  });
+
+  it('ssl=0 alone resolves to off, which index.ts warns about in production', () => {
+    const r = resolveDbSsl(cfg(`${base}?ssl=0`, undefined, undefined, 'require'));
+    expect(r.level).toBe('off');
+    expect(r.ssl).toBe(false);
+    expect(resolveDbSsl(cfg(`${base}?ssl=disable`)).level).toBe('off');
+  });
+
+  it('ssl=1 alone resolves to require', () => {
+    const r = resolveDbSsl(cfg(`${base}?ssl=1`));
+    expect(r.level).toBe('require');
+    expect(r.ssl).toEqual({ rejectUnauthorized: false });
+    expect(resolveDbSsl(cfg(`${base}?ssl=true`)).level).toBe('require');
+  });
+
+  it('sslnegotiation=direct keeps TLS on', () => {
+    expect(resolveDbSsl(cfg(`${base}?sslnegotiation=direct`)).level).toBe('require');
+    expect(resolveDbSsl(cfg(`${base}?ssl=0&sslnegotiation=direct`)).level).toBe('require');
+  });
+
+  it('strips ssl and sslnegotiation from the returned URL', () => {
+    const r = resolveDbSsl(cfg(`${base}?ssl=0&sslnegotiation=postgres&application_name=a`, 'off'));
+    expect(r.url).toBe(`${base}?application_name=a`);
+    expect(resolveDbSsl(cfg(`${base}?ssl=1&sslnegotiation=direct`)).url).toBe(base);
+  });
 });

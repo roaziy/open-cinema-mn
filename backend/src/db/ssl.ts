@@ -14,7 +14,16 @@ const RANK: Record<string, number> = {
   'verify-ca': 2,
   'verify-full': 3,
 };
-const SSL_PARAMS = ['sslmode', 'sslrootcert', 'sslcert', 'sslkey', 'uselibpqcompat'];
+// `ssl` and `sslnegotiation` are stripped too: pg lets a URL `ssl` override the ssl option object.
+const SSL_PARAMS = [
+  'sslmode',
+  'sslrootcert',
+  'sslcert',
+  'sslkey',
+  'uselibpqcompat',
+  'ssl',
+  'sslnegotiation',
+];
 
 function urlMode(raw: string | null): UrlMode | null {
   if (raw === null) return null;
@@ -22,6 +31,12 @@ function urlMode(raw: string | null): UrlMode | null {
   if (raw === 'verify-ca' || raw === 'verify-full') return raw;
   // allow, prefer, require, no-verify: encrypted without a certificate check in node-postgres.
   return 'require';
+}
+
+/** The URL's `ssl` flag: 0/false/disable turn TLS off, anything else asks for it. */
+function sslFlag(raw: string | null): UrlMode | null {
+  if (raw === null) return null;
+  return ['0', 'false', 'disable'].includes(raw.toLowerCase()) ? 'disable' : 'require';
 }
 
 export type DbSsl = {
@@ -46,10 +61,20 @@ export function resolveDbSsl(
   } catch {
     u = null;
   }
-  const mode = u ? urlMode(u.searchParams.get('sslmode')) : null;
-  const rootCert = u?.searchParams.get('sslrootcert') ?? null;
+  let mode = u ? urlMode(u.searchParams.get('sslmode')) : null;
+  const flag = u ? sslFlag(u.searchParams.get('ssl')) : null;
+  const direct = u?.searchParams.get('sslnegotiation') === 'direct';
   const explicit = e.DATABASE_SSL_SET ? e.DATABASE_SSL : null;
+  // A stronger setting always wins, so a URL flag can never downgrade TLS.
+  if (flag && (!mode || RANK[mode] === 0)) mode = flag;
+  if (direct && (!mode || RANK[mode] === 0)) mode = 'require';
+  const rootCert = u?.searchParams.get('sslrootcert') ?? null;
 
+  if (flag === 'disable' && !direct && explicit && explicit !== 'off') {
+    throw new Error(
+      `DATABASE_SSL=${explicit} conflicts with ssl=${u?.searchParams.get('ssl')} in DATABASE_URL: remove one of them or make them agree`,
+    );
+  }
   if (
     explicit &&
     mode &&
