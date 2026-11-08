@@ -1,8 +1,18 @@
 import { type SeatState, seatViewStats } from '@open-cinema/shared';
 import { Stack, useLocalSearchParams } from 'expo-router';
-import { lazy, Suspense, useCallback, useEffect, useMemo, useState } from 'react';
+import { useHeaderHeight } from 'expo-router/react-navigation';
+import {
+  lazy,
+  Suspense,
+  useCallback,
+  useEffect,
+  useMemo,
+  useState,
+  useSyncExternalStore,
+} from 'react';
 import {
   ActivityIndicator,
+  AppState,
   ScrollView,
   StyleSheet,
   Text,
@@ -21,6 +31,7 @@ import { colors, radius, space } from '@/theme/tokens';
 import { type } from '@/theme/type';
 import { pickScreenSource, safeTone } from './camera-math';
 import { GlBoundary } from './gl-boundary';
+import { createGlMachine } from './gl-machine';
 import { Hall2D } from './Hall2D';
 import { StatsCard } from './StatsCard';
 
@@ -30,8 +41,6 @@ const Hall3D = lazy(() => import('./Hall3D'));
 /** If no frame has been drawn this long after the canvas mounts, GL is treated as unavailable. */
 const WATCHDOG_MS = 3000;
 
-type GlState = 'loading' | 'ready' | 'failed';
-
 function byPosition(a: SeatState, b: SeatState) {
   return a.y_m - b.y_m || a.x_m - b.x_m;
 }
@@ -39,6 +48,7 @@ function byPosition(a: SeatState, b: SeatState) {
 export function SeatViewScreen() {
   const { t } = useI18n();
   const insets = useSafeAreaInsets();
+  const headerHeight = useHeaderHeight();
   const { width } = useWindowDimensions();
   const reduceMotion = useReducedMotion();
   // `mode=2d` forces the fallback and `hold=1` stays on the top-down start; both dev only.
@@ -56,7 +66,31 @@ export function SeatViewScreen() {
   const map = useSeatMap(id);
   const holds = useMyHolds(id);
   const [picked, setPicked] = useState<string | null>(null);
-  const [gl, setGl] = useState<GlState>(__DEV__ && mode === '2d' ? 'failed' : 'loading');
+  // Render-loop state machine: ready only after a real draw; any failure or no draw in 3 s -> 2D.
+  const [machine] = useState(() =>
+    createGlMachine({
+      timeoutMs: WATCHDOG_MS,
+      initial: __DEV__ && mode === '2d' ? 'failed' : 'loading',
+      onFail: (reason) => {
+        if (__DEV__) console.warn(`[seat-view] 2D fallback: ${reason}`);
+      },
+    }),
+  );
+  const gl = useSyncExternalStore(machine.subscribe, machine.getState);
+  const onDrew = useCallback(() => machine.dispatch({ type: 'drew' }), [machine]);
+  const onFail = useCallback(
+    (reason: string) => machine.dispatch({ type: 'error', reason }),
+    [machine],
+  );
+  useEffect(() => {
+    const sub = AppState.addEventListener('change', (next) =>
+      next === 'active' ? machine.resume() : machine.pause(),
+    );
+    return () => {
+      sub.remove();
+      machine.dispose();
+    };
+  }, [machine]);
 
   const data = map.data;
   const selected = useMemo(() => {
@@ -84,29 +118,13 @@ export function SeatViewScreen() {
     [data],
   );
 
-  // Watchdog: the first frame must land soon after the canvas mounts, or fall back to 2D.
-  const [canvasMounted, setCanvasMounted] = useState(false);
-  const onMount = useCallback(() => setCanvasMounted(true), []);
-  useEffect(() => {
-    if (!canvasMounted) return;
-    const timer = setTimeout(
-      () =>
-        setGl((s) => {
-          if (s !== 'loading') return s;
-          if (__DEV__) console.warn('[seat-view] 2D fallback: watchdog, no frame within 3 s');
-          return 'failed';
-        }),
-      WATCHDOG_MS,
-    );
-    return () => clearTimeout(timer);
-  }, [canvasMounted]);
-
   const header = (
     <Stack.Screen
       options={{
         headerShown: true,
         title: '',
         headerTransparent: true,
+        headerBackButtonDisplayMode: 'minimal',
         headerTintColor: colors.ink,
       }}
     />
@@ -136,6 +154,12 @@ export function SeatViewScreen() {
       </View>
     );
   }
+
+  const a11y = t('view.a11y', {
+    row: current.rowLabel,
+    distance: stats.distanceM.toFixed(1),
+    off: Math.round(stats.offCenterDeg),
+  });
 
   const panel = (
     <View style={[styles.panel, { paddingBottom: Math.max(insets.bottom, space.lg) }]}>
@@ -179,7 +203,7 @@ export function SeatViewScreen() {
         {header}
         <ScrollView
           contentContainerStyle={{
-            paddingTop: insets.top + 56,
+            paddingTop: headerHeight + space.sm,
             paddingBottom: space.lg,
             gap: space.md,
           }}
@@ -191,6 +215,7 @@ export function SeatViewScreen() {
             selectedIds={selectedIds}
             currentId={current.id}
             width={width}
+            a11y={a11y}
           />
         </ScrollView>
         {panel}
@@ -201,12 +226,11 @@ export function SeatViewScreen() {
   return (
     <View style={styles.root}>
       {header}
-      <View style={styles.canvas}>
+      <View style={styles.canvas} accessible accessibilityRole="image" accessibilityLabel={a11y}>
         <GlBoundary
-          onError={(e) => {
-            if (__DEV__) console.warn('[seat-view] 2D fallback: render/import error', String(e));
-            setGl('failed');
-          }}
+          onError={(e) =>
+            machine.dispatch({ type: 'error', reason: `render/import error: ${String(e)}` })
+          }
         >
           <Suspense fallback={null}>
             <Hall3D
@@ -218,8 +242,9 @@ export function SeatViewScreen() {
               currentId={current.id}
               reduceMotion={reduceMotion}
               hold={__DEV__ && hold === '1'}
-              onMount={onMount}
-              onReady={() => setGl('ready')}
+              onMount={machine.start}
+              onDrew={onDrew}
+              onFail={onFail}
             />
           </Suspense>
         </GlBoundary>

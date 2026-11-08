@@ -55,7 +55,7 @@ export function StatsCard({ seatLabel, stats }: { seatLabel: string; stats: Stat
 
 function Metric({ label, value }: { label: string; value: string }) {
   return (
-    <View style={styles.metric}>
+    <View style={styles.metric} accessible accessibilityLabel={`${label}: ${value}`}>
       <Text style={styles.value}>{value}</Text>
       <Text style={styles.label} numberOfLines={1}>
         {label}

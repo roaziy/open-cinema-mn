@@ -6,7 +6,8 @@ import Svg, { Circle, Line, Path, Polygon, Rect } from 'react-native-svg';
 import { useI18n } from '@/i18n';
 import { colors, radius, space } from '@/theme/tokens';
 import { type } from '@/theme/type';
-import { hallExtents, hallHalfWidth } from './camera-math';
+import { hallDepth, hallExtents, hallHalfWidth, rowsOf, stepSpans } from './camera-math';
+import { palette } from './palette';
 
 type Props = {
   seats: SeatState[];
@@ -15,14 +16,16 @@ type Props = {
   selectedIds: string[];
   currentId: string;
   width: number;
+  /** Spoken description of the chosen seat, shared with the 3D view. */
+  a11y: string;
 };
 
 const PAD = 14;
-const FLOOR = '#26262D';
-const SEAT = '#3A3A42';
+const FLOOR = palette.diagramFloor;
+const SEAT = palette.diagramSeat;
 
 /** The 3D view's stand-in: a real side profile and a top-down mini map with the seat marked. */
-export function Hall2D({ seats, hall, tone, selectedIds, currentId, width }: Props) {
+export function Hall2D({ seats, hall, tone, selectedIds, currentId, width, a11y }: Props) {
   const { t } = useI18n();
   const ext = useMemo(() => hallExtents(seats), [seats]);
   const current = seats.find((s) => s.id === currentId);
@@ -33,6 +36,7 @@ export function Hall2D({ seats, hall, tone, selectedIds, currentId, width }: Pro
       <View style={styles.card}>
         <Text style={styles.cap}>{t('view.sideProfile')}</Text>
         <SideProfile
+          label={`${t('view.sideProfile')}. ${a11y}`}
           seats={seats}
           hall={hall}
           tone={tone}
@@ -44,6 +48,7 @@ export function Hall2D({ seats, hall, tone, selectedIds, currentId, width }: Pro
       <View style={styles.card}>
         <Text style={styles.cap}>{t('view.topDown')}</Text>
         <TopDown
+          label={`${t('view.topDown')}. ${a11y}`}
           seats={seats}
           hall={hall}
           tone={tone}
@@ -60,6 +65,7 @@ export function Hall2D({ seats, hall, tone, selectedIds, currentId, width }: Pro
 type Ext = ReturnType<typeof hallExtents>;
 
 function SideProfile({
+  label,
   seats,
   hall,
   tone,
@@ -67,6 +73,7 @@ function SideProfile({
   current,
   width,
 }: {
+  label: string;
   seats: SeatState[];
   hall: SeatMap['hall'];
   tone: string;
@@ -74,7 +81,7 @@ function SideProfile({
   current: SeatState | undefined;
   width: number;
 }) {
-  const depth = ext.maxY + 1.5;
+  const depth = hallDepth(ext);
   const top = Math.max(SCREEN_BOTTOM_M + hall.screen_height_m, ext.maxZ + EYE_HEIGHT_M + 0.6) + 0.3;
   const k = Math.min((width - PAD * 2) / depth, 200 / top);
   const w = depth * k + PAD * 2;
@@ -82,29 +89,14 @@ function SideProfile({
   const px = (y: number) => PAD + y * k;
   const py = (z: number) => h - PAD - z * k;
 
-  const rows = useMemo(() => {
-    const byRow = new Map<string, { y: number; z: number; n: number }>();
-    for (const s of seats) {
-      const r = byRow.get(s.rowLabel) ?? { y: 0, z: 0, n: 0 };
-      r.y += s.y_m;
-      r.z += s.z_m;
-      r.n++;
-      byRow.set(s.rowLabel, r);
-    }
-    return [...byRow.values()]
-      .map((r) => ({ y: r.y / r.n, z: r.z / r.n }))
-      .sort((a, b) => a.y - b.y);
-  }, [seats]);
+  const rows = useMemo(() => rowsOf(seats), [seats]);
+  const spans = useMemo(() => stepSpans(rows, depth), [rows, depth]);
 
   // Stepped floor: each row owns the stretch halfway to its neighbours.
   let floor = `M ${px(0)} ${py(0)}`;
-  rows.forEach((r, i) => {
-    const prev = rows[i - 1];
-    const next = rows[i + 1];
-    const from = prev ? (prev.y + r.y) / 2 : 0;
-    const to = next ? (r.y + next.y) / 2 : depth;
-    floor += ` L ${px(from)} ${py(Math.max(r.z, 0.04))} L ${px(to)} ${py(Math.max(r.z, 0.04))}`;
-  });
+  for (const st of spans) {
+    floor += ` L ${px(st.from)} ${py(st.height)} L ${px(st.to)} ${py(st.height)}`;
+  }
   floor += ` L ${px(depth)} ${py(0)} Z`;
 
   const eyeX = current ? px(current.y_m) : 0;
@@ -113,11 +105,18 @@ function SideProfile({
   const sBot = py(SCREEN_BOTTOM_M);
 
   return (
-    <Svg width={w} height={h} style={styles.svg}>
+    <Svg
+      width={w}
+      height={h}
+      style={styles.svg}
+      accessible
+      accessibilityRole="image"
+      accessibilityLabel={label}
+    >
       <Path d={floor} fill={FLOOR} />
       {rows.map((r) => (
         <Rect
-          key={r.y}
+          key={r.label}
           x={px(r.y) - 0.2 * k}
           y={py(r.z + 0.7)}
           width={0.4 * k}
@@ -168,6 +167,7 @@ function SideProfile({
 }
 
 function TopDown({
+  label,
   seats,
   hall,
   tone,
@@ -176,6 +176,7 @@ function TopDown({
   current,
   width,
 }: {
+  label: string;
   seats: SeatState[];
   hall: SeatMap['hall'];
   tone: string;
@@ -185,7 +186,7 @@ function TopDown({
   width: number;
 }) {
   const half = hallHalfWidth(ext, hall);
-  const depth = ext.maxY + 1.5;
+  const depth = hallDepth(ext);
   const k = Math.min((width - PAD * 2) / (half * 2), 260 / depth);
   const w = half * 2 * k + PAD * 2;
   const barH = 6;
@@ -197,7 +198,14 @@ function TopDown({
   const r = Math.max(2, 0.2 * k);
 
   return (
-    <Svg width={w} height={h} style={styles.svg}>
+    <Svg
+      width={w}
+      height={h}
+      style={styles.svg}
+      accessible
+      accessibilityRole="image"
+      accessibilityLabel={label}
+    >
       <Rect x={PAD} y={PAD + barH} width={half * 2 * k} height={depth * k} rx={6} fill={FLOOR} />
       <Rect x={sx0} y={PAD} width={sx1 - sx0} height={barH - 1} rx={3} fill={tone} />
       {current ? (
