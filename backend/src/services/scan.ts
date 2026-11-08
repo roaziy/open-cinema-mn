@@ -14,7 +14,7 @@ import {
   users,
 } from '../db/schema';
 import { AppError, conflict, forbidden } from '../lib/errors';
-import { verifyQr } from '../lib/sign';
+import { verifyCheckCode, verifyQr } from '../lib/sign';
 import type { AuthUser } from '../middleware/auth';
 import { SLOT_COLUMNS } from './catalog-views';
 
@@ -118,17 +118,19 @@ async function composeResult(
 /**
  * The ticket an order-number-and-seat scan points at. A door only sees its own branch's tickets
  * for today (UB day); `scope` is null only when matching a replay, which must find the same
- * ticket the first attempt did. Two matches mean we cannot tell, so none.
+ * ticket the first attempt did. Two matches mean we cannot tell, so none. The ticket's check
+ * code must match as well (order numbers are sequential, so order and seat alone are guessable).
  */
 async function resolveOrder(
   tx: Reader,
-  body: { orderNo: string; seat: string },
+  body: { orderNo: string; seat: string; checkCode: string },
   scope: { scanner: Scanner; now: Date } | null,
 ): Promise<string | null> {
   const m = /^([A-Za-z]+)(\d+)$/.exec(body.seat);
   if (!m) return null;
   const conds = [
-    sql`upper(${bookings.orderNo}) = ${body.orderNo.toUpperCase()}`,
+    // Stored upper-case, so this is a plain equality that the unique index serves.
+    eq(bookings.orderNo, body.orderNo.toUpperCase()),
     sql`upper(${seats.rowLabel}) = ${(m[1] as string).toUpperCase()}`,
     eq(seats.number, Number(m[2])),
   ];
@@ -152,7 +154,9 @@ async function resolveOrder(
     .innerJoin(halls, eq(halls.id, showtimes.hallId))
     .where(and(...conds))
     .limit(2);
-  return rows.length === 1 ? (rows[0]?.id ?? null) : null;
+  const id = rows.length === 1 ? (rows[0]?.id ?? null) : null;
+  // A wrong code looks exactly like a ticket that does not exist.
+  return id && verifyCheckCode(id, body.checkCode) ? id : null;
 }
 
 async function storedScan(db: Reader, body: ScanBody, staffId: string): Promise<ScanRow | null> {

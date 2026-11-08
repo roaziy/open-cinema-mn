@@ -3,7 +3,13 @@ export const MAX_LABEL = 40;
 
 /** Trimmed, collapsed whitespace, at most 40 characters; empty means "not named". */
 export function cleanLabel(v: string): string {
-  return v.replace(/\s+/g, ' ').trim().slice(0, MAX_LABEL).trim();
+  // Control and invisible formatting characters (NUL, bidi overrides) never reach a door card.
+  return v
+    .replace(/[\p{Cc}\p{Cf}]/gu, ' ')
+    .replace(/\s+/g, ' ')
+    .trim()
+    .slice(0, MAX_LABEL)
+    .trim();
 }
 
 export function readDoorLabel(storage?: Pick<Storage, 'getItem'>): string {

@@ -15,6 +15,7 @@ import {
   users,
 } from '../src/db/schema';
 import { SeatHub } from '../src/lib/seat-hub';
+import { checkCode } from '../src/lib/sign';
 import { signAccessToken } from '../src/lib/tokens';
 import { MockPaymentProvider } from '../src/payments/mock';
 import { createHolds } from '../src/services/holds';
@@ -175,13 +176,31 @@ async function orderNoOf(bookingId: string) {
   return one(b).orderNo;
 }
 
+/** The printed code of the ticket at that order and seat, or a code that fits nothing. */
+async function codeFor(orderNo: string, seat: string) {
+  const rows = await db
+    .select({ id: tickets.id, row: seats.rowLabel, n: seats.number })
+    .from(tickets)
+    .innerJoin(bookings, eq(bookings.id, tickets.bookingId))
+    .innerJoin(seats, eq(seats.id, tickets.seatId))
+    .where(eq(bookings.orderNo, orderNo.toUpperCase()));
+  const hit = rows.find((r) => `${r.row}${r.n}` === seat.toUpperCase());
+  return hit ? checkCode(hit.id) : 'ZZZZ';
+}
+
 /** The typed-in path: order number and seat code instead of the QR token. */
 async function scanByOrder(
   s: S,
   who: { id: string; role: 'staff' | 'admin' | 'customer' | 'guest' },
   orderNo: string,
   seat: string,
-  opts: { scanId?: string; deviceId?: string; deviceLabel?: string; status?: number } = {},
+  opts: {
+    scanId?: string;
+    deviceId?: string;
+    deviceLabel?: string;
+    code?: string;
+    status?: number;
+  } = {},
 ) {
   return request(s.app)
     .post('/v1/staff/scan')
@@ -189,6 +208,7 @@ async function scanByOrder(
     .send({
       orderNo,
       seat,
+      checkCode: opts.code ?? (await codeFor(orderNo, seat)),
       scanId: opts.scanId ?? uuid(),
       deviceId: opts.deviceId ?? DEV_A,
       deviceLabel: opts.deviceLabel,
@@ -700,6 +720,68 @@ describe('scan by order number and seat', () => {
     expect(moved.body.error).toBe('scan_id_conflict');
   });
 
+  it('needs the ticket’s own check code; a wrong one is exactly like a ticket that does not exist', async () => {
+    const s = setup();
+    const f = await fixture();
+    const show = await f.show('2026-11-08T11:00:00Z');
+    const ts = await buy(s, f, show.id, 1, 2);
+    const orderNo = await orderNoOf(one(ts[0]).bookingId);
+    const right = checkCode(one(ts.find((t) => t.seatId === f.seatId(1))).id);
+    const other = checkCode(one(ts.find((t) => t.seatId === f.seatId(2))).id);
+    const missing = (await scanByOrder(s, f.staffA, 'OC-99999999', 'F1')).body;
+    for (const code of ['ZZZZ', other, right.toLowerCase().replace(/./, 'z')]) {
+      const res = await scanByOrder(s, f.staffA, orderNo, 'F1', { code });
+      expect(res.body).toMatchObject({ result: 'invalid', ticket: null, previous: null });
+      expect({ ...res.body, scanId: '' }).toEqual({ ...missing, scanId: '' });
+    }
+    const [before] = await db
+      .select()
+      .from(tickets)
+      .where(eq(tickets.seatId, f.seatId(1)));
+    expect(before?.usedAt).toBeNull();
+    // the right code works in any case, and Crockford look-alikes are folded
+    const lower = await scanByOrder(s, f.staffA, orderNo, 'F1', { code: right.toLowerCase() });
+    expect(lower.body.result).toBe('admitted');
+  });
+
+  it('limits typed-in attempts to 10 a minute per staff member and leaves QR scans alone', async () => {
+    const s = setup();
+    const f = await fixture();
+    const show = await f.show('2026-11-08T11:00:00Z');
+    const [t] = await buy(s, f, show.id, 1);
+    const orderNo = await orderNoOf(one(t).bookingId);
+    for (let i = 0; i < 10; i++) {
+      await scanByOrder(s, f.staffA, orderNo, 'F1', { code: 'ZZZZ' });
+    }
+    const eleventh = await scanByOrder(s, f.staffA, orderNo, 'F1', { status: 429 });
+    expect(eleventh.body.error).toBe('rate_limited');
+    // QR scans by the same staff member still work, as do typed-in scans by someone else
+    expect((await scan(s, f.staffA, one(t).qrToken)).body.result).toBe('admitted');
+    expect((await scanByOrder(s, f.staffB, orderNo, 'F1', { deviceId: DEV_B })).status).toBe(200);
+    s.clock.advance(61_000);
+  });
+
+  it('keeps the door label on the undo row', async () => {
+    const s = setup();
+    const f = await fixture();
+    const show = await f.show('2026-11-08T11:00:00Z');
+    const [t] = await buy(s, f, show.id, 1);
+    const first = await request(s.app)
+      .post('/v1/staff/scan')
+      .set('Authorization', await bearer(s, f.staffA))
+      .send({ token: one(t).qrToken, scanId: uuid(), deviceId: DEV_A, deviceLabel: 'Хаалга 1' })
+      .expect(200);
+    await request(s.app)
+      .post(`/v1/staff/scan/${first.body.scanId}/undo`)
+      .set('Authorization', await bearer(s, f.staffA))
+      .expect(200);
+    const rows = await db.select().from(ticketScans).orderBy(ticketScans.createdAt);
+    expect(rows.map((r) => [r.result, r.deviceLabel])).toEqual([
+      ['admitted', 'Хаалга 1'],
+      ['undone', 'Хаалга 1'],
+    ]);
+  });
+
   it('validates the body and keeps it staff-only', async () => {
     const s = setup();
     const f = await fixture();
@@ -708,17 +790,22 @@ describe('scan by order number and seat', () => {
       { orderNo: 'OC-1', seat: 'F' },
       { orderNo: 'OC-1', seat: '12' },
       { orderNo: 'OC-1', seat: 'F1', deviceLabel: 'x'.repeat(41) },
+      { orderNo: 'OC-1', seat: 'F1', deviceLabel: 'Door\u0000' },
+      { orderNo: 'OC-1', seat: 'F1', deviceLabel: 'Door\u202e1' },
+      { orderNo: 'OC-1', seat: 'F1', checkCode: 'ABC' },
+      { orderNo: 'OC-1', seat: 'F1', checkCode: 'ABCDE' },
+      { orderNo: 'OC-1', seat: 'F1', checkCode: undefined },
     ]) {
       await request(s.app)
         .post('/v1/staff/scan')
         .set('Authorization', await bearer(s, f.staffA))
-        .send({ ...body, scanId: uuid(), deviceId: DEV_A })
+        .send({ checkCode: 'ABCD', ...body, scanId: uuid(), deviceId: DEV_A })
         .expect(400);
     }
     await request(s.app)
       .post('/v1/staff/scan')
       .set('Authorization', await bearer(s, f.alice))
-      .send({ orderNo: 'OC-1', seat: 'F1', scanId: uuid(), deviceId: DEV_A })
+      .send({ orderNo: 'OC-1', seat: 'F1', checkCode: 'ABCD', scanId: uuid(), deviceId: DEV_A })
       .expect(403);
   });
 });

@@ -32,15 +32,17 @@ const BTN =
 export function ResultCard({
   result,
   undoing,
+  via,
   onClose,
   onUndo,
 }: {
   result: ScanResult;
   undoing: boolean;
+  via?: 'qr' | 'manual';
   onClose: () => void;
   onUndo: (scanId: string) => void;
 }) {
-  const info = cardFor(result);
+  const info = cardFor(result, via);
   const t = result.ticket;
   const now = useNow(1000, result.result === 'admitted');
   const left = undoSecondsLeft(result, now);

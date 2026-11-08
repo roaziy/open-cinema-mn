@@ -8,6 +8,8 @@ const ScanCommon = {
     .string()
     .trim()
     .max(40)
+    // No control or invisible formatting characters (NUL, bidi overrides): it is shown on a card.
+    .refine((v) => !/[\p{Cc}\p{Cf}]/u.test(v), 'invalid_label')
     .optional()
     .transform((v) => (v ? v : undefined)),
 };
@@ -25,6 +27,10 @@ export const ScanByOrder = z.object({
     .string()
     .trim()
     .regex(/^[A-Za-z]{1,3}\d{1,3}$/),
+  checkCode: z
+    .string()
+    .trim()
+    .regex(/^[0-9A-Za-z]{4}$/),
   ...ScanCommon,
 });
 

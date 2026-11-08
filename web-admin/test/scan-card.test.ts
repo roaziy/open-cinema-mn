@@ -64,3 +64,14 @@ describe('undo window', () => {
     expect(canUndo({ ...r, undoUntil: null }, now)).toBe(false);
   });
 });
+
+describe('manual not found', () => {
+  it('says the order was not found for a typed ticket, and keeps the QR wording for a scan', () => {
+    const r = { ...base, result: 'invalid' as const };
+    expect(cardFor(r, 'manual').title).toBe('Билет олдсонгүй');
+    expect(cardFor(r, 'manual').detail).toContain('Энэ салбарт өнөөдрийн захиалга олдсонгүй');
+    expect(cardFor(r, 'qr').title).toBe('Хүчингүй билет');
+    expect(cardFor(r).detail).toContain('QR код');
+    expect(cardFor(r, 'manual').tone).toBe('reject');
+  });
+});

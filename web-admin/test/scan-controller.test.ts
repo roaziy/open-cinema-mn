@@ -54,11 +54,12 @@ describe('ScanController', () => {
 
   it('sends the door label and the typed order and seat', async () => {
     const { c, bodies } = make({ label: 'Хаалга 2' });
-    c.scan({ orderNo: 'OC-1', seat: 'F3' });
+    c.scan({ orderNo: 'OC-1', seat: 'F3', checkCode: 'K7Q2' });
     await flush();
     expect(bodies[0]).toMatchObject({
       orderNo: 'OC-1',
       seat: 'F3',
+      checkCode: 'K7Q2',
       deviceId: 'dev',
       deviceLabel: 'Хаалга 2',
     });
@@ -120,6 +121,30 @@ describe('ScanController', () => {
     expect(c.getSnapshot().flow.kind).toBe('card');
     await vi.advanceTimersByTimeAsync(AUTO_CLOSE_MS + 10);
     expect(c.getSnapshot().flow.kind).toBe('idle');
+  });
+
+  it('a stalled Undo of an older card does not hold a newer card open', async () => {
+    const { c, undoCalls } = make();
+    c.scan({ token: 'A' });
+    await flush();
+    void c.undo('scan-1');
+    c.dismiss();
+    c.scan({ token: 'B' });
+    await flush();
+    expect(c.getSnapshot().flow).toMatchObject({ kind: 'card', result: { scanId: 'scan-2' } });
+    await vi.advanceTimersByTimeAsync(AUTO_CLOSE_MS + 10);
+    expect(c.getSnapshot().flow.kind).toBe('idle');
+    undoCalls[0]?.resolve();
+  });
+
+  it('remembers how the scan was entered', async () => {
+    const { c } = make();
+    c.scan({ orderNo: 'OC-1', seat: 'F3', checkCode: 'K7Q2' });
+    expect(c.getSnapshot().via).toBe('manual');
+    await flush();
+    c.dismiss();
+    c.scan({ token: 'A' });
+    expect(c.getSnapshot().via).toBe('qr');
   });
 
   it('rejects stay until closed', async () => {

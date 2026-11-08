@@ -75,7 +75,8 @@ export function Scanner() {
     onUndone: recent.markUndone,
     doorLabel: () => doorRef.current || undefined,
   });
-  const { flow, undoing, notice } = state;
+  const { flow, undoing, notice, via } = state;
+  const [manualHint, setManualHint] = useState<string | null>(null);
 
   // Measure the screen so the scan frame can be mapped into the camera's own pixels.
   useEffect(() => {
@@ -176,14 +177,23 @@ export function Scanner() {
     setSheet(null);
   };
 
-  const submitManual = (input: { orderNo: string; seat: string }) => {
-    if (controller?.scan(input)) setSheet(null);
+  const submitManual = (input: { orderNo: string; seat: string; checkCode: string }) => {
+    if (!controller) return;
+    // A finished card or failure is closed for the typed ticket; a request still running is not
+    // cut short, and what was typed stays on screen.
+    if (flow.kind === 'card' || flow.kind === 'failed') controller.dismiss();
+    if (controller.scan(input)) {
+      setManualHint(null);
+      setSheet(null);
+    } else {
+      setManualHint('Өмнөх уншилт дуусаагүй байна. Түр хүлээгээд дахин дарна уу.');
+    }
   };
 
   const retrying = flow.kind === 'sending' && flow.retry !== null;
   const sending = flow.kind === 'sending';
   const bracket = sending ? 'border-action' : 'border-white/85';
-  const cardInfo = flow.kind === 'card' ? cardFor(flow.result) : null;
+  const cardInfo = flow.kind === 'card' ? cardFor(flow.result, via ?? undefined) : null;
   const announce =
     flow.kind === 'card' && cardInfo
       ? `${cardInfo.title}.${flow.result.ticket ? ` Суудал ${flow.result.ticket.seatCode}.` : ''}`
@@ -401,12 +411,22 @@ export function Scanner() {
         <ResultCard
           result={flow.result}
           undoing={undoing === flow.result.scanId}
+          via={via ?? undefined}
           onClose={() => controller?.dismiss()}
           onUndo={(id) => void controller?.undo(id)}
         />
       )}
 
-      {sheet === 'manual' && <ManualEntry onSubmit={submitManual} onClose={() => setSheet(null)} />}
+      {sheet === 'manual' && (
+        <ManualEntry
+          hint={manualHint}
+          onSubmit={submitManual}
+          onClose={() => {
+            setManualHint(null);
+            setSheet(null);
+          }}
+        />
+      )}
       {sheet === 'door' && (
         <div className="animate-rise absolute inset-x-0 bottom-0 z-30 rounded-t-rail border-t border-hairline bg-raised px-5 pt-5 pb-[max(1.25rem,env(safe-area-inset-bottom))]">
           <DoorLabelForm

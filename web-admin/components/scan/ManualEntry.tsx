@@ -4,7 +4,7 @@ import { ScanByOrder } from '@open-cinema/shared';
 import { useEffect, useRef, useState } from 'react';
 
 const FIELD =
-  'focus-ring h-14 rounded-panel border border-hairline bg-surface px-4 text-[20px] text-ink placeholder:text-muted';
+  'focus-ring h-14 rounded-panel border border-hairline bg-surface px-4 text-[20px] uppercase text-ink placeholder:text-muted';
 
 /** Digits of a typed or pasted order number: "OC-10029", "oc 10029" and "10029" all give 10029. */
 export function orderDigits(v: string): string {
@@ -12,23 +12,28 @@ export function orderDigits(v: string): string {
 }
 
 /**
- * For a dirty lens or a cracked screen: the order number and seat code printed on the paper
- * ticket and shown in the app take the place of the QR.
+ * For a dirty lens or a cracked screen: the order number, seat and 4-character code printed on
+ * the paper ticket and shown in the app take the place of the QR. The code is what keeps a
+ * guessed order number from admitting anyone.
  */
 export function ManualEntry({
   onSubmit,
   onClose,
+  hint,
 }: {
-  onSubmit: (input: { orderNo: string; seat: string }) => void;
+  onSubmit: (input: { orderNo: string; seat: string; checkCode: string }) => void;
   onClose: () => void;
+  hint?: string | null;
 }) {
   const [digits, setDigits] = useState('');
   const [seat, setSeat] = useState('');
+  const [code, setCode] = useState('');
   const ref = useRef<HTMLInputElement>(null);
   useEffect(() => ref.current?.focus(), []);
-  const parsed = ScanByOrder.pick({ orderNo: true, seat: true }).safeParse({
+  const parsed = ScanByOrder.pick({ orderNo: true, seat: true, checkCode: true }).safeParse({
     orderNo: `OC-${digits}`,
     seat: seat.replace(/\s/g, ''),
+    checkCode: code.replace(/\s/g, ''),
   });
   return (
     <form
@@ -59,22 +64,46 @@ export function ManualEntry({
           />
         </div>
       </div>
-      <div className="flex flex-col gap-1.5">
-        <label htmlFor="manual-seat" className="text-[14px] text-body">
-          Суудал
-        </label>
-        <input
-          id="manual-seat"
-          value={seat}
-          onChange={(e) => setSeat(e.target.value.toUpperCase())}
-          autoCapitalize="characters"
-          autoComplete="off"
-          spellCheck={false}
-          maxLength={6}
-          placeholder="F3"
-          className={FIELD}
-        />
+      <div className="grid grid-cols-2 gap-3">
+        <div className="flex flex-col gap-1.5">
+          <label htmlFor="manual-seat" className="text-[14px] text-body">
+            Суудал
+          </label>
+          <input
+            id="manual-seat"
+            value={seat}
+            onChange={(e) => setSeat(e.target.value.toUpperCase())}
+            autoCapitalize="characters"
+            autoComplete="off"
+            spellCheck={false}
+            maxLength={6}
+            placeholder="F3"
+            className={`${FIELD} min-w-0`}
+          />
+        </div>
+        <div className="flex flex-col gap-1.5">
+          <label htmlFor="manual-code" className="text-[14px] text-body">
+            Баталгаажуулах код
+          </label>
+          <input
+            id="manual-code"
+            value={code}
+            onChange={(e) => setCode(e.target.value.toUpperCase())}
+            autoCapitalize="characters"
+            autoComplete="off"
+            autoCorrect="off"
+            spellCheck={false}
+            maxLength={4}
+            placeholder="K7Q2"
+            className={`${FIELD} min-w-0 font-mono tracking-[0.12em]`}
+          />
+        </div>
       </div>
+      {hint && (
+        <p role="status" className="text-[15px] text-body">
+          {hint}
+        </p>
+      )}
       <div className="flex gap-3">
         <button
           type="button"

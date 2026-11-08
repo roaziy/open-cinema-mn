@@ -36,6 +36,7 @@ describe('door label', () => {
     expect(cleanLabel('  Хаалга   2 ')).toBe('Хаалга 2');
     expect(cleanLabel('x'.repeat(60))).toHaveLength(40);
     expect(cleanLabel('   ')).toBe('');
+    expect(cleanLabel('Door\u0000\u202e1')).toBe('Door 1');
   });
   it('round-trips through storage and survives storage that throws', () => {
     const m = new Map<string, string>();
@@ -87,6 +88,19 @@ describe('mapRecent', () => {
 });
 
 describe('request timeouts', () => {
+  it('a response whose body stalls becomes a network error too', async () => {
+    vi.stubGlobal('fetch', async (_url: string, init: RequestInit) => ({
+      ok: true,
+      status: 200,
+      json: () =>
+        new Promise((_res, rej) => {
+          init.signal?.addEventListener('abort', () => rej(init.signal?.reason));
+        }),
+    }));
+    const err = await call('POST', '/staff/scan', {}, { timeoutMs: 40 }).catch((e) => e);
+    expect(err).toMatchObject({ status: 0, code: 'network' });
+  });
+
   it('a stalled fetch becomes a retryable network error after the timeout', async () => {
     vi.stubGlobal(
       'fetch',
