@@ -23,23 +23,29 @@ const newCode = () => String(randomInt(0, 1_000_000)).padStart(6, '0');
 
 /** Enforces 60 s resend and 5 per hour, then stores a fresh code and returns it for sending. */
 export async function issueOtp(db: Db, now: Date, target: string, scope: Scope): Promise<string> {
+  const lockKey = 'exact' in scope ? scope.exact : scope.prefix;
   const hourAgo = new Date(now.getTime() - 60 * 60 * 1000);
-  const recent = await db
-    .select({ createdAt: otpCodes.createdAt })
-    .from(otpCodes)
-    .where(and(scopeWhere(scope), gt(otpCodes.createdAt, hourAgo)))
-    .orderBy(desc(otpCodes.createdAt));
-  if (recent.length >= OTP_PER_HOUR) throw new AppError(429, 'too_many_requests');
-  const last = recent[0]?.createdAt;
-  if (last && now.getTime() - last.getTime() < OTP_RESEND_MS) {
-    throw new AppError(429, 'resend_too_soon');
-  }
   const code = newCode();
-  await db.insert(otpCodes).values({
-    target,
-    codeHash: hashCode(target, code),
-    expiresAt: new Date(now.getTime() + OTP_TTL_MS),
-    createdAt: now,
+  // The advisory lock makes count-then-insert atomic per scope, so parallel requests cannot
+  // slip past the resend and hourly limits.
+  await db.transaction(async (tx) => {
+    await tx.execute(sql`select pg_advisory_xact_lock(hashtext(${`otp:${lockKey}`}))`);
+    const recent = await tx
+      .select({ createdAt: otpCodes.createdAt })
+      .from(otpCodes)
+      .where(and(scopeWhere(scope), gt(otpCodes.createdAt, hourAgo)))
+      .orderBy(desc(otpCodes.createdAt));
+    if (recent.length >= OTP_PER_HOUR) throw new AppError(429, 'too_many_requests');
+    const last = recent[0]?.createdAt;
+    if (last && now.getTime() - last.getTime() < OTP_RESEND_MS) {
+      throw new AppError(429, 'resend_too_soon');
+    }
+    await tx.insert(otpCodes).values({
+      target,
+      codeHash: hashCode(target, code),
+      expiresAt: new Date(now.getTime() + OTP_TTL_MS),
+      createdAt: now,
+    });
   });
   return code;
 }

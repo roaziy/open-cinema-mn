@@ -53,6 +53,8 @@ describe('normalize', () => {
     expect(normalizeEmail(' Bat@Mail.MN ')).toBe('bat@mail.mn');
     expect(normalizeEmail('nope')).toBeNull();
     expect(normalizeEmail('a@b')).toBeNull();
+    expect(normalizeEmail('link:0000:x@y.mn')).toBeNull();
+    expect(normalizeEmail('a:b@y.mn')).toBeNull();
   });
 });
 

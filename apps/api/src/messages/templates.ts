@@ -57,7 +57,7 @@ export function otpSms(code: string, operator = env.WESEND_FROM_NAME): string {
 }
 
 export function otpEmail(code: string, operator = env.WESEND_FROM_NAME): Rendered {
-  const subject = `${operator}: нэвтрэх код ${code}`;
+  const subject = `${operator}: нэвтрэх код`;
   const html = layout(
     operator,
     'Нэвтрэх код',
