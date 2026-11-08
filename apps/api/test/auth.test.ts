@@ -6,6 +6,7 @@ import { db } from '../src/db/client';
 import { sessions, users } from '../src/db/schema';
 import type { AppError } from '../src/lib/errors';
 import { hashPassword } from '../src/lib/password';
+import { sha256 } from '../src/lib/tokens';
 import type { Messages } from '../src/messages';
 import { requireAuth, requireRole } from '../src/middleware/auth';
 import { fakeMessages, fixedClock, makeTestApp, resetDb } from './helpers';
@@ -326,7 +327,26 @@ describe('guest, refresh, logout', () => {
       .expect(401);
   });
 
-  it('answers an expired refresh with refresh_expired and revokes nothing', async () => {
+  it('answers a never-rotated expired refresh with refresh_expired and revokes nothing', async () => {
+    const { app, clock } = setup();
+    const g = await request(app).post('/v1/auth/guest');
+    await db.insert(sessions).values({
+      userId: g.body.user.id,
+      refreshTokenHash: sha256('stale-token'),
+      expiresAt: new Date(clock().getTime() - MIN),
+    });
+    for (let i = 0; i < 2; i++) {
+      const res = await request(app).post('/v1/auth/refresh').send({ refreshToken: 'stale-token' });
+      expect(res.status).toBe(401);
+      expect(res.body.error).toBe('refresh_expired');
+    }
+    await request(app)
+      .post('/v1/auth/refresh')
+      .send({ refreshToken: g.body.refreshToken })
+      .expect(200);
+  });
+
+  it('treats a rotated token replayed after expiry as reuse and revokes all sessions', async () => {
     const { app, clock } = setup();
     const a = await request(app).post('/v1/auth/guest');
     clock.advance(29 * 24 * 60 * MIN);
@@ -334,19 +354,16 @@ describe('guest, refresh, logout', () => {
       .post('/v1/auth/refresh')
       .send({ refreshToken: a.body.refreshToken })
       .expect(200);
-    clock.advance(2 * 24 * 60 * MIN);
-    for (let i = 0; i < 2; i++) {
-      const res = await request(app)
-        .post('/v1/auth/refresh')
-        .send({ refreshToken: a.body.refreshToken });
-      expect(res.status).toBe(401);
-      expect(res.body.error).toBe('refresh_expired');
-    }
-    // the newer, still valid token was not revoked
+    clock.advance(2 * 24 * 60 * MIN); // a is now rotated and expired; b is still valid
+    const replay = await request(app)
+      .post('/v1/auth/refresh')
+      .send({ refreshToken: a.body.refreshToken });
+    expect(replay.status).toBe(401);
+    expect(replay.body.error).toBe('invalid_refresh');
     await request(app)
       .post('/v1/auth/refresh')
       .send({ refreshToken: b.body.refreshToken })
-      .expect(200);
+      .expect(401);
   });
 
   it('stores only a hash of the refresh token', async () => {
@@ -429,7 +446,13 @@ describe('admin login', () => {
   it('10 concurrent wrong logins still lock the account', async () => {
     await seedAdmin();
     const { app } = setup();
-    await Promise.all(Array.from({ length: 10 }, () => login(app, 'wrong')));
+    const results = await Promise.all(Array.from({ length: 10 }, () => login(app, 'wrong')));
+    expect(
+      results.filter((r) => r.status === 401 && r.body.error === 'invalid_credentials'),
+    ).toHaveLength(5);
+    expect(
+      results.filter((r) => r.status === 429 && r.body.error === 'account_locked'),
+    ).toHaveLength(5);
     const res = await login(app, 'correct-horse');
     expect(res.status).toBe(429);
     expect(res.body.error).toBe('account_locked');
