@@ -33,7 +33,8 @@ const server = env.HOST
 const stopSweeper = startSweeper(deps);
 
 // pm2 sends SIGINT then SIGKILL after kill_timeout (30 s, ecosystem.config.cjs). Once draining no
-// new payment provider call starts, and the drain outlasts one in flight (20 s timeout): leftover
+// refund starts and the sweeper and cancellations start no provider call; a request being served
+// may still finish its own invoice check (20 s timeout). The drain outlasts that: leftover
 // connections are destroyed at 25 s, the process exits at 28 s.
 const shutdown = createShutdown({
   server,

@@ -14,7 +14,7 @@ function fakeDb(results: { id: string }[][], gate: Promise<void> = Promise.resol
   const select = vi.fn(() => ({
     from: () => ({ where: rows, innerJoin: () => ({ where: rows }) }),
   }));
-  return { select, transaction: async () => [] };
+  return { select, transaction: vi.fn(async () => []) };
 }
 
 const sweepDeps = (db: ReturnType<typeof fakeDb>) => ({
@@ -93,5 +93,31 @@ describe('startSweeper stop', () => {
     expect(refund).toHaveBeenCalledExactlyOnceWith(db, 'owed-1', expect.anything());
     await shutdown;
     expect(exit).toHaveBeenCalledExactlyOnceWith(0); // at 20 s, well before the 28 s hard exit
+  });
+});
+
+describe('runSweep while draining', () => {
+  it('expires nothing after the drain cut the due settles short', async () => {
+    const { runSweep } = await import('../src/jobs/sweeper');
+    const { startDraining } = await import('../src/lib/drain');
+    const db = fakeDb([[{ id: 'due-1' }, { id: 'due-2' }]]);
+    let answer!: () => void;
+    const settle = vi.fn((_id: string) => new Promise<void>((r) => (answer = r)));
+    const refund = vi.fn(async (_id: string) => {});
+
+    const sweep = runSweep(db as never, new Date('2026-11-08T00:00:00Z'), {} as never, {
+      settle,
+      refund,
+    });
+    await vi.waitFor(() => expect(settle).toHaveBeenCalledOnce());
+    startDraining(); // SIGINT while the first invoice check waits on the provider
+    answer();
+    await sweep;
+
+    expect(settle).toHaveBeenCalledExactlyOnceWith('due-1');
+    // due-2 never had its last look, so it must stay pending for the next boot.
+    expect(db.transaction).not.toHaveBeenCalled();
+    expect(db.select).toHaveBeenCalledOnce(); // nor the late and owed lists
+    expect(refund).not.toHaveBeenCalled();
   });
 });

@@ -17,7 +17,7 @@ import { runSweep } from '../src/jobs/sweeper';
 import { startDraining } from '../src/lib/drain';
 import { SeatHub } from '../src/lib/seat-hub';
 import type { PaymentProvider } from '../src/payments/provider';
-import { PROVIDER_TIMEOUT_MS, refundOwed } from '../src/services/bookings';
+import { confirmBooking, PROVIDER_TIMEOUT_MS, refundOwed } from '../src/services/bookings';
 import { cancelShowtime } from '../src/services/showtimes';
 import { fakeMessages, fixedClock, makeTestApp, one, resetDb } from './helpers';
 
@@ -56,8 +56,8 @@ describe('while draining', () => {
   });
 });
 
-/** A showing two customers paid for, one seat each. */
-async function paidShowing() {
+/** A showing with two seats. */
+async function showing() {
   const [b] = await db
     .insert(branches)
     .values({ name: 'B', address: 'a', lat: 0, lng: 0 })
@@ -94,7 +94,12 @@ async function paidShowing() {
       pricePremium: 15000,
     })
     .returning();
-  const show = one(st);
+  return { show: one(st), seatRows };
+}
+
+/** A showing two customers paid for, one seat each. */
+async function paidShowing() {
+  const { show, seatRows } = await showing();
   const invoices = new Map<string, string>(); // invoice id -> booking id
   for (const [i, seat] of seatRows.entries()) {
     const [u] = await db
@@ -186,5 +191,70 @@ describe('cancelling a showing during the drain', () => {
     });
     expect(fastRefund.mock.calls.map(([invoice]) => invoices.get(invoice))).toEqual([second]);
     expect(await paymentStatus(second)).toBe('refunded');
+  });
+});
+
+/** A pending booking whose holds are gone, so a paid invoice can only end in a refund. */
+async function lostSeatsBooking() {
+  const { show, seatRows } = await showing();
+  const [u] = await db
+    .insert(users)
+    .values({ role: 'customer', phone: '+97699000009' })
+    .returning();
+  const [bk] = await db
+    .insert(bookings)
+    .values({
+      userId: one(u).id,
+      showtimeId: show.id,
+      total: 10000,
+      idempotencyKey: crypto.randomUUID(),
+      seatIds: [one(seatRows[0]).id],
+      expiresAt: new Date('2026-11-08T04:10:00Z'),
+    })
+    .returning();
+  const invoiceId = 'inv-lost';
+  await db
+    .insert(payments)
+    .values({ bookingId: one(bk).id, provider: 'mock', invoiceId, amount: 10000 });
+  return { bookingId: one(bk).id, invoiceId };
+}
+
+describe('settling a booking during the drain', () => {
+  it('starts no refund for lost seats once draining; the sweeper pays it after the restart', async () => {
+    const { bookingId, invoiceId } = await lostSeatsBooking();
+    const warn = vi.spyOn(console, 'warn').mockImplementation(() => {});
+    const clock = fixedClock('2026-11-08T04:00:00Z');
+    let answer!: (state: 'paid') => void;
+    const checkPayment = vi.fn((_invoiceId: string) => new Promise<'paid'>((r) => (answer = r)));
+    const refund = vi.fn(async (_invoiceId: string) => {});
+    const deps = {
+      clock,
+      messages: fakeMessages(),
+      seatHub: new SeatHub(),
+      payments: { checkPayment, refund } as unknown as PaymentProvider,
+    };
+
+    const settling = confirmBooking(db, bookingId, deps);
+    await vi.waitFor(() => expect(checkPayment).toHaveBeenCalledOnce());
+    startDraining(); // SIGINT while the invoice check waits on the provider
+    answer('paid');
+    await settling;
+
+    expect(refund).not.toHaveBeenCalled();
+    const [b] = await db.select().from(bookings).where(eq(bookings.id, bookingId));
+    expect(b).toMatchObject({ status: 'failed', seatsLost: true });
+    expect(await paymentStatus(bookingId)).toBe('paid'); // owed, never claimed
+    expect(warn).toHaveBeenCalledExactlyOnceWith(
+      `draining: refund of ${bookingId} left to the sweeper`,
+    );
+
+    // Next boot: a fresh process is not draining, and the sweeper's owed query finds the booking.
+    drain.on = false;
+    await runSweep(db, clock(), deps.seatHub, {
+      settle: async () => {},
+      refund: (id) => refundOwed(db, id, deps),
+    });
+    expect(refund).toHaveBeenCalledExactlyOnceWith(invoiceId);
+    expect(await paymentStatus(bookingId)).toBe('refunded');
   });
 });
