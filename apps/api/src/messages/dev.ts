@@ -3,16 +3,15 @@ import type { Messages } from './index';
 
 /**
  * Dev sender: logs instead of sending, so everything runs without credentials.
- * Message bodies carry login codes, so they are printed only outside production.
+ * Messages carry login codes, so in production only the recipient is logged.
  */
 export class DevMessages implements Messages {
+  constructor(private readonly hideContent = env.NODE_ENV === 'production') {}
+
   async sms(to: string, text: string) {
-    console.log(`[messages:dev] sms to ${to}: ${this.body(text)}`);
+    console.log(`[messages:dev] sms to ${to}${this.hideContent ? '' : `: ${text}`}`);
   }
   async email({ to, subject, text }: { to: string; subject: string; text: string }) {
-    console.log(`[messages:dev] email to ${to} (${subject}): ${this.body(text)}`);
-  }
-  private body(text: string) {
-    return env.NODE_ENV === 'production' ? '[hidden]' : text;
+    console.log(`[messages:dev] email to ${to}${this.hideContent ? '' : ` (${subject}): ${text}`}`);
   }
 }

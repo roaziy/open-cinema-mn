@@ -221,6 +221,49 @@ describe('otp login', () => {
   });
 });
 
+describe('otp hardening', () => {
+  beforeEach(resetDb);
+
+  it('parallel requests for one target produce one code and one 204', async () => {
+    const { app, messages } = setup();
+    const body = { channel: 'sms', target: '99112045' };
+    const results = await Promise.all(
+      Array.from({ length: 5 }, () => request(app).post('/v1/auth/otp/request').send(body)),
+    );
+    expect(results.filter((r) => r.status === 204)).toHaveLength(1);
+    expect(results.filter((r) => r.status === 429)).toHaveLength(4);
+    expect(await db.query.otpCodes.findMany()).toHaveLength(1);
+    expect(messages.sent).toHaveLength(1);
+  });
+
+  it('refuses a login target shaped like a link scope and leaves a pending link code alone', async () => {
+    const { app, otpLogin, lastCode } = setup();
+    const t = (await otpLogin('sms', '99112045')).body;
+    const auth = { Authorization: `Bearer ${t.accessToken}` };
+    await request(app).post('/v1/me/email').set(auth).send({ email: 'bat@mail.mn' }).expect(204);
+    const real = lastCode();
+    const before = await db.query.otpCodes.findMany();
+    const planted = `link:${t.user.id}:x@y.mn`;
+    await request(app)
+      .post('/v1/auth/otp/request')
+      .send({ channel: 'email', target: planted })
+      .expect(400, { error: 'invalid_target' });
+    await request(app)
+      .post('/v1/auth/otp/verify')
+      .send({ channel: 'email', target: planted, code: '123456' })
+      .expect(400, { error: 'invalid_target' });
+    expect(await db.query.otpCodes.findMany()).toHaveLength(before.length);
+    await request(app).post('/v1/me/email/verify').set(auth).send({ code: real }).expect(200);
+  });
+
+  it('phone login refuses an admin that has a phone', async () => {
+    const { otpLogin } = setup();
+    await db.insert(users).values({ role: 'admin', phone: '+97688000009', email: 'a@x.mn' });
+    const res = await otpLogin('sms', '88000009');
+    expect(res.status).toBe(403);
+  });
+});
+
 describe('guest, refresh, logout', () => {
   beforeEach(resetDb);
 
@@ -281,6 +324,29 @@ describe('guest, refresh, logout', () => {
       .post('/v1/auth/refresh')
       .send({ refreshToken: g.body.refreshToken })
       .expect(401);
+  });
+
+  it('answers an expired refresh with refresh_expired and revokes nothing', async () => {
+    const { app, clock } = setup();
+    const a = await request(app).post('/v1/auth/guest');
+    clock.advance(29 * 24 * 60 * MIN);
+    const b = await request(app)
+      .post('/v1/auth/refresh')
+      .send({ refreshToken: a.body.refreshToken })
+      .expect(200);
+    clock.advance(2 * 24 * 60 * MIN);
+    for (let i = 0; i < 2; i++) {
+      const res = await request(app)
+        .post('/v1/auth/refresh')
+        .send({ refreshToken: a.body.refreshToken });
+      expect(res.status).toBe(401);
+      expect(res.body.error).toBe('refresh_expired');
+    }
+    // the newer, still valid token was not revoked
+    await request(app)
+      .post('/v1/auth/refresh')
+      .send({ refreshToken: b.body.refreshToken })
+      .expect(200);
   });
 
   it('stores only a hash of the refresh token', async () => {
@@ -358,6 +424,15 @@ describe('admin login', () => {
     expect((await login(app, 'correct-horse')).status).toBe(200);
     const [row] = await db.select().from(users).where(eq(users.email, 'admin@example.com'));
     expect(row).toMatchObject({ failedLogins: 0, lockedUntil: null });
+  });
+
+  it('10 concurrent wrong logins still lock the account', async () => {
+    await seedAdmin();
+    const { app } = setup();
+    await Promise.all(Array.from({ length: 10 }, () => login(app, 'wrong')));
+    const res = await login(app, 'correct-horse');
+    expect(res.status).toBe(429);
+    expect(res.body.error).toBe('account_locked');
   });
 
   it('a success resets the failure counter', async () => {

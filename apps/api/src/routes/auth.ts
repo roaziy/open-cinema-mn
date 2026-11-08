@@ -102,9 +102,11 @@ export function createAuthRouter(deps: AppDeps, limiters: Limiters): Router {
       }
     }
     if (!user) throw new AppError(500, 'internal_error');
+    // Admins sign in with a password only, never by code.
+    if (user.role === 'admin') throw forbidden();
     if (channel === 'email') {
-      // Staff and admins sign in by phone and password only.
-      if (user.role === 'staff' || user.role === 'admin') throw forbidden();
+      // Staff sign in by phone only.
+      if (user.role === 'staff') throw forbidden();
       if (!user.emailVerifiedAt) {
         [user] = await db
           .update(users)
@@ -132,6 +134,8 @@ export function createAuthRouter(deps: AppDeps, limiters: Limiters): Router {
       .where(eq(sessions.refreshTokenHash, hash))
       .limit(1);
     if (!session) throw unauthorized('invalid_refresh');
+    // Expired tokens are refused before rotating, so a client retry never looks like reuse.
+    if (session.expiresAt <= now) throw unauthorized('refresh_expired');
     // Rotate atomically: only one caller can flip an active session to revoked.
     const [rotated] = await db
       .update(sessions)
@@ -143,7 +147,6 @@ export function createAuthRouter(deps: AppDeps, limiters: Limiters): Router {
       await revokeAllSessions(db, session.userId, now);
       throw unauthorized('invalid_refresh');
     }
-    if (session.expiresAt <= now) throw unauthorized('invalid_refresh');
     const [user] = await db.select().from(users).where(eq(users.id, session.userId)).limit(1);
     if (!user) throw unauthorized('invalid_refresh');
     res.json(await issueTokens(db, user, now));
@@ -174,25 +177,35 @@ export function createAuthRouter(deps: AppDeps, limiters: Limiters): Router {
       await verifyDummy(body.password);
       throw unauthorized('invalid_credentials');
     }
-    if (user.lockedUntil && user.lockedUntil > now) throw new AppError(429, 'account_locked');
-
-    if (!(await verifyPassword(user.passwordHash, body.password))) {
-      // One statement so parallel guesses cannot dodge the counter.
-      await db
+    const adminId = user.id;
+    // The row lock serializes attempts per account, so parallel guesses cannot skip the counter
+    // or reset it while another attempt is locking the account.
+    const outcome = await db.transaction(async (tx) => {
+      const [row] = await tx.select().from(users).where(eq(users.id, adminId)).for('update');
+      if (!row?.passwordHash) return { kind: 'invalid' as const };
+      if (row.lockedUntil && row.lockedUntil > now) return { kind: 'locked' as const };
+      if (await verifyPassword(row.passwordHash, body.password)) {
+        const [fresh] = await tx
+          .update(users)
+          .set({ failedLogins: 0, lockedUntil: null })
+          .where(eq(users.id, adminId))
+          .returning();
+        return { kind: 'ok' as const, user: one(fresh) };
+      }
+      const failed = row.failedLogins + 1;
+      await tx
         .update(users)
-        .set({
-          failedLogins: sql`case when ${users.failedLogins} + 1 >= ${MAX_FAILED_LOGINS} then 0 else ${users.failedLogins} + 1 end`,
-          lockedUntil: sql`case when ${users.failedLogins} + 1 >= ${MAX_FAILED_LOGINS} then ${new Date(now.getTime() + LOCK_MS)} else ${users.lockedUntil} end`,
-        })
-        .where(eq(users.id, user.id));
-      throw unauthorized('invalid_credentials');
-    }
-    const [fresh] = await db
-      .update(users)
-      .set({ failedLogins: 0, lockedUntil: null })
-      .where(eq(users.id, user.id))
-      .returning();
-    res.json(await issueTokens(db, one(fresh), now));
+        .set(
+          failed >= MAX_FAILED_LOGINS
+            ? { failedLogins: 0, lockedUntil: new Date(now.getTime() + LOCK_MS) }
+            : { failedLogins: failed },
+        )
+        .where(eq(users.id, adminId));
+      return { kind: 'invalid' as const };
+    });
+    if (outcome.kind === 'locked') throw new AppError(429, 'account_locked');
+    if (outcome.kind === 'invalid') throw unauthorized('invalid_credentials');
+    res.json(await issueTokens(db, outcome.user, now));
   });
 
   r.get('/me', auth, async (req, res) => {

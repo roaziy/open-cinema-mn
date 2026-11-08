@@ -1,5 +1,6 @@
 import { describe, expect, it, vi } from 'vitest';
 import { parseEnv } from '../src/env';
+import { DevMessages } from '../src/messages/dev';
 import {
   bookingConfirmedEmail,
   otpEmail,
@@ -118,6 +119,27 @@ describe('templates', () => {
       'Op',
     );
     expect(c.html).toContain('Мөнгөө буцаана.');
+  });
+});
+
+describe('dev sender in production', () => {
+  it('never logs the code, subject or body', async () => {
+    const spies = (['log', 'info', 'warn', 'error'] as const).map((m) =>
+      vi.spyOn(console, m).mockImplementation(() => {}),
+    );
+    const dev = new DevMessages(true);
+    const m = otpEmail('482913', 'Op');
+    expect(m.subject).not.toContain('482913');
+    await dev.sms('+97699112045', otpSms('482913', 'Op'));
+    await dev.email({ to: 'a@b.mn', ...m });
+    const out = spies
+      .flatMap((s) => s.mock.calls)
+      .flat()
+      .join('\n');
+    for (const s of spies) s.mockRestore();
+    expect(out).toContain('a@b.mn');
+    expect(out).not.toContain('482913');
+    expect(out).not.toContain(m.subject);
   });
 });
 

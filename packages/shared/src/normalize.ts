@@ -12,5 +12,7 @@ export function normalizePhone(input: string): string | null {
 /** Trim and lowercase an email; null if it does not look like one. */
 export function normalizeEmail(input: string): string | null {
   const e = input.trim().toLowerCase();
+  // ":" is reserved for internal OTP scopes such as "link:<userId>:<email>".
+  if (e.includes(':')) return null;
   return /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(e) ? e : null;
 }
