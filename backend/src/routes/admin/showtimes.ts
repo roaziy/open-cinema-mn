@@ -8,6 +8,7 @@ import {
   cancelShowtime,
   createShowtime,
   listShowtimes,
+  previewCancel,
   updateShowtime,
 } from '../../services/showtimes';
 
@@ -37,6 +38,10 @@ export function createAdminShowtimesRouter(deps: AppDeps): Router {
     const id = uuidParam(req);
     await updateShowtime(db, id, req.body, deps.clock());
     res.json(await one(id));
+  });
+
+  r.get('/showtimes/:id/cancel-preview', async (req, res) => {
+    res.json(await previewCancel(db, uuidParam(req), deps.clock()));
   });
 
   r.post('/showtimes/:id/cancel', async (req, res) => {

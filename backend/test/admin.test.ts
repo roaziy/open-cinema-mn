@@ -529,6 +529,7 @@ describe('cancelling a showtime', () => {
       status: 'cancelled',
       cancelledBookings: 2,
       cancelledTickets: 3,
+      refundAmount: 30000,
     });
 
     expect((await bookingOf(paidA)).status).toBe('cancelled');
@@ -564,6 +565,70 @@ describe('cancelling a showtime', () => {
       .expect((r) => expect(r.status).toBeGreaterThanOrEqual(400));
     await a('patch', `/showtimes/${show.id}`).send({ priceStandard: 5000 }).expect(409);
     await a('post', `/showtimes/${uuid()}/cancel`).expect(404);
+  });
+
+  it("previews a cancellation with what was paid, not today's prices, then cancel agrees", async () => {
+    const s = setup();
+    const f = await fixture();
+    const a = await api(s, f);
+    const show = await addShowtime(f, '2026-11-08T11:00:00Z');
+    await buy(s, f, show.id, f.alice, 1, 2);
+    await buy(s, f, show.id, f.bob, 3);
+    const held = await createHolds(db, {
+      showtimeId: show.id,
+      seatIds: [f.seatId(4)],
+      userId: f.alice.id,
+      now: s.clock(),
+    });
+    await request(s.app)
+      .post('/v1/bookings')
+      .set('Authorization', await as(s, f.alice))
+      .send({ holdIds: held.holds.map((h) => h.id), idempotencyKey: uuid() })
+      .expect(200);
+    await createHolds(db, {
+      showtimeId: show.id,
+      seatIds: [f.seatId(5)],
+      userId: f.bob.id,
+      now: s.clock(),
+    });
+    // the price goes up after the sales: the refund must still be what was paid
+    await a('patch', `/showtimes/${show.id}`).send({ priceStandard: 99000 }).expect(200);
+
+    const pre = await a('get', `/showtimes/${show.id}/cancel-preview`).expect(200);
+    expect(pre.body).toEqual({
+      id: show.id,
+      startsAt: '2026-11-08T11:00:00.000Z',
+      paidBookings: 2,
+      tickets: 3,
+      refundAmount: 30000,
+      pendingBookings: 1,
+      activeHolds: 2,
+    });
+    // previewing changes nothing
+    expect(one((await db.select().from(showtimes))[0]).status).toBe('scheduled');
+    expect(await db.select().from(tickets).where(eq(tickets.status, 'valid'))).toHaveLength(3);
+
+    const res = await a('post', `/showtimes/${show.id}/cancel`).expect(200);
+    expect(res.body).toMatchObject({
+      cancelledBookings: pre.body.paidBookings,
+      cancelledTickets: pre.body.tickets,
+      refundAmount: pre.body.refundAmount,
+    });
+  });
+
+  it('refuses a preview for unknown, started and already cancelled showings', async () => {
+    const s = setup();
+    const f = await fixture();
+    const a = await api(s, f);
+    await a('get', `/showtimes/${uuid()}/cancel-preview`).expect(404);
+    const started = await addShowtime(f, '2026-11-08T10:05:00Z');
+    const late = await addShowtime(f, '2026-11-09T11:00:00Z');
+    await a('post', `/showtimes/${late.id}/cancel`).expect(200);
+    const gone = await a('get', `/showtimes/${late.id}/cancel-preview`).expect(409);
+    expect(gone.body.error).toBe('showtime_cancelled');
+    s.clock.advance(10 * MIN);
+    const old = await a('get', `/showtimes/${started.id}/cancel-preview`).expect(409);
+    expect(old.body.error).toBe('showtime_started');
   });
 
   it('refunds and emails once when two admins cancel at the same moment', async () => {
