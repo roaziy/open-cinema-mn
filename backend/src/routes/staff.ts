@@ -1,40 +1,28 @@
 import { ScanBody } from '@open-cinema/shared';
-import { Router } from 'express';
-import { rateLimit } from 'express-rate-limit';
+import { type Request, Router } from 'express';
 import { z } from 'zod';
 import type { AppDeps } from '../app';
 import { notFound } from '../lib/errors';
 import { validate } from '../lib/http';
-import { requireAuth, requireRole } from '../middleware/auth';
+import type { Limiters } from '../lib/rate-limit';
+import { type AuthUser, requireAuth, requireRole } from '../middleware/auth';
 import { recentScans, scanTicket, todayShowtimes, undoScan } from '../services/scan';
 
 const UUID = z.string().uuid();
 const RecentQuery = z.object({ deviceId: UUID });
 const TodayQuery = z.object({ branchId: UUID.optional() });
 
-export function createStaffRouter(deps: AppDeps): Router {
+export function createStaffRouter(deps: AppDeps, limiters: Limiters): Router {
   const { db, clock } = deps;
   const r = Router();
   const staff = [requireAuth(deps), requireRole('staff', 'admin')];
-  // Generous: a busy door scans a few tickets a second at peak. Keyed by staff, not IP, because
-  // a whole cinema shares one address.
-  const scanLimit = rateLimit({
-    windowMs: 60_000,
-    limit: 120,
-    standardHeaders: 'draft-8',
-    legacyHeaders: false,
-    keyGenerator: (req) => req.user?.id ?? 'anonymous',
-    handler: (_req, res) => {
-      res.status(429).json({ error: 'rate_limited' });
-    },
-  });
-  const me = (req: { user?: AppUser }) => req.user as AppUser;
+  const me = (req: Request) => req.user as AuthUser;
 
-  r.post('/staff/scan', ...staff, scanLimit, validate(ScanBody), async (req, res) => {
+  r.post('/staff/scan', ...staff, limiters.scan, validate(ScanBody), async (req, res) => {
     res.json(await scanTicket(db, me(req), req.body, clock()));
   });
 
-  r.post('/staff/scan/:scanId/undo', ...staff, scanLimit, async (req, res) => {
+  r.post('/staff/scan/:scanId/undo', ...staff, limiters.scan, async (req, res) => {
     const scanId = String(req.params.scanId);
     if (!UUID.safeParse(scanId).success) throw notFound();
     res.json(await undoScan(db, me(req), scanId, clock()));
@@ -60,5 +48,3 @@ export function createStaffRouter(deps: AppDeps): Router {
 
   return r;
 }
-
-type AppUser = NonNullable<import('express').Request['user']>;
