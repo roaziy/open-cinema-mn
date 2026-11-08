@@ -33,7 +33,7 @@ the screen, how much of your view it fills, and how far off-center you sit.
 - Live seat map with standard, premium and wheelchair seats
 - 3D view from the selected seat with distance, screen coverage and angle
 - Book as a guest, or log in with a one-time code by SMS (phone) or email
-- QR ticket, Apple Wallet pass, add to calendar with a 30-minute reminder
+- QR ticket, Apple Wallet pass, add to calendar with a 30-minute reminder; loaded tickets stay readable offline
 - Mongolian (default) and English
 
 **Admin web** (Next.js, Mongolian)
