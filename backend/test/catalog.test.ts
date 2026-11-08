@@ -13,7 +13,7 @@ import {
   tickets,
   users,
 } from '../src/db/schema';
-import { fixedClock, makeTestApp, resetDb } from './helpers';
+import { fixedClock, makeTestApp, one, resetDb } from './helpers';
 
 // 12:00 in Ulaanbaatar on 2026-11-08
 const NOW = '2026-11-08T04:00:00Z';
@@ -30,20 +30,32 @@ async function fixture() {
     .returning();
   const [h1] = await db
     .insert(halls)
-    .values({ branchId: b1!.id, name: 'Hall 1', screenWidthM: 10, screenHeightM: 5, screenXM: 5 })
+    .values({
+      branchId: one(b1).id,
+      name: 'Hall 1',
+      screenWidthM: 10,
+      screenHeightM: 5,
+      screenXM: 5,
+    })
     .returning();
   const [h2] = await db
     .insert(halls)
-    .values({ branchId: b2!.id, name: 'Hall 2', screenWidthM: 10, screenHeightM: 5, screenXM: 5 })
+    .values({
+      branchId: one(b2).id,
+      name: 'Hall 2',
+      screenWidthM: 10,
+      screenHeightM: 5,
+      screenXM: 5,
+    })
     .returning();
   const seatRows = await db
     .insert(seats)
     .values([
-      { hallId: h1!.id, rowLabel: 'A', number: 1, xM: 1, yM: 1 },
-      { hallId: h1!.id, rowLabel: 'A', number: 2, xM: 2, yM: 1 },
-      { hallId: h1!.id, rowLabel: 'A', number: 3, xM: 3, yM: 1 },
-      { hallId: h1!.id, rowLabel: 'A', number: 4, xM: 4, yM: 1, kind: 'blocked' },
-      { hallId: h2!.id, rowLabel: 'A', number: 1, xM: 1, yM: 1 },
+      { hallId: one(h1).id, rowLabel: 'A', number: 1, xM: 1, yM: 1 },
+      { hallId: one(h1).id, rowLabel: 'A', number: 2, xM: 2, yM: 1 },
+      { hallId: one(h1).id, rowLabel: 'A', number: 3, xM: 3, yM: 1 },
+      { hallId: one(h1).id, rowLabel: 'A', number: 4, xM: 4, yM: 1, kind: 'blocked' },
+      { hallId: one(h2).id, rowLabel: 'A', number: 1, xM: 1, yM: 1 },
     ])
     .returning();
   const base = {
@@ -70,7 +82,7 @@ async function fixture() {
     .insert(movies)
     .values({ ...base, title: 'Gone', status: 'archived', releaseDate: '2020-01-01' });
   const mk = (hallId: string, startsAt: string, over = {}) => ({
-    movieId: now2!.id,
+    movieId: one(now2).id,
     hallId,
     startsAt: new Date(startsAt),
     priceStandard: 15000,
@@ -80,16 +92,24 @@ async function fixture() {
   const inserted = await db
     .insert(showtimes)
     .values([
-      mk(h1!.id, '2026-11-08T11:00:00Z'), // 19:00 UB Nov 8
-      mk(h1!.id, '2026-11-08T08:00:00Z'), // 16:00 UB Nov 8
-      mk(h1!.id, '2026-11-08T02:00:00Z'), // 10:00 UB, already started
-      mk(h2!.id, '2026-11-08T12:00:00Z'), // 20:00 UB Nov 8
-      mk(h1!.id, '2026-11-08T17:00:00Z'), // 01:00 UB Nov 9
-      mk(h1!.id, '2026-11-08T16:30:00Z'), // 00:30 UB Nov 9
-      mk(h1!.id, '2026-11-08T13:00:00Z', { status: 'cancelled' }),
+      mk(one(h1).id, '2026-11-08T11:00:00Z'), // 19:00 UB Nov 8
+      mk(one(h1).id, '2026-11-08T08:00:00Z'), // 16:00 UB Nov 8
+      mk(one(h1).id, '2026-11-08T02:00:00Z'), // 10:00 UB, already started
+      mk(one(h2).id, '2026-11-08T12:00:00Z'), // 20:00 UB Nov 8
+      mk(one(h1).id, '2026-11-08T17:00:00Z'), // 01:00 UB Nov 9
+      mk(one(h1).id, '2026-11-08T16:30:00Z'), // 00:30 UB Nov 9
+      mk(one(h1).id, '2026-11-08T13:00:00Z', { status: 'cancelled' }),
     ])
     .returning();
-  return { b1: b1!, b2: b2!, h1: h1!, seatRows, now1: now1!, now2: now2!, st: inserted };
+  return {
+    b1: one(b1),
+    b2: one(b2),
+    h1: one(h1),
+    seatRows,
+    now1: one(now1),
+    now2: one(now2),
+    st: inserted,
+  };
 }
 
 beforeEach(resetDb);
@@ -174,31 +194,34 @@ describe('catalog', () => {
       .insert(users)
       .values({ role: 'customer', phone: '+97699112045' })
       .returning();
-    const show = f.st.find((s) => s.startsAt.toISOString() === '2026-11-08T08:00:00.000Z')!;
+    const show = one(f.st.find((s) => s.startsAt.toISOString() === '2026-11-08T08:00:00.000Z'));
     const [booking] = await db
       .insert(bookings)
       .values({
-        userId: user!.id,
+        userId: one(user).id,
         showtimeId: show.id,
         total: 15000,
         idempotencyKey: crypto.randomUUID(),
       })
       .returning();
     const [s1, s2, s3] = f.seatRows;
-    await db
-      .insert(tickets)
-      .values({ bookingId: booking!.id, showtimeId: show.id, seatId: s1!.id, qrToken: 't' });
+    await db.insert(tickets).values({
+      bookingId: one(booking).id,
+      showtimeId: show.id,
+      seatId: one(s1).id,
+      qrToken: 't',
+    });
     await db.insert(seatHolds).values([
       {
         showtimeId: show.id,
-        seatId: s2!.id,
-        userId: user!.id,
+        seatId: one(s2).id,
+        userId: one(user).id,
         expiresAt: new Date('2026-11-08T04:10:00Z'),
       },
       {
         showtimeId: show.id,
-        seatId: s3!.id,
-        userId: user!.id,
+        seatId: one(s3).id,
+        userId: one(user).id,
         expiresAt: new Date('2026-11-08T03:59:00Z'),
       },
     ]);
@@ -220,26 +243,29 @@ describe('catalog', () => {
       .insert(users)
       .values({ role: 'customer', phone: '+97699112045' })
       .returning();
-    const show = f.st[1]!;
+    const show = one(f.st[1]);
     const [s1, s2] = f.seatRows;
     await db.insert(seatHolds).values({
       showtimeId: show.id,
-      seatId: s1!.id,
-      userId: user!.id,
+      seatId: one(s1).id,
+      userId: one(user).id,
       expiresAt: new Date('2026-11-08T04:10:00Z'),
     });
     const [booking] = await db
       .insert(bookings)
       .values({
-        userId: user!.id,
+        userId: one(user).id,
         showtimeId: show.id,
         total: 1,
         idempotencyKey: crypto.randomUUID(),
       })
       .returning();
-    await db
-      .insert(tickets)
-      .values({ bookingId: booking!.id, showtimeId: show.id, seatId: s2!.id, qrToken: 't' });
+    await db.insert(tickets).values({
+      bookingId: one(booking).id,
+      showtimeId: show.id,
+      seatId: one(s2).id,
+      qrToken: 't',
+    });
     const res = await request(makeTestApp({ clock })).get(`/v1/showtimes/${show.id}`).expect(200);
     const map = SeatMapSchema.parse(res.body);
     expect(map.showtime.movie.title).toBe('Newer');
