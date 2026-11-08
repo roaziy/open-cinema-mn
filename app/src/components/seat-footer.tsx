@@ -45,6 +45,8 @@ export function SeatFooter({
   const total = selected.reduce((sum, s) => sum + seatPrice(s, priceStandard, pricePremium), 0);
   const shown = useTween(total);
   const empty = selected.length === 0;
+  // At 00:00 the holds are gone even if the refetch has not landed yet.
+  const lapsed = secondsLeft === 0;
   const premiumCount = selected.filter((s) => s.kind === 'premium').length;
   const standardCount = selected.length - premiumCount;
   const urgent = secondsLeft !== null && secondsLeft <= 60;
@@ -88,7 +90,11 @@ export function SeatFooter({
             </View>
             <View style={styles.totalRow}>
               <View style={styles.totalLeft}>
-                <Text style={styles.count}>{t('seats.count', { n: selected.length })}</Text>
+                <Text style={styles.count}>
+                  {selected.length === 1
+                    ? t('seats.count1')
+                    : t('seats.count', { n: selected.length })}
+                </Text>
                 <Text style={styles.breakdown} numberOfLines={1}>
                   {[
                     standardCount > 0 ? `${t('seats.standard')} ×${standardCount}` : null,
@@ -122,8 +128,8 @@ export function SeatFooter({
           <Text style={styles.secondaryText}>{t('seats.fromSeat')}</Text>
         </Pressable>
         <Pressable
-          style={[styles.primary, empty && styles.disabled]}
-          disabled={empty}
+          style={[styles.primary, (empty || lapsed) && styles.disabled]}
+          disabled={empty || lapsed}
           onPress={onContinue}
           accessibilityRole="button"
         >

@@ -35,29 +35,26 @@ function prettyPhone(e164: string): string {
   return `+976 ${e164.slice(4, 8)} ${e164.slice(8)}`;
 }
 
-function errorKey(e: unknown): { key: TKey; params?: Record<string, number> } {
-  if (e instanceof ApiError) {
-    if (e.code === 'invalid_code') {
-      const left = e.body?.attemptsLeft;
-      return typeof left === 'number'
-        ? { key: 'login.err.invalid_code_left', params: { n: left } }
-        : { key: 'login.err.invalid_code' };
-    }
-    if (e.status === 410) return { key: 'login.err.expired' };
-    if (e.status === 0) return { key: 'error.network' };
-    const key = `login.err.${e.code}` as TKey;
-    if (e.code in ERR_CODES) return { key };
-  }
-  return { key: 'login.err.generic' };
-}
-
-const ERR_CODES: Record<string, true> = {
-  too_many_attempts: true,
-  resend_too_soon: true,
-  too_many_requests: true,
-  sms_failed: true,
-  email_failed: true,
+/** Every code the auth routes can answer with, and the message for it. */
+const ERROR_KEYS: Record<string, TKey> = {
+  invalid_code: 'login.err.invalid_code', // wrong, expired or already used: the server does not say which
+  too_many_attempts: 'login.err.too_many_attempts',
+  resend_too_soon: 'login.err.resend_too_soon',
+  too_many_requests: 'login.err.too_many_requests',
+  rate_limited: 'login.err.rate_limited',
+  invalid_target: 'login.err.invalid_target',
+  sms_failed: 'login.err.sms_failed',
+  email_failed: 'login.err.email_failed',
+  forbidden: 'login.err.forbidden', // staff by email, admins by code
 };
+
+function errorKey(e: unknown): TKey {
+  if (e instanceof ApiError) {
+    if (e.status === 0) return 'error.network';
+    return ERROR_KEYS[e.code] ?? 'login.err.generic';
+  }
+  return 'login.err.generic';
+}
 
 export default function LoginScreen() {
   const { t } = useI18n();
@@ -86,8 +83,7 @@ export default function LoginScreen() {
 
   const fail = useCallback(
     (e: unknown) => {
-      const { key, params } = errorKey(e);
-      setError(t(key, params));
+      setError(t(errorKey(e)));
       haptic.error();
     },
     [t],

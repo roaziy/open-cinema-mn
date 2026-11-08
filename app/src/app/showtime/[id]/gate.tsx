@@ -1,7 +1,7 @@
 import { normalizeEmail } from '@open-cinema/shared';
 import { router, useLocalSearchParams } from 'expo-router';
 import { Clock, SignIn, Ticket } from 'phosphor-react-native';
-import { useMemo, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import { StyleSheet, Text, TextInput, View } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { IconTile } from '@/components/icon-tile';
@@ -26,6 +26,10 @@ export default function GateScreen() {
     [holds.data],
   );
   const left = useCountdown(earliest);
+  // The seats are gone: go back to the map, which says which ones lapsed.
+  useEffect(() => {
+    if (left === 0) router.dismiss();
+  }, [left]);
 
   const [email, setEmail] = useState(() => getContactEmail(id) ?? '');
   const [touched, setTouched] = useState(false);
