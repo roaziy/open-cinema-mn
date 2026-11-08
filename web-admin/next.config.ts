@@ -13,7 +13,12 @@ const securityHeaders = [
   { key: 'Permissions-Policy', value: 'camera=(self), microphone=(), geolocation=()' },
 ];
 
+// One id per build: names the service worker cache so a deploy never reuses an old one.
+const buildId = process.env.VERCEL_GIT_COMMIT_SHA?.slice(0, 12) ?? Date.now().toString(36);
+
 const config: NextConfig = {
+  env: { OC_BUILD_ID: buildId },
+  generateBuildId: () => buildId,
   transpilePackages: ['@open-cinema/shared'],
   poweredByHeader: false,
   agentRules: false,

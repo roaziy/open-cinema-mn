@@ -1,25 +1,37 @@
 import { AuthTokensSchema, type PublicUser } from '@open-cinema/shared';
-import { API_URL } from '../env';
+import { bffHeaders } from '../bff';
+import { apiUrl } from '../env';
 import type { Tokens } from './cookies';
 
 export type RefreshResult =
   | { ok: true; tokens: Tokens; user: PublicUser }
-  /** `invalid`: the API rejected the token (expired, or reused, which revokes every session). */
-  | { ok: false; reason: 'invalid' | 'unavailable' };
+  | {
+      ok: false;
+      /**
+       * `invalid`: rejected (expired, or reused, which revokes every session): drop the session.
+       * `superseded`: another request rotated this token a moment ago: keep the cookies, a newer
+       * one is on its way to the browser.
+       * `unavailable`: could not ask, or the API failed.
+       */
+      reason: 'invalid' | 'superseded' | 'unavailable';
+    };
 
-const SHARE_MS = 20_000;
+const INVALID_KEEP_MS = 5_000;
 const inflight = new Map<string, Promise<RefreshResult>>();
 
-async function callRefresh(refreshToken: string): Promise<RefreshResult> {
+async function callRefresh(refreshToken: string, ip: string | null): Promise<RefreshResult> {
   try {
-    const res = await fetch(`${API_URL}/v1/auth/refresh`, {
+    const res = await fetch(`${apiUrl()}/v1/auth/refresh`, {
       method: 'POST',
-      headers: { 'content-type': 'application/json' },
+      headers: { 'content-type': 'application/json', ...bffHeaders(ip) },
       body: JSON.stringify({ refreshToken }),
       cache: 'no-store',
       signal: AbortSignal.timeout(8_000),
     });
-    if (res.status === 401) return { ok: false, reason: 'invalid' };
+    if (res.status === 401) {
+      const body = (await res.json().catch(() => ({}))) as { error?: string };
+      return { ok: false, reason: body.error === 'refresh_superseded' ? 'superseded' : 'invalid' };
+    }
     if (!res.ok) return { ok: false, reason: 'unavailable' };
     const parsed = AuthTokensSchema.safeParse(await res.json());
     if (!parsed.success) return { ok: false, reason: 'unavailable' };
@@ -31,21 +43,23 @@ async function callRefresh(refreshToken: string): Promise<RefreshResult> {
 }
 
 /**
- * Rotates the refresh token, once per token.
- *
- * Refresh tokens rotate and a replayed one revokes every session, so parallel requests (a page
- * plus its prefetches, several client fetches) must never each spend the same token. They all
- * share one call, and the outcome is kept for a few seconds for requests that still carry the old
- * cookie. A transient failure is not kept, so the token can be tried again.
+ * Rotates the refresh token. Requests that overlap in time share one call, so a page and its
+ * prefetches never each spend the same token (a replay revokes every session). Nothing is kept
+ * once the call settles: a later request with the same token goes to the API, which decides.
+ * Only a bare `invalid` (no credentials in it) is remembered for a few seconds, to avoid
+ * hammering the API with a token it already refused.
  */
-export function refreshSession(refreshToken: string): Promise<RefreshResult> {
+export function refreshSession(refreshToken: string, ip: string | null): Promise<RefreshResult> {
   const shared = inflight.get(refreshToken);
   if (shared) return shared;
-  const call = callRefresh(refreshToken).then((result) => {
-    if (!result.ok && result.reason === 'unavailable') inflight.delete(refreshToken);
+  const call = callRefresh(refreshToken, ip).then((result) => {
+    if (!result.ok && result.reason === 'invalid') {
+      setTimeout(() => inflight.delete(refreshToken), INVALID_KEEP_MS).unref?.();
+    } else {
+      inflight.delete(refreshToken);
+    }
     return result;
   });
   inflight.set(refreshToken, call);
-  setTimeout(() => inflight.delete(refreshToken), SHARE_MS).unref?.();
   return call;
 }

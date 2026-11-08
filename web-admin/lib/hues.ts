@@ -29,26 +29,3 @@ export function initials(name: string | null | undefined, fallback = '?'): strin
   const second = parts[1];
   return ([...first][0] + (second ? [...second][0] : '')).toLocaleUpperCase('mn');
 }
-
-/**
- * Hues for a set of ids: each id starts at its own stable hue and moves on to the next free one
- * if another id already holds it, so neighbours in a list never look alike while they fit.
- */
-export function assignHues(ids: string[]): Map<string, HueKey> {
-  const taken = new Set<HueKey>();
-  const out = new Map<string, HueKey>();
-  for (const id of [...ids].sort()) {
-    const start = CYCLE.indexOf(hueFor(id));
-    let pick = CYCLE[start] as HueKey;
-    for (let i = 0; i < CYCLE.length; i++) {
-      const candidate = CYCLE[(start + i) % CYCLE.length] as HueKey;
-      if (!taken.has(candidate)) {
-        pick = candidate;
-        break;
-      }
-    }
-    taken.add(pick);
-    out.set(id, pick);
-  }
-  return out;
-}

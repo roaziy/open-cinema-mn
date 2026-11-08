@@ -14,7 +14,7 @@ export type NavChild = {
   attention?: boolean;
 };
 
-function Count({ value }: { value: number | undefined }) {
+function Count({ value }: { value: number | string | undefined }) {
   if (value === undefined) return null;
   return <span className="ml-auto pl-2 text-[13px] text-muted tabular-nums">{value}</span>;
 }
@@ -44,7 +44,7 @@ export function NavItem({
 }: {
   item: NavItemDef;
   active: boolean;
-  count?: number;
+  count?: number | string;
   attention?: boolean;
   childItems?: NavChild[];
   activeChildHref?: string | null;
