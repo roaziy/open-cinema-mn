@@ -36,28 +36,44 @@ export function subscribeAuth(cb: () => void): () => void {
 
 // --- persistence (writes are serialized so an old write can never land after a newer one) ---
 
+// Readable after the first unlock so a background launch (e.g. push, refresh) can still sign in.
+const STORE_OPTS = { keychainAccessible: SecureStore.AFTER_FIRST_UNLOCK };
+
+function warn(what: string, e: unknown) {
+  if (__DEV__) console.warn(`[auth] ${what} failed`, e);
+}
+
 let persistChain: Promise<void> = Promise.resolve();
 
 function persist(task: () => Promise<void>): Promise<void> {
-  persistChain = persistChain.then(task).catch(() => {});
+  persistChain = persistChain.then(task);
   return persistChain;
+}
+
+async function deleteStored() {
+  await Promise.all(
+    [KEY_REFRESH, KEY_ACCESS, KEY_USER].map((k) => SecureStore.deleteItemAsync(k, STORE_OPTS)),
+  );
 }
 
 function persistSession(s: Session): Promise<void> {
   return persist(async () => {
-    // Refresh token first: it is the one that must never be lost after rotation.
-    await SecureStore.setItemAsync(KEY_REFRESH, s.refreshToken);
-    await SecureStore.setItemAsync(KEY_ACCESS, s.accessToken);
-    await SecureStore.setItemAsync(KEY_USER, JSON.stringify(s.user));
+    try {
+      // Refresh token first: it is the one that must never be lost after rotation.
+      await SecureStore.setItemAsync(KEY_REFRESH, s.refreshToken, STORE_OPTS);
+      await SecureStore.setItemAsync(KEY_ACCESS, s.accessToken, STORE_OPTS);
+      await SecureStore.setItemAsync(KEY_USER, JSON.stringify(s.user), STORE_OPTS);
+    } catch (e) {
+      warn('saving session', e);
+      // A stale refresh token left behind would be replayed on the next cold start, which the
+      // server treats as reuse and answers by revoking every session. Better to start as guest.
+      await deleteStored().catch((e2) => warn('clearing stale session', e2));
+    }
   });
 }
 
 function persistClear(): Promise<void> {
-  return persist(async () => {
-    await Promise.all(
-      [KEY_REFRESH, KEY_ACCESS, KEY_USER].map((k) => SecureStore.deleteItemAsync(k)),
-    );
-  });
+  return persist(() => deleteStored().catch((e) => warn('clearing session', e)));
 }
 
 let hydrating: Promise<void> | null = null;
@@ -68,15 +84,16 @@ export function hydrateAuth(): Promise<void> {
     let session: Session | null = null;
     try {
       const [accessToken, refreshToken, rawUser] = await Promise.all([
-        SecureStore.getItemAsync(KEY_ACCESS),
-        SecureStore.getItemAsync(KEY_REFRESH),
-        SecureStore.getItemAsync(KEY_USER),
+        SecureStore.getItemAsync(KEY_ACCESS, STORE_OPTS),
+        SecureStore.getItemAsync(KEY_REFRESH, STORE_OPTS),
+        SecureStore.getItemAsync(KEY_USER, STORE_OPTS),
       ]);
       const user = rawUser ? PublicUserSchema.safeParse(JSON.parse(rawUser)) : null;
       if (accessToken && refreshToken && user?.success) {
         session = { accessToken, refreshToken, user: user.data };
       }
-    } catch {
+    } catch (e) {
+      warn('loading session', e);
       session = null;
     }
     setState({ ready: true, session });
