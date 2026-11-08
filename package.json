@@ -4,8 +4,10 @@
   "version": "0.1.0",
   "license": "MIT",
   "workspaces": [
-    "apps/*",
-    "packages/*"
+    "app",
+    "web-admin",
+    "backend",
+    "shared"
   ],
   "scripts": {
     "dev": "npm run dev --workspaces --if-present",

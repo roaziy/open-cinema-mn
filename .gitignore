@@ -9,7 +9,7 @@ dist/
 .expo/
 ios/
 android/
-apps/api/uploads/
+backend/uploads/
 **/fonts/private/
 *.p12
 *.pem

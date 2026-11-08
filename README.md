@@ -8,10 +8,10 @@ Coming soon. See `docs/design.md` for the product design.
 
 ## Layout
 
-- `apps/api` - REST API
-- `apps/admin` - admin and staff web
-- `apps/mobile` - customer app
-- `packages/shared` - shared helpers and contracts
+- `backend` - REST API
+- `web-admin` - admin and staff web
+- `app` - customer app
+- `shared` - shared helpers and contracts
 
 ## License
 

@@ -67,10 +67,10 @@ Next.js (admin+staff) ┼──> Express API (TypeScript) ──> PostgreSQL (Su
 
 **Monorepo** **(owner: stack; builder call: layout)**
 ```
-apps/mobile     Expo SDK 58, expo-router
-apps/admin      Next.js (App Router), admin + staff, PWA
-apps/api        Express + TypeScript
-packages/shared zod schemas + inferred types used by all three apps
+app     Expo SDK 58, expo-router
+web-admin      Next.js (App Router), admin + staff, PWA
+backend        Express + TypeScript
+shared zod schemas + inferred types used by all three apps
 ```
 
 **Stack**
@@ -195,7 +195,7 @@ Reference: the "view from seat" concept at x.com/oiharshit/status/21183695502953
   - Labels (tunable constants): view > 90° → "Very close to the screen"; 50–90° → "Close and immersive"; off-center > 20° → "Angled view"; otherwise "Balanced view".
 - Wheelchair seats show their kind in the header.
 - **Fallback:** if GL fails, show the stats card over a 2D diagram. Target 60 fps on iPhone 12 or newer **(builder call)**.
-- The math lives in `packages/shared` with unit tests.
+- The math lives in `shared` with unit tests.
 
 ## 10. UI direction
 
