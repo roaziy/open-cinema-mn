@@ -10,8 +10,10 @@ Open Cinema runs in three places:
 | Customer app (`app/`)    | Development builds on your own devices             | `npx expo run:ios` / `run:android`                      |
 
 There is no Docker and no database on the VPS. Credentials (Supabase, wesend, Apple Wallet) are
-collected in [`docs/credentials.md`](../docs/credentials.md); do that first, or start with the
-defaults (`MESSAGES_PROVIDER=dev`, `STORAGE_PROVIDER=local`, no Wallet) and add them later.
+collected in [`docs/credentials.md`](../docs/credentials.md). Do that before going live: with
+`NODE_ENV=production` the default `MESSAGES_PROVIDER=dev` does not log login codes (it only
+records the recipient), so nobody can complete an OTP login. A production deployment needs
+`MESSAGES_PROVIDER=wesend` with a working key. Local storage and no Wallet are fine to start with.
 
 ## 1. API on the VPS
 
@@ -35,7 +37,12 @@ npm ci
 ```
 
 `npm ci` installs the dev dependencies too, which the build needs (esbuild). Run it from the
-repository root: the workspaces share one lockfile.
+repository root: the workspaces share one lockfile. To skip the app and admin web dependencies on
+the VPS, install only what the API needs (verified to build and start):
+
+```bash
+npm ci --workspace @open-cinema/backend --workspace @open-cinema/shared
+```
 
 ### 1.2 Configure
 
@@ -50,6 +57,7 @@ Set at least these for production (every variable is described in `.env.example`
 | Variable                                  | Value                                                                                      |
 | ----------------------------------------- | ------------------------------------------------------------------------------------------ |
 | `NODE_ENV`                                | `production` (pm2 also sets it)                                                            |
+| `HOST`                                    | leave unset (binds `127.0.0.1` in production); never `0.0.0.0` behind the proxy            |
 | `PORT`                                    | `4000` (any free port; keep the proxy in step)                                             |
 | `DATABASE_URL`                            | the Supabase **session pooler** URL, port 5432                                             |
 | `JWT_SECRET`, `QR_SECRET`, `LINK_SECRET`  | three different random strings of 32+ characters (`openssl rand -base64 48`)               |
@@ -118,7 +126,6 @@ Caddy:
 
 ```caddyfile
 cinema-api.roaziy.cloud {
-    encode zstd gzip
     reverse_proxy 127.0.0.1:4000 {
         # flush each SSE event immediately
         flush_interval -1
@@ -134,7 +141,7 @@ nginx:
 ```nginx
 server {
     listen 443 ssl;
-    http2 on;
+    http2 on;   # nginx before 1.25.1: write `listen 443 ssl http2;` instead
     server_name cinema-api.roaziy.cloud;
 
     # ssl_certificate / ssl_certificate_key: managed by the server's certbot or equivalent
@@ -157,6 +164,12 @@ server {
 }
 ```
 
+The API binds `127.0.0.1` by default in production (`HOST` unset), so the proxy is the only way in.
+Keep it that way and keep port 4000 closed in any firewall: with `TRUST_PROXY=1` the API believes
+`X-Forwarded-For`, so a client that could reach port 4000 directly could forge its address and
+bypass the per-IP OTP and login limits. If `HOST` is set to anything else in production while
+`TRUST_PROXY` is above 0, the API logs a warning at startup.
+
 With one proxy in front, set `TRUST_PROXY=1` in `.env`. If it stays `0` in production the API logs
 a warning at startup (`TRUST_PROXY is 0: behind a reverse proxy every client shares its address`):
 every visitor would look like the proxy, so the per-IP rate limits would treat the whole world as one
@@ -177,8 +190,16 @@ pm2 reload open-cinema-api
 curl -s http://127.0.0.1:4000/v1/health
 ```
 
-Migrations are additive and run before the new code starts. A reload restarts the single process
-(a second or two); the app reconnects its seat feed and receives a full snapshot first.
+The build writes to `backend/dist.next/` and swaps it into `backend/dist/` in one rename, so pm2
+can never restart into a half-built tree (for example after a memory restart mid-build). The running
+process keeps serving from memory throughout. The one unprotected moment is `npm ci` rewriting
+`node_modules`: for a release that changes dependencies, run `pm2 stop open-cinema-api` before
+`npm ci` and `pm2 start open-cinema-api` after the migration, and accept about a minute of downtime.
+
+Migrations are additive and run before the new code starts. A reload stops the process gracefully
+(it closes open connections and the database pool on SIGINT, with a hard exit after 4 s, before pm2's
+5 s kill timeout) and starts the new one; the app reconnects its seat feed and receives a full
+snapshot first.
 
 ### 1.7 Roll back
 
@@ -194,7 +215,7 @@ pm2 reload open-cinema-api
 Migrations are not reverted automatically. Keep them backward compatible with the previous release
 (add columns, do not drop them in the same release). If a migration itself is the problem, restore
 from a Supabase backup (see below) rather than editing the database by hand. Return to the branch
-afterwards with `git checkout feat/v1` (or your release branch) before the next update.
+afterwards with `git checkout main` before the next update.
 
 ### 1.8 Backups
 
@@ -209,6 +230,9 @@ The admin web app (`web-admin/`, Next.js) is deployed from the same repository a
 2. **Root Directory**: `web-admin`. Enable "Include source files outside of the Root Directory",
    because the app imports the workspace package `shared/`.
 3. **Install Command**: `cd .. && npm ci` (install from the monorepo root so workspaces resolve).
+   To skip the other apps' dependencies you can use
+   `cd .. && npm ci --workspace @open-cinema/web-admin --workspace @open-cinema/shared` instead
+   (verified: `npm run build` in `web-admin/` succeeds after it).
    **Build Command**: `npm run build`. Framework preset: Next.js. Node.js version: 24.x.
 4. Environment variables (Production and Preview):
 
@@ -219,8 +243,8 @@ The admin web app (`web-admin/`, Next.js) is deployed from the same repository a
    | `ADMIN_FONT_DIR`   | leave unset on Vercel (licensed fonts are never committed; the app falls back to Onest) |
 
    Check `.env.example` (the "Admin web" section) for any variable added since this was written.
-5. `next.config` must list `transpilePackages: ['@open-cinema/shared']`, because the shared package
-   ships TypeScript source. Without it the build fails on the first import from `shared`.
+5. `web-admin/next.config.ts` already sets `transpilePackages: ['@open-cinema/shared']`, which the
+   shared package needs because it ships TypeScript source. Keep it if you edit the config.
 6. Domain: add `cinema.roaziy.cloud` under Project, Settings, Domains and create the DNS record
    Vercel shows. The same hostname goes into `WEB_PUBLIC_URL` and `CORS_ORIGINS` on the VPS.
 

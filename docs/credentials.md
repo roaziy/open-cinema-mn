@@ -1,6 +1,6 @@
 # Credentials guide
 
-Open Cinema runs with no credentials at all (`MESSAGES_PROVIDER=dev`, `STORAGE_PROVIDER=local`,
+In development Open Cinema runs with no credentials at all (`MESSAGES_PROVIDER=dev`, `STORAGE_PROVIDER=local`,
 `PAYMENT_PROVIDER=mock`, Wallet disabled). This guide covers what to create when you go live.
 Every value goes into the server's `.env` (repository root on the VPS, `chmod 600 .env`), never into
 git. Variable names below are exactly those in `.env.example`.
@@ -53,7 +53,7 @@ the app, the admin web project or git.
 
 | Variable | Value |
 |---|---|
-| `MESSAGES_PROVIDER` | `wesend` (default `dev` only logs codes) |
+| `MESSAGES_PROVIDER` | `wesend` (required in production; see the note below) |
 | `WESEND_API_KEY` | the API key |
 | `WESEND_FROM_NAME` | sender name shown on email, e.g. `Open Cinema` |
 | `WESEND_REPLY_TO` | optional reply-to address |
@@ -66,7 +66,9 @@ Cyrillic text is 65 characters per segment, so code messages are kept short.
 **Verify.** Set the sandbox key and `MESSAGES_PROVIDER=wesend`, reload, then request a login code in
 the app for a verified phone number or email. It must arrive, and `pm2 logs open-cinema-api` must show no
 provider error. Typical failures: `402` no credit, `422` unsupported number, `429` rate limited.
-With the provider set to `dev`, codes appear in the API log instead; never use `dev` in production.
+With the provider set to `dev` in development, codes appear in the API log instead. In production
+(`NODE_ENV=production`) the `dev` provider deliberately hides the message content and logs only the
+recipient, so no one can receive a code and OTP login cannot complete. Production needs wesend.
 
 **Rotate / revoke.** Create a new key in the dashboard, put it in `WESEND_API_KEY`, reload, then
 delete the old key.
@@ -181,7 +183,7 @@ any non-default value: in production the API refuses to start while it is the ex
 - [ ] `DATABASE_URL` is the Supabase session pooler (port 5432); migrations applied
 - [ ] `JWT_SECRET`, `QR_SECRET`, `LINK_SECRET`, `BFF_SECRET` are four different random values
 - [ ] Same `BFF_SECRET` and `API_INTERNAL_URL` set in the Vercel project
-- [ ] `TRUST_PROXY=1` behind the reverse proxy; no startup warning in the log
+- [ ] `TRUST_PROXY=1` behind the reverse proxy and `HOST` unset (binds `127.0.0.1`); port 4000 is not reachable from outside; no startup warning in the log
 - [ ] `MESSAGES_PROVIDER=wesend` with a live key; a real code was received
 - [ ] `STORAGE_PROVIDER=supabase`; a poster upload loads from its public URL
 - [ ] Wallet certificates in `~/secrets/wallet` with mode 600 (or Wallet intentionally off)
