@@ -1,12 +1,10 @@
 import type { AdminDashboard, AdminReport } from '@open-cinema/shared';
-import { ubDate, ubDayRange } from '@open-cinema/shared';
+import { DAY_MS, UB_OFFSET_MS, ubDate, ubDayRange } from '@open-cinema/shared';
 import { and, asc, desc, eq, gte, lt, sql } from 'drizzle-orm';
 import type { Db } from '../db/client';
 import { bookings, branches, halls, movies, payments, showtimes } from '../db/schema';
 import { SLOT_COLUMNS } from './catalog-views';
 
-const DAY_MS = 24 * 60 * 60 * 1000;
-const UB_OFFSET_MS = 8 * 60 * 60 * 1000;
 const UPCOMING = 8;
 const TOP_FILMS = 5;
 

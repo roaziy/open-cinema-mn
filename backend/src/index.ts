@@ -45,7 +45,7 @@ const stopSweeper = startSweeper(deps);
 
 // pm2 sends SIGINT then SIGKILL after kill_timeout (30 s, ecosystem.config.cjs). Once draining no
 // refund starts and the sweeper and cancellations start no provider call; a request being served
-// may still finish its own invoice check (20 s timeout). The drain outlasts that: leftover
+// may still finish its own invoice creation or check (20 s timeout each). The drain outlasts that: leftover
 // connections are destroyed at 25 s, the process exits at 28 s.
 const shutdown = createShutdown({
   server,

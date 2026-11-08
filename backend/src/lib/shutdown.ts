@@ -18,7 +18,7 @@ export type ShutdownParts = {
   server: Pick<Server, 'close' | 'closeAllConnections' | 'closeIdleConnections'>;
   /**
    * Raises the process-wide drain flag (lib/drain): no refund starts and the sweeper and
-   * cancellations start no provider call. A request being served may still check its invoice.
+   * cancellations start no provider call. A request being served may still create or check its invoice.
    */
   startDraining: () => void;
   /** Stops the sweeper timer; resolves once a running pass has stopped at its next item. */

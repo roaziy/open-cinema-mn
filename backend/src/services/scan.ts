@@ -1,10 +1,19 @@
-import type { ScanBody, ScanResult, ScanResultCode } from '@open-cinema/shared';
-import { ubDate, ubDayRange } from '@open-cinema/shared';
-import { and, asc, desc, eq, isNull, sql } from 'drizzle-orm';
+import type {
+  AdminScan,
+  AdminScanPage,
+  AdminScanQuery,
+  ScanBody,
+  ScanResult,
+  ScanResultCode,
+  TodayShowtime,
+} from '@open-cinema/shared';
+import { ubBusinessDate, ubBusinessDayRange } from '@open-cinema/shared';
+import { and, asc, desc, eq, isNull, lt, or, sql } from 'drizzle-orm';
 import { z } from 'zod';
 import type { Db } from '../db/client';
 import {
   bookings,
+  branches,
   halls,
   movies,
   seats,
@@ -117,7 +126,7 @@ async function composeResult(
 
 /**
  * The ticket an order-number-and-seat scan points at. A door only sees its own branch's tickets
- * for today (UB day); `scope` is null only when matching a replay, which must find the same
+ * for today (business day, 05:00 to 05:00); `scope` is null only when matching a replay, which must find the same
  * ticket the first attempt did. Two matches mean we cannot tell, so none. The ticket's check
  * code must match as well (order numbers are sequential, so order and seat alone are guessable).
  */
@@ -135,7 +144,7 @@ async function resolveOrder(
     eq(seats.number, Number(m[2])),
   ];
   if (scope) {
-    const { start, end } = ubDayRange(ubDate(scope.now));
+    const { start, end } = ubBusinessDayRange(ubBusinessDate(scope.now));
     conds.push(
       sql`${showtimes.startsAt} >= ${start.toISOString()}::timestamptz and ${showtimes.startsAt} < ${end.toISOString()}::timestamptz`,
     );
@@ -205,7 +214,8 @@ async function decide(tx: Tx, scanner: Scanner, body: ScanBody, now: Date): Prom
   if (scanner.role !== 'admin' && scanner.branchId !== t.branchId) {
     return { result: 'wrong_branch', ticketId: t.id };
   }
-  if (ubDate(t.startsAt) !== ubDate(now)) return { result: 'wrong_day', ticketId: t.id };
+  if (ubBusinessDate(t.startsAt) !== ubBusinessDate(now))
+    return { result: 'wrong_day', ticketId: t.id };
 
   const admitted = await tx
     .update(tickets)
@@ -346,30 +356,20 @@ export async function recentScans(
   return rows.map((r) => (r.undone ? { ...r.response, undoUntil: null } : r.response));
 }
 
-export type TodayShowtime = {
-  id: string;
-  startsAt: string;
-  hallName: string;
-  movieTitle: string;
-  posterUrl: string;
-  tone: string;
-  admitted: number;
-  sold: number;
-  capacity: number;
-};
-
-/** Showtimes starting on the current Ulaanbaatar day, with door progress. */
+/** Showtimes of the current business day (05:00 to 05:00 UB), with door progress. */
 export async function todayShowtimes(
   db: Db,
   now: Date,
   branchId: string | null,
 ): Promise<TodayShowtime[]> {
-  const { start, end } = ubDayRange(ubDate(now));
+  const { start, end } = ubBusinessDayRange(ubBusinessDate(now));
   const rows = await db
     .select({
       id: showtimes.id,
       startsAt: showtimes.startsAt,
       hallName: SLOT_COLUMNS.hallName,
+      branchId: halls.branchId,
+      branchName: branches.name,
       capacity: SLOT_COLUMNS.capacity,
       sold: SLOT_COLUMNS.sold,
       admitted: sql<number>`(select count(*)::int from ${tickets} where ${tickets.showtimeId} = ${showtimes.id} and ${tickets.status} = 'valid' and ${tickets.usedAt} is not null)`,
@@ -379,6 +379,7 @@ export async function todayShowtimes(
     })
     .from(showtimes)
     .innerJoin(halls, eq(halls.id, showtimes.hallId))
+    .innerJoin(branches, eq(branches.id, halls.branchId))
     .innerJoin(movies, eq(movies.id, showtimes.movieId))
     .where(
       and(
@@ -387,6 +388,105 @@ export async function todayShowtimes(
         branchId ? eq(halls.branchId, branchId) : undefined,
       ),
     )
-    .orderBy(asc(showtimes.startsAt), asc(halls.name));
+    .orderBy(asc(showtimes.startsAt), asc(branches.name), asc(halls.name));
   return rows.map((r) => ({ ...r, startsAt: r.startsAt.toISOString() }));
+}
+
+const SCANS_DEFAULT_LIMIT = 50;
+
+const encodeCursor = (at: Date, id: string) =>
+  Buffer.from(`${at.toISOString()}|${id}`).toString('base64url');
+
+function decodeCursor(raw: string): { at: Date; id: string } | null {
+  const [iso, id] = Buffer.from(raw, 'base64url').toString().split('|');
+  const at = new Date(iso ?? '');
+  return Number.isNaN(at.getTime()) || !id || !UUID.safeParse(id).success ? null : { at, id };
+}
+
+/**
+ * Scan history for admins, newest first, one page at a time. `date` is a business day (05:00 to
+ * 05:00 UB) of the moment the scan happened. A scan that matched no ticket belongs to its staff
+ * member's branch, so branch filters still find it.
+ */
+export async function adminScans(db: Db, q: AdminScanQuery): Promise<AdminScanPage> {
+  const limit = q.limit ?? SCANS_DEFAULT_LIMIT;
+  const cursor = q.cursor ? decodeCursor(q.cursor) : null;
+  if (q.cursor && !cursor) throw new AppError(400, 'invalid_cursor');
+  const scanBranch = sql<string | null>`coalesce(${halls.branchId}, ${users.branchId})`;
+  const conds = [
+    q.branchId ? sql`${scanBranch} = ${q.branchId}` : undefined,
+    q.showtimeId ? eq(tickets.showtimeId, q.showtimeId) : undefined,
+    q.result ? eq(ticketScans.result, q.result) : undefined,
+  ];
+  if (q.date) {
+    const { start, end } = ubBusinessDayRange(q.date);
+    conds.push(
+      sql`${ticketScans.createdAt} >= ${start.toISOString()}::timestamptz and ${ticketScans.createdAt} < ${end.toISOString()}::timestamptz`,
+    );
+  }
+  if (cursor) {
+    conds.push(
+      or(
+        lt(ticketScans.createdAt, cursor.at),
+        and(eq(ticketScans.createdAt, cursor.at), lt(ticketScans.id, cursor.id)),
+      ),
+    );
+  }
+  const rows = await db
+    .select({
+      id: ticketScans.id,
+      at: ticketScans.createdAt,
+      result: ticketScans.result,
+      deviceLabel: ticketScans.deviceLabel,
+      staffName: users.name,
+      undone: sql<boolean>`exists (select 1 from ticket_scans taken where taken.previous_scan_id = ticket_scans.id and taken.result = 'undone')`,
+      branchId: scanBranch,
+      branchName: sql<string | null>`(select b.name from branches b where b.id = ${scanBranch})`,
+      ticketId: tickets.id,
+      rowLabel: seats.rowLabel,
+      number: seats.number,
+      orderNo: bookings.orderNo,
+      hallName: halls.name,
+      movieTitle: movies.title,
+      showtimeId: showtimes.id,
+      startsAt: showtimes.startsAt,
+    })
+    .from(ticketScans)
+    .innerJoin(users, eq(users.id, ticketScans.staffId))
+    .leftJoin(tickets, eq(tickets.id, ticketScans.ticketId))
+    .leftJoin(seats, eq(seats.id, tickets.seatId))
+    .leftJoin(bookings, eq(bookings.id, tickets.bookingId))
+    .leftJoin(showtimes, eq(showtimes.id, tickets.showtimeId))
+    .leftJoin(halls, eq(halls.id, showtimes.hallId))
+    .leftJoin(movies, eq(movies.id, showtimes.movieId))
+    .where(and(...conds))
+    .orderBy(desc(ticketScans.createdAt), desc(ticketScans.id))
+    .limit(limit + 1);
+  const page = rows.slice(0, limit);
+  const last = page.at(-1);
+  const items: AdminScan[] = page.map((r) => ({
+    id: r.id,
+    at: r.at.toISOString(),
+    result: r.result,
+    undone: r.undone,
+    staffName: r.staffName ?? STAFF_FALLBACK_NAME,
+    deviceLabel: r.deviceLabel,
+    ticket:
+      r.ticketId && r.rowLabel !== null && r.showtimeId && r.startsAt
+        ? {
+            seatCode: `${r.rowLabel}${r.number}`,
+            orderNo: r.orderNo ?? '',
+            hallName: r.hallName ?? '',
+            movieTitle: r.movieTitle ?? '',
+            showtimeId: r.showtimeId,
+            startsAt: r.startsAt.toISOString(),
+          }
+        : null,
+    branchId: r.branchId,
+    branchName: r.branchName,
+  }));
+  return {
+    items,
+    nextCursor: rows.length > limit && last ? encodeCursor(last.at, last.id) : null,
+  };
 }

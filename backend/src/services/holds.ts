@@ -1,11 +1,8 @@
-import type { Hold, SeatDelta } from '@open-cinema/shared';
+import { HOLD_TTL_MS, type Hold, MAX_SEATS_PER_BOOKING, type SeatDelta } from '@open-cinema/shared';
 import { and, count, eq, gt, inArray, lte, ne, sql } from 'drizzle-orm';
 import type { Db } from '../db/client';
 import { seatHolds, seats, showtimes, tickets } from '../db/schema';
 import { AppError, badRequest, conflict, isUniqueViolation, notFound } from '../lib/errors';
-
-export const HOLD_TTL_MS = 10 * 60_000;
-export const MAX_SEATS_PER_BOOKING = 10;
 
 /** 409 `seat_taken`; carries the seats that could not be held. */
 export class SeatTakenError extends AppError {

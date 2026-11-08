@@ -5,6 +5,7 @@ import { createAdminBranchesRouter } from './branches';
 import { createAdminHallsRouter } from './halls';
 import { createAdminMoviesRouter } from './movies';
 import { createAdminReportsRouter } from './reports';
+import { createAdminScansRouter } from './scans';
 import { createAdminShowtimesRouter } from './showtimes';
 import { createAdminStaffRouter } from './staff';
 import { createAdminUploadsRouter } from './uploads';
@@ -19,6 +20,7 @@ export function createAdminRouter(deps: AppDeps): Router {
   r.use(createAdminShowtimesRouter(deps));
   r.use(createAdminStaffRouter(deps));
   r.use(createAdminReportsRouter(deps));
+  r.use(createAdminScansRouter(deps));
   r.use(createAdminUploadsRouter(deps));
   return r;
 }

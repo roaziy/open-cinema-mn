@@ -37,3 +37,7 @@ export const PublicTicketsSchema = z.object({
   tickets: z.array(TicketViewSchema),
 });
 export type PublicTickets = z.infer<typeof PublicTicketsSchema>;
+
+/** `GET /t/:linkToken/pass/:ticketId` response: where the Wallet pass can be fetched. */
+export const PassUrlResponseSchema = z.object({ url: z.string() });
+export type PassUrlResponse = z.infer<typeof PassUrlResponseSchema>;

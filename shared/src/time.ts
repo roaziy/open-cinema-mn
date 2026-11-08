@@ -1,8 +1,10 @@
 export const TZ = 'Asia/Ulaanbaatar';
 
 // Ulaanbaatar has been UTC+8 year-round since 2017 (no DST).
-const UB_OFFSET_MS = 8 * 60 * 60 * 1000;
-const DAY_MS = 24 * 60 * 60 * 1000;
+export const UB_OFFSET_MS = 8 * 60 * 60 * 1000;
+export const DAY_MS = 24 * 60 * 60 * 1000;
+/** A cinema day runs from 05:00 to 05:00: a 00:10 show still belongs to the evening before. */
+export const BUSINESS_DAY_CUTOFF_MS = 5 * 60 * 60 * 1000;
 
 const fmt = new Intl.DateTimeFormat('en-GB', {
   timeZone: TZ,
@@ -38,4 +40,17 @@ export function ubDayRange(date: string): { start: Date; end: Date } {
 export function formatUbTime(d: Date | string): string {
   const p = parts(d);
   return `${p.hour}:${p.minute}`;
+}
+
+/** Cinema business date (YYYY-MM-DD) of an instant: the Ulaanbaatar date of `t` minus 5 hours. */
+export function ubBusinessDate(d: Date | string): string {
+  const t = typeof d === 'string' ? new Date(d) : d;
+  return ubDate(new Date(t.getTime() - BUSINESS_DAY_CUTOFF_MS));
+}
+
+/** UTC instants bounding a business day: [05:00 of `date`, 05:00 of the next day) in Ulaanbaatar. */
+export function ubBusinessDayRange(date: string): { start: Date; end: Date } {
+  const { start } = ubDayRange(date);
+  const from = new Date(start.getTime() + BUSINESS_DAY_CUTOFF_MS);
+  return { start: from, end: new Date(from.getTime() + DAY_MS) };
 }
