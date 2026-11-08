@@ -1,5 +1,8 @@
-/** Largest request body the proxy will buffer (uploads are capped at 8 MB by the API). */
-export const MAX_BODY_BYTES = 9 * 1024 * 1024;
+/**
+ * Largest request body the proxy will buffer. Vercel Functions refuse bodies over 4.5 MB before
+ * this code runs; the browser keeps uploads under 4 MB (lib/image-resize.ts) to stay inside.
+ */
+export const MAX_BODY_BYTES = 4.5 * 1024 * 1024;
 
 /**
  * Reads a request body, giving up (null) as soon as it is clearly or actually over the limit:
