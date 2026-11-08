@@ -16,7 +16,7 @@ import { AppError, badRequest, forbidden, isUniqueViolation, unauthorized } from
 import { validate } from '../lib/http';
 import { consumeOtp, issueOtp, type Scope } from '../lib/otp';
 import { verifyDummy, verifyPassword } from '../lib/password';
-import type { Limiters } from '../lib/rate-limit';
+import { clientIp, type Limiters } from '../lib/rate-limit';
 import {
   issueTokens,
   REFRESH_GRACE_MS,
@@ -132,21 +132,36 @@ export function createAuthRouter(deps: AppDeps, limiters: Limiters): Router {
 
   /**
    * A revoked refresh token came back. Within the grace after a rotation it is most likely a
-   * response the client never received: refuse it, keep the newer session. Anything else
+   * response the client never received (same fingerprint): refuse it, keep the newer session. Anything else
    * (late, or revoked by logout) is treated as theft and ends every session of the user.
    */
-  async function rejectReplay(session: typeof sessions.$inferSelect, now: Date): Promise<never> {
+  const fingerprint = (req: Request) =>
+    sha256(`${clientIp(req)}\n${req.headers['user-agent'] ?? ''}`);
+
+  async function rejectReplay(
+    session: typeof sessions.$inferSelect,
+    now: Date,
+    fp: string,
+  ): Promise<never> {
     const age = session.rotatedAt ? now.getTime() - session.rotatedAt.getTime() : null;
-    if (session.revokedReason === 'rotated' && age !== null && age <= REFRESH_GRACE_MS) {
+    // Only the client that rotated may replay: a thief who rotated first from elsewhere, or a
+    // thief replaying a victim's token, presents a different fingerprint and ends everything.
+    if (
+      session.revokedReason === 'rotated' &&
+      age !== null &&
+      age <= REFRESH_GRACE_MS &&
+      session.rotatedByFp === fp
+    ) {
       throw unauthorized('refresh_superseded');
     }
     await revokeAllSessions(db, session.userId, now);
     throw unauthorized('invalid_refresh');
   }
 
-  r.post('/auth/refresh', validate(RefreshBody), async (req, res) => {
+  r.post('/auth/refresh', limiters.refresh, validate(RefreshBody), async (req, res) => {
     const { refreshToken } = req.body as RefreshBody;
     const now = clock();
+    const fp = fingerprint(req);
     const hash = sha256(refreshToken);
     const [session] = await db
       .select()
@@ -156,26 +171,26 @@ export function createAuthRouter(deps: AppDeps, limiters: Limiters): Router {
     if (!session) throw unauthorized('invalid_refresh');
     // A revoked token coming back is reuse, expired or not: assume it leaked and end every
     // session of the user.
-    if (session.revokedAt) await rejectReplay(session, now);
+    if (session.revokedAt) await rejectReplay(session, now, fp);
     // An expired token that was never used is refused without touching other sessions.
     if (session.expiresAt <= now) throw unauthorized('refresh_expired');
     // Rotate atomically: only one caller can flip an active session to revoked.
     const [rotated] = await db
       .update(sessions)
-      .set({ revokedAt: now, revokedReason: 'rotated', rotatedAt: now })
+      .set({ revokedAt: now, revokedReason: 'rotated', rotatedAt: now, rotatedByFp: fp })
       .where(and(eq(sessions.id, session.id), sql`${sessions.revokedAt} is null`))
       .returning({ id: sessions.id });
     if (!rotated) {
       // Lost a race with a concurrent refresh of the same token: same handling as a replay.
       const [fresh] = await db.select().from(sessions).where(eq(sessions.id, session.id));
-      await rejectReplay(fresh ?? session, now);
+      await rejectReplay(fresh ?? session, now, fp);
     }
     const [user] = await db.select().from(users).where(eq(users.id, session.userId)).limit(1);
     if (!user) throw unauthorized('invalid_refresh');
     res.json(await issueTokens(db, user, now));
   });
 
-  r.post('/auth/logout', validate(RefreshBody), async (req, res) => {
+  r.post('/auth/logout', limiters.refresh, validate(RefreshBody), async (req, res) => {
     const { refreshToken } = req.body as RefreshBody;
     await db
       .update(sessions)

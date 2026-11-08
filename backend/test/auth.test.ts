@@ -6,7 +6,7 @@ import { db } from '../src/db/client';
 import { sessions, users } from '../src/db/schema';
 import type { AppError } from '../src/lib/errors';
 import { hashPassword } from '../src/lib/password';
-import { sha256 } from '../src/lib/tokens';
+import { issueTokens, sha256 } from '../src/lib/tokens';
 import type { Messages } from '../src/messages';
 import { requireAuth, requireRole } from '../src/middleware/auth';
 import { fakeMessages, fixedClock, makeTestApp, resetDb } from './helpers';
@@ -343,6 +343,48 @@ describe('guest, refresh, logout', () => {
       .expect(200);
   });
 
+  const refresh = (
+    app: ReturnType<typeof setup>['app'],
+    token: string,
+    headers: Record<string, string> = {},
+  ) => request(app).post('/v1/auth/refresh').set(headers).send({ refreshToken: token });
+  const activeSessions = async () =>
+    (await db.select().from(sessions)).filter((r) => r.revokedAt === null).length;
+
+  it('replay at 29 s from a different user agent or address revokes every session', async () => {
+    const BFF = { 'x-oc-bff-secret': 'test-bff-secret-0123456789abcdef' };
+    const cases: Record<string, string>[] = [
+      { 'user-agent': 'other-browser' },
+      { ...BFF, 'x-oc-client-ip': '203.0.113.50' },
+    ];
+    for (const different of cases) {
+      await resetDb();
+      const { app, clock } = setup();
+      const g = await request(app).post('/v1/auth/guest');
+      const mine = { 'user-agent': 'my-browser', ...BFF, 'x-oc-client-ip': '203.0.113.7' };
+      const r1 = await refresh(app, g.body.refreshToken, mine).expect(200);
+      clock.advance(29_000);
+      const replay = await refresh(app, g.body.refreshToken, { ...mine, ...different }).expect(401);
+      expect(replay.body.error).toBe('invalid_refresh');
+      await refresh(app, r1.body.refreshToken, mine).expect(401);
+      expect(await activeSessions()).toBe(0);
+    }
+  });
+
+  it('ends the attacker session when the attacker rotates a stolen token first', async () => {
+    const { app, clock } = setup();
+    const g = await request(app).post('/v1/auth/guest');
+    const victim = { 'user-agent': 'victim-phone' };
+    const attacker = { 'user-agent': 'attacker-box' };
+    const stolen = await refresh(app, g.body.refreshToken, attacker).expect(200);
+    clock.advance(5_000);
+    // the real client now presents the token it still holds
+    const res = await refresh(app, g.body.refreshToken, victim).expect(401);
+    expect(res.body.error).toBe('invalid_refresh');
+    await refresh(app, stolen.body.refreshToken, attacker).expect(401);
+    expect(await activeSessions()).toBe(0);
+  });
+
   it('replay at 31 s revokes every session', async () => {
     const { app, clock } = setup();
     const g = await request(app).post('/v1/auth/guest');
@@ -363,16 +405,18 @@ describe('guest, refresh, logout', () => {
       .expect(401);
   });
 
-  it('a logged-out token is never given the grace', async () => {
-    const { app } = setup();
+  it('a logged-out token is never given the grace and a replay ends the other sessions', async () => {
+    const { app, clock } = setup();
     const g = await request(app).post('/v1/auth/guest');
     const token = g.body.refreshToken as string;
+    const [user] = await db.select().from(users).where(eq(users.id, g.body.user.id));
+    const other = await issueTokens(db, user as typeof users.$inferSelect, clock());
     await request(app).post('/v1/auth/logout').send({ refreshToken: token }).expect(204);
-    const res = await request(app)
-      .post('/v1/auth/refresh')
-      .send({ refreshToken: token })
-      .expect(401);
+    expect(await activeSessions()).toBe(1);
+    const res = await refresh(app, token).expect(401);
     expect(res.body.error).toBe('invalid_refresh');
+    expect(await activeSessions()).toBe(0);
+    await refresh(app, other.refreshToken).expect(401);
   });
 
   it('two simultaneous refreshes of one token: one wins, the other is superseded', async () => {
@@ -632,6 +676,21 @@ describe('profile and roles', () => {
   });
 });
 
+describe('refresh_reason constraint', () => {
+  beforeEach(resetDb);
+  it('refuses an unknown revoked_reason', async () => {
+    const [u] = await db.insert(users).values({ role: 'guest' }).returning();
+    await expect(
+      db.insert(sessions).values({
+        userId: (u as { id: string }).id,
+        refreshTokenHash: 'h',
+        expiresAt: new Date(),
+        revokedReason: 'bogus',
+      }),
+    ).rejects.toThrow();
+  });
+});
+
 describe('trusted BFF client ip', () => {
   const SECRET = 'test-bff-secret-0123456789abcdef';
   const guest = (app: ReturnType<typeof setup>['app'], headers: Record<string, string>) =>
@@ -644,6 +703,16 @@ describe('trusted BFF client ip', () => {
     for (let i = 0; i < 30; i++) await guest(app, a).expect(200);
     await guest(app, a).expect(429);
     await guest(app, b).expect(200);
+  });
+
+  it('buckets IPv6 clients by /56 and falls back to the socket for a garbage address', async () => {
+    const { app } = setup();
+    const h = (ip: string) => ({ 'x-oc-bff-secret': SECRET, 'x-oc-client-ip': ip });
+    for (let i = 0; i < 30; i++) await guest(app, h('2001:db8:0:1::1')).expect(200);
+    await guest(app, h('2001:db8:0:ff::2')).expect(429); // same /56
+    await guest(app, h('2001:db8:0:100::1')).expect(200); // next /56
+    for (let i = 0; i < 30; i++) await guest(app, h(`not-an-ip-${i}`)).expect(200);
+    await guest(app, h('also garbage')).expect(429); // all of them were the socket's bucket
   });
 
   it('ignores the header with a wrong or missing secret', async () => {

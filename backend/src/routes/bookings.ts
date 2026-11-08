@@ -7,6 +7,7 @@ import { bookings, payments } from '../db/schema';
 import { env } from '../env';
 import { conflict, notFound } from '../lib/errors';
 import { validate } from '../lib/http';
+import { TimeoutError } from '../lib/timeout';
 import { requireAuth } from '../middleware/auth';
 import { MockPaymentProvider } from '../payments/mock';
 import { bookingView, confirmBooking, createBooking } from '../services/bookings';
@@ -40,7 +41,13 @@ export function createBookingsRouter(deps: AppDeps): Router {
   r.get('/bookings/:id', auth, async (req, res) => {
     const user = req.user as NonNullable<typeof req.user>;
     const id = await ownBookingId(String(req.params.id), user.id);
-    await confirmBooking(db, id, deps);
+    try {
+      await confirmBooking(db, id, deps);
+    } catch (err) {
+      // A provider that does not answer leaves the booking pending; the sweeper settles it later.
+      if (!(err instanceof TimeoutError)) throw err;
+      console.error('payment check timed out', err.message);
+    }
     res.json(await bookingView(db, id, clock(), user.id));
   });
 

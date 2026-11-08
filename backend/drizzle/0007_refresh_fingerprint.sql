@@ -1,0 +1,2 @@
+ALTER TABLE "sessions" ADD COLUMN "rotated_by_fp" text;--> statement-breakpoint
+ALTER TABLE "sessions" ADD CONSTRAINT "sessions_revoked_reason_check" CHECK ("sessions"."revoked_reason" in ('rotated', 'logout', 'revoked_all'));
