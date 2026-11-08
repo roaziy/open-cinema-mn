@@ -17,7 +17,7 @@ API uses it as a plain database (no Supabase Auth, Realtime or RLS).
 | Variable | Value |
 |---|---|
 | `DATABASE_URL` | session pooler connection string, port **5432** |
-| `DATABASE_SSL` | `verify` (recommended) or `require` |
+| `DATABASE_SSL` | `verify` (recommended); the default `require` skips the identity check |
 | `DATABASE_CA_FILE` | path to Supabase's CA certificate (for `verify`) |
 | `STORAGE_PROVIDER` | `supabase` |
 | `SUPABASE_URL` | `https://<project-ref>.supabase.co` |
@@ -32,8 +32,9 @@ API uses it as a plain database (no Supabase Auth, Realtime or RLS).
    characters in the password.
 3. Project Settings, Database, SSL configuration: switch on "Enforce SSL on incoming connections" and
    download the certificate. Save it on the VPS (for example `~/secrets/supabase-ca.crt`, mode 600),
-   set `DATABASE_CA_FILE` to its path and `DATABASE_SSL=verify`. `require` also encrypts but does not
-   check the certificate.
+   set `DATABASE_CA_FILE` to its path and `DATABASE_SSL=verify`. The default `require` also encrypts but
+   does not check the server's identity (the API warns at start); `sslmode=verify-full` in the URL
+   is honoured too. A `DATABASE_SSL` weaker than the URL's `sslmode` refuses to start.
 4. Storage, New bucket, name it, switch **Public bucket** on.
 5. Project Settings, API: copy the project URL and the `service_role` key.
 

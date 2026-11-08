@@ -17,7 +17,8 @@ const EnvSchema = z
     HOST: optional(z.string()),
     PORT: z.coerce.number().int().min(1).max(65535).default(4000),
     DATABASE_URL: z.string().min(1),
-    // Database TLS: off | require (encrypted, certificate not checked) | verify (needs DATABASE_CA_FILE).
+    // Database TLS: off | require (encrypted, server identity NOT checked) | verify (checked against
+    // DATABASE_CA_FILE, or the system store without it). A verifying sslmode in the URL counts as verify.
     // Default: require in production, off otherwise.
     DATABASE_SSL: optional(z.enum(['off', 'require', 'verify'])),
     DATABASE_CA_FILE: optional(z.string()),
@@ -99,16 +100,11 @@ const EnvSchema = z
         });
       }
     }
-    if (e.DATABASE_SSL === 'verify' && e.DATABASE_CA_FILE === undefined) {
-      ctx.addIssue({
-        code: 'custom',
-        path: ['DATABASE_CA_FILE'],
-        message: 'is required when DATABASE_SSL=verify (path to the PEM certificate authority)',
-      });
-    }
   })
   .transform((e) => ({
     ...e,
+    // Whether the operator chose it; a choice weaker than the URL's sslmode is a startup error.
+    DATABASE_SSL_SET: e.DATABASE_SSL !== undefined,
     DATABASE_SSL:
       e.DATABASE_SSL ?? (e.NODE_ENV === 'production' ? ('require' as const) : ('off' as const)),
     HOST: e.HOST ?? (e.NODE_ENV === 'production' ? '127.0.0.1' : undefined),

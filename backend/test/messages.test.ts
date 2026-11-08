@@ -195,14 +195,6 @@ describe('env hardening', () => {
     expect(() => parseEnv({ ...base, DATABASE_SSL: 'maybe' })).toThrow(/DATABASE_SSL/);
   });
 
-  it('verify needs a CA file', () => {
-    expect(() => parseEnv({ ...base, DATABASE_SSL: 'verify' })).toThrow(/DATABASE_CA_FILE/);
-    expect(
-      parseEnv({ ...base, DATABASE_SSL: 'verify', DATABASE_CA_FILE: '/etc/ca.pem' })
-        .DATABASE_CA_FILE,
-    ).toBe('/etc/ca.pem');
-  });
-
   it('refuses mock payments in production unless explicitly allowed', () => {
     const { ALLOW_MOCK_PAYMENTS: _omit, ...strict } = base;
     expect(() => parseEnv(strict)).toThrow(/ALLOW_MOCK_PAYMENTS/);

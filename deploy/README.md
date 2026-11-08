@@ -70,19 +70,26 @@ Set at least these for production (every variable is described in `.env.example`
 | `CORS_ORIGINS`                           | `https://cinema.roaziy.cloud`                                                            |
 | `TRUST_PROXY`                            | `1` when the API sits behind one reverse proxy (see 1.5)                                 |
 
-#### 1.2.1 Database TLS
+#### 1.2.1 Database TLS (recommended: `verify` with Supabase's CA)
 
-`DATABASE_SSL` controls the connection to Supabase (a `sslmode` in the URL is ignored):
+The default in production is `DATABASE_SSL=require`: encrypted, but the server's identity is **not**
+checked, so an attacker on the path could impersonate the database. The API warns about this at every
+start. Switch to `verify`:
 
-- `verify` (recommended): encrypted and the server certificate is checked against
-  `DATABASE_CA_FILE`. Download the CA from Supabase, Project Settings, Database, SSL configuration,
-  "Download certificate", copy it to the VPS (for example `~/secrets/supabase-ca.crt`, mode 600) and
-  set `DATABASE_CA_FILE` to that path.
-- `require` (the production default): encrypted, but the certificate is not checked, so it does not
-  stop an active attacker. Fine to get started.
-- `off`: plaintext. Local development only (the default outside production).
+1. Supabase, Project Settings, Database, SSL configuration: click "Download certificate" and switch
+   on "Enforce SSL on incoming connections".
+2. Copy the file to the VPS, for example `~/secrets/supabase-ca.crt` (`chmod 600`).
+3. In `.env`: `DATABASE_SSL=verify` and `DATABASE_CA_FILE=/home/<you>/secrets/supabase-ca.crt`.
+4. Reload (`pm2 reload open-cinema-api --update-env`); the warning is gone.
 
-Also switch on "Enforce SSL on incoming connections" in the same Supabase page.
+How the settings combine:
+
+- `off`: plaintext, local development only (the default outside production).
+- `require`: encrypted, identity not checked.
+- `verify`: encrypted and the certificate is checked against `DATABASE_CA_FILE` (the system store when
+  unset, which does not trust Supabase's own CA).
+- A `sslmode=verify-full` / `verify-ca` (and `sslrootcert=`) in `DATABASE_URL` is honoured as `verify`.
+  A `DATABASE_SSL` weaker than the URL's `sslmode` stops the API from starting, with an error naming both.
 
 The API reads `.env` from the repository root (pm2 passes `--env-file-if-exists=../.env` to node).
 Variables already set in the environment win over the file.

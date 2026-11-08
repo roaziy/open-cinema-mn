@@ -2,11 +2,13 @@ import { drizzle } from 'drizzle-orm/node-postgres';
 import pg from 'pg';
 import { env } from '../env';
 import * as schema from './schema';
-import { dbSsl, stripSslMode } from './ssl';
+import { resolveDbSsl } from './ssl';
+
+export const dbTls = resolveDbSsl(env);
 
 export const pool = new pg.Pool({
-  connectionString: stripSslMode(env.DATABASE_URL),
-  ssl: dbSsl(env),
+  connectionString: dbTls.url,
+  ssl: dbTls.ssl,
   connectionTimeoutMillis: 10_000,
 });
 export const db = drizzle(pool, { schema });
