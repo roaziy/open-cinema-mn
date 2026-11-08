@@ -114,6 +114,11 @@ export async function buildPass(cfg: WalletConfig, t: TicketView): Promise<Buffe
     },
     { key: 'branch', label: 'Салбар', value: t.branch.name },
   );
+  // Wallet-only holders can still be admitted by hand: the door types the order number and code.
+  pass.backFields.push(
+    { key: 'order', label: 'Захиалгын дугаар', value: t.orderNo },
+    { key: 'checkCode', label: 'Шалгах код', value: t.checkCode },
+  );
   pass.setBarcodes({
     message: t.qrToken,
     format: 'PKBarcodeFormatQR',
