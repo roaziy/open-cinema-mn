@@ -8,7 +8,7 @@ import {
   type Tokens,
 } from '@/lib/auth/cookies';
 import { refreshSession } from '@/lib/auth/refresh';
-import { bffHeaders, clientIp } from '@/lib/bff';
+import { bffHeaders, clientOf } from '@/lib/bff';
 import { isSameOrigin } from '@/lib/csrf';
 import { apiUrl } from '@/lib/env';
 import { upstreamPath } from '@/lib/proxy-path';
@@ -63,8 +63,8 @@ async function handle(req: NextRequest, { params }: Ctx): Promise<Response> {
     const value = req.headers.get(name);
     if (value) forwarded.set(name, value);
   }
-  const ip = clientIp(req.headers);
-  for (const [k, v] of Object.entries(bffHeaders(ip))) forwarded.set(k, v);
+  const client = clientOf(req.headers);
+  for (const [k, v] of Object.entries(bffHeaders(client))) forwarded.set(k, v);
   const body = method === 'GET' ? undefined : await req.arrayBuffer();
 
   const send = (access: string | undefined) => {
@@ -87,7 +87,7 @@ async function handle(req: NextRequest, { params }: Ctx): Promise<Response> {
 
   const rotate = async () => {
     if (!refreshToken) return false;
-    const result = await refreshSession(refreshToken, ip);
+    const result = await refreshSession(refreshToken, client);
     if (result.ok) {
       rotated = result.tokens;
       access = result.tokens.accessToken;
