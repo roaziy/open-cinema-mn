@@ -1,5 +1,5 @@
 import { SeatDeltaSchema } from '@open-cinema/shared';
-import { useEffect, useState } from 'react';
+import { useCallback, useEffect, useState } from 'react';
 import { AppState } from 'react-native';
 import EventSource from 'react-native-sse';
 import { API_BASE } from './http';
@@ -130,10 +130,31 @@ export function useSeatStream(showtimeId: string | null | undefined) {
     };
   }, [showtimeId]);
 
+  /**
+   * Apply known changes locally (a seat you just released is free before the server says so).
+   * The next delta or snapshot for a seat overrides this.
+   */
+  const patch = useCallback(
+    (changes: { seatId: string; state: SeatLiveState }[]) => {
+      if (!showtimeId || changes.length === 0) return;
+      setLive((prev) => {
+        const cur =
+          prev?.id === showtimeId
+            ? prev
+            : { id: showtimeId, seats: {}, status: 'connecting' as const };
+        const seats = { ...cur.seats };
+        for (const c of changes) seats[c.seatId] = c.state;
+        return { ...cur, seats };
+      });
+    },
+    [showtimeId],
+  );
+
   const current = live && live.id === showtimeId ? live : null;
   return {
     seats: current?.seats ?? EMPTY,
     status: current?.status ?? ('connecting' as SeatStreamStatus),
+    patch,
   };
 }
 
