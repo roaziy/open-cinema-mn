@@ -19,7 +19,7 @@ import {
 } from '../src/db/schema';
 import { env } from '../src/env';
 import { SeatHub } from '../src/lib/seat-hub';
-import { signLink, signPassUrl, verifyLink } from '../src/lib/sign';
+import { checkCode, signLink, signPassUrl, verifyLink } from '../src/lib/sign';
 import { signAccessToken } from '../src/lib/tokens';
 import { MockPaymentProvider } from '../src/payments/mock';
 import { createHolds } from '../src/services/holds';
@@ -177,8 +177,10 @@ describe('ticket reads', () => {
       movie: { title: 'Movie' },
       branch: { name: 'Central' },
       qrToken: one(t).qrToken,
+      checkCode: checkCode(one(t).id),
       passUrl: null,
     });
+    expect(res.body.checkCode).toMatch(/^[0-9A-HJKMNP-TV-Z]{4}$/);
     await request(s.app)
       .get(`/v1/tickets/${one(t).id}`)
       .set('Authorization', f.bob.auth)
@@ -225,6 +227,7 @@ describe('ticket reads', () => {
       later.id,
     ]);
     expect(up.body[1].status).toBe('cancelled');
+    for (const t of up.body) expect(t.checkCode).toBe(checkCode(t.id));
     const past = await get('past').expect(200);
     expect(past.body.map((t: { showtime: { id: string } }) => t.showtime.id)).toEqual([
       past1.id,
@@ -309,6 +312,7 @@ describe('guest ticket link', () => {
     expect(res.body.tickets[0]).toMatchObject({
       status: 'valid',
       qrToken: expect.stringMatching(/^oc1\./),
+      checkCode: expect.stringMatching(/^[0-9A-HJKMNP-TV-Z]{4}$/),
     });
   });
 

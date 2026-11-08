@@ -33,10 +33,20 @@ const TONES: Record<ScanResultCode, Tone> = {
   invalid: 'reject',
 };
 
-export function cardFor(r: ScanResult): CardInfo {
+export type Via = 'qr' | 'manual';
+
+export function cardFor(r: ScanResult, via: Via = 'qr'): CardInfo {
   const tone = TONES[r.result];
   const sound: SoundKind = tone === 'admit' ? 'admit' : tone === 'neutral' ? 'repeat' : 'reject';
-  return { tone, title: TITLES[r.result], detail: detailFor(r), sound };
+  const notFound = via === 'manual' && r.result === 'invalid' && r.ticket === null;
+  return {
+    tone,
+    title: notFound ? 'Билет олдсонгүй' : TITLES[r.result],
+    detail: notFound
+      ? 'Энэ салбарт өнөөдрийн захиалга олдсонгүй. Дугаар, суудал, кодоо шалгана уу.'
+      : detailFor(r),
+    sound,
+  };
 }
 
 function detailFor(r: ScanResult): string | null {

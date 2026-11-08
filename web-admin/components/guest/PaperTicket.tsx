@@ -125,7 +125,10 @@ export async function PaperTicket({
             {clockUb(t.usedAt)}-д орсон
           </p>
         )}
-        <p className="mt-4 text-center text-[13px] text-[#6b665e] tabular-nums">{t.orderNo}</p>
+        <p className="mt-4 text-center text-[13px] text-[#6b665e] tabular-nums">
+          {t.orderNo} · Код{' '}
+          <span className="font-semibold tracking-[0.12em] text-[#17161a]">{t.checkCode}</span>
+        </p>
         {live && wallet}
       </div>
     </article>

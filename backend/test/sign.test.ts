@@ -1,8 +1,10 @@
 import { describe, expect, it } from 'vitest';
 import {
+  checkCode,
   signLink,
   signPassUrl,
   signQr,
+  verifyCheckCode,
   verifyLink,
   verifyPassSig,
   verifyQr,
@@ -61,5 +63,35 @@ describe('pass url signing', () => {
     expect(verifyPassSig(S, exp, sig, now)).toBe(false);
     expect(verifyPassSig(T, exp + 600, sig, now)).toBe(false);
     expect(verifyPassSig(T, exp, `${sig}x`, now)).toBe(false);
+  });
+});
+
+describe('ticket check code', () => {
+  it('is 4 Crockford characters, deterministic and per ticket', () => {
+    const a = checkCode(T);
+    expect(a).toMatch(/^[0-9A-HJKMNP-TV-Z]{4}$/);
+    expect(checkCode(T)).toBe(a);
+    const codes = new Set(
+      Array.from({ length: 200 }, (_, i) =>
+        checkCode(`00000000-0000-4000-8000-${String(i).padStart(12, '0')}`),
+      ),
+    );
+    expect(codes.size).toBeGreaterThan(190);
+    expect(checkCode(S)).not.toBe(a);
+  });
+
+  it('depends on the secret', () => {
+    expect(checkCode(T, 'another secret entirely')).not.toBe(checkCode(T));
+  });
+
+  it('verifies any case and folds look-alikes, and rejects anything else', () => {
+    const c = checkCode(T);
+    expect(verifyCheckCode(T, c)).toBe(true);
+    expect(verifyCheckCode(T, c.toLowerCase())).toBe(true);
+    expect(verifyCheckCode(S, c)).toBe(false);
+    expect(verifyCheckCode(T, '')).toBe(false);
+    expect(verifyCheckCode(T, `${c}0`)).toBe(false);
+    const flipped = (c[0] === 'A' ? 'B' : 'A') + c.slice(1);
+    expect(verifyCheckCode(T, flipped)).toBe(false);
   });
 });

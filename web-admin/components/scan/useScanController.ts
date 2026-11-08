@@ -10,7 +10,7 @@ import { signal } from './sounds';
 
 const SEND_TIMEOUT_MS = 6000;
 const UNDO_TIMEOUT_MS = 8000;
-const idle: ControllerState = { flow: idleFlow, undoing: null, notice: null };
+const idle: ControllerState = { flow: idleFlow, undoing: null, notice: null, via: null };
 const noop = () => () => {};
 const sleep = (ms: number) => new Promise<void>((r) => setTimeout(r, ms));
 

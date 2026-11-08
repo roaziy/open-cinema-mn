@@ -4,13 +4,15 @@ import { type Flow, flowReducer, idleFlow } from './flow';
 import { type SendDeps, sendScan } from './send';
 
 /** What the door typed or scanned; the controller adds scan id, device and door label. */
-export type ScanInput = { token: string } | { orderNo: string; seat: string };
+export type ScanInput = { token: string } | { orderNo: string; seat: string; checkCode: string };
 
 export type ControllerState = {
   flow: Flow;
   /** Scan id of the admit whose Undo request is in flight. */
   undoing: string | null;
   notice: string | null;
+  /** How the scan in progress or on the card was entered, for wording that fits. */
+  via: 'qr' | 'manual' | null;
 };
 
 export type ControllerDeps = {
@@ -37,7 +39,7 @@ const NOTICE_MS = 3500;
  * Undo whose late answer can only ever touch its own card.
  */
 export class ScanController {
-  private state: ControllerState = { flow: idleFlow, undoing: null, notice: null };
+  private state: ControllerState = { flow: idleFlow, undoing: null, notice: null, via: null };
   private listeners = new Set<() => void>();
   private busy = false;
   private generation = 0;
@@ -68,6 +70,7 @@ export class ScanController {
     const scanId = this.deps.newId();
     const mine = ++this.generation;
     const label = this.deps.doorLabel();
+    this.set({ via: 'token' in input ? 'qr' : 'manual' });
     const body = {
       ...input,
       scanId,
@@ -91,7 +94,7 @@ export class ScanController {
         this.dispatch({ type: 'failed', scanId, code: out.code });
         return;
       }
-      this.deps.signal(cardFor(out.result).sound);
+      this.deps.signal(cardFor(out.result, this.state.via ?? undefined).sound);
       this.dispatch({
         type: 'settled',
         scanId,
@@ -153,10 +156,11 @@ export class ScanController {
   /** Quick outcomes close themselves so the line keeps moving; a reject waits to be read. */
   private armAutoClose(result: ScanResult) {
     clearTimeout(this.closeTimer);
-    if (cardFor(result).tone === 'reject') return;
+    if (cardFor(result, this.state.via ?? undefined).tone === 'reject') return;
     this.closeTimer = setTimeout(() => {
       // Never while an Undo for this card is still out: its answer decides what happens next.
-      if (this.state.undoing !== null) return;
+      // Only this card's own undo holds it open; a stalled undo of an older card must not.
+      if (this.state.undoing === result.scanId) return;
       this.dismiss(result.scanId);
     }, AUTO_CLOSE_MS);
   }

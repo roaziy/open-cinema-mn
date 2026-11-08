@@ -61,6 +61,8 @@ export function createLimiters() {
     ticketLink: limiter(15 * 60 * 1000, 60),
     // Generous: a busy door scans a few tickets a second. Keyed by staff, since a cinema shares one IP.
     scan: limiter(60_000, 120, (req) => req.user?.id ?? 'anonymous'),
+    // Typed-in tickets only (QR scans are unaffected): a few a minute is real life, more is guessing.
+    manualScan: limiter(60_000, 10, (req) => req.user?.id ?? 'anonymous'),
   };
 }
 export type Limiters = ReturnType<typeof createLimiters>;
