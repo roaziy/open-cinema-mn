@@ -17,7 +17,7 @@ import {
 } from '../db/schema';
 import { env } from '../env';
 import { badRequest, conflict, isUniqueViolation, notFound } from '../lib/errors';
-import { signQr } from '../lib/sign';
+import { signLink, signQr } from '../lib/sign';
 import { bookingConfirmedEmail } from '../messages/templates';
 import type { MockRaw } from '../payments/mock';
 import { heldCount, SLOT_COLUMNS, toBranch, toSlot, toSummary } from './catalog-views';
@@ -478,8 +478,7 @@ async function sendConfirmationEmail(db: Db, bookingId: string, deps: Deps): Pro
       seats: seatRows.map((s) => `${s.rowLabel}${s.number}`),
       startsAt: row.startsAt,
       total: row.booking.total,
-      // ponytail: guests get the signed /t/:token link once the ticket-link task lands
-      ticketUrl: `${env.WEB_PUBLIC_URL}/b/${bookingId}`,
+      ticketUrl: `${env.WEB_PUBLIC_URL}/t/${signLink(bookingId)}`,
     });
     await deps.messages.email({ to, ...mail });
   } catch (err) {

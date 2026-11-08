@@ -14,6 +14,7 @@ import { createAuthRouter } from './routes/auth';
 import { createBookingsRouter } from './routes/bookings';
 import { createCatalogRouter } from './routes/catalog';
 import { createHoldsRouter } from './routes/holds';
+import { createTicketsRouter } from './routes/tickets';
 import { createStorage, type StorageProvider, UPLOAD_DIR } from './storage';
 
 export type AppDeps = {
@@ -66,10 +67,12 @@ export function createApp(over: Partial<AppDeps> = {}): Express {
       res.status(503).json({ ok: false, db: false });
     }
   });
-  v1.use(createAuthRouter(deps, createLimiters()));
+  const limiters = createLimiters();
+  v1.use(createAuthRouter(deps, limiters));
   v1.use(createCatalogRouter(deps));
   v1.use(createHoldsRouter(deps));
   v1.use(createBookingsRouter(deps));
+  v1.use(createTicketsRouter(deps, limiters));
   app.use('/v1', v1);
 
   app.use((_req, res) => {
