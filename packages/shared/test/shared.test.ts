@@ -82,7 +82,11 @@ describe('generateSeats', () => {
     firstRowDistanceM: 4,
     risePerRowM: 0.15,
   });
-  const at = (r: string, n: number) => seats.find((s) => s.rowLabel === r && s.number === n)!;
+  const at = (r: string, n: number) => {
+    const seat = seats.find((s) => s.rowLabel === r && s.number === n);
+    if (!seat) throw new Error(`missing seat ${r}${n}`);
+    return seat;
+  };
   it('layout', () => {
     expect(seats).toHaveLength(120);
     expect(at('A', 1).x_m).toBeCloseTo(-3.575);
