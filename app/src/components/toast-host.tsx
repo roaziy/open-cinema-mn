@@ -1,15 +1,19 @@
-import { StyleSheet, Text, View } from 'react-native';
+import { Platform, StyleSheet, Text, View } from 'react-native';
 import Animated, { FadeInUp, FadeOutUp } from 'react-native-reanimated';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
+import { FullWindowOverlay } from 'react-native-screens';
 import { useToast } from '@/lib/toast';
 import { colors, radius, space } from '@/theme/tokens';
 import { type } from '@/theme/type';
 
-/** Mounted once at the root; floats under the status bar. */
+/**
+ * The one toast layer, mounted at the root. On iOS it sits in a full-window overlay, which is
+ * painted above native sheets and modals (gate, login); elsewhere a plain absolute layer is enough.
+ */
 export function ToastHost() {
   const toast = useToast();
   const insets = useSafeAreaInsets();
-  return (
+  const layer = (
     <View pointerEvents="none" style={[styles.layer, { top: insets.top + space.sm }]}>
       {toast ? (
         <Animated.View
@@ -30,6 +34,7 @@ export function ToastHost() {
       ) : null}
     </View>
   );
+  return Platform.OS === 'ios' ? <FullWindowOverlay>{layer}</FullWindowOverlay> : layer;
 }
 
 const styles = StyleSheet.create({

@@ -64,6 +64,7 @@ export const en: Record<TKey, string> = {
   'seats.reconnecting': 'Reconnecting',
   'seats.left': '{time} left',
   'seats.expired': 'Time ran out, so seat {seats} was released',
+  'seats.expiredNone': 'Time ran out, so your seats were released',
   'seats.expiredMany': 'Time ran out, so seats {seats} were released',
   'seats.lost': 'Seats lost: {seats}',
   'seats.fromSeat': 'View from seat',

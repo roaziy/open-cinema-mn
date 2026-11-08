@@ -6,7 +6,6 @@ import { StyleSheet, Text, TextInput, View } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { IconTile } from '@/components/icon-tile';
 import { Pressable } from '@/components/pressable';
-import { ToastHost } from '@/components/toast-host';
 import { useI18n } from '@/i18n';
 import { getContactEmail, setContactEmail } from '@/lib/checkout-store';
 import { formatCountdown, liveHolds, useCountdown, useMyHolds } from '@/lib/seats';
@@ -32,6 +31,7 @@ export default function GateScreen() {
   // so a login modal on top is never the one that closes.
   const focused = useIsFocused();
   const noSeats = holds.data !== undefined && earliest === null;
+  const closed = noSeats || left === 0;
   useEffect(() => {
     if (focused && (noSeats || left === 0)) router.dismissTo(`/showtime/${id}`);
   }, [focused, noSeats, left, id]);
@@ -53,7 +53,6 @@ export default function GateScreen() {
 
   return (
     <View style={styles.root}>
-      <ToastHost />
       <View style={[styles.body, { paddingBottom: insets.bottom + space.lg }]}>
         <View style={styles.head}>
           <View style={styles.headText}>
@@ -73,8 +72,9 @@ export default function GateScreen() {
         </View>
 
         <Pressable
-          style={[styles.loginCard, noSeats && styles.disabled]}
-          disabled={noSeats}
+          style={[styles.loginCard, closed && styles.disabled]}
+          disabled={closed}
+          accessibilityState={{ disabled: closed }}
           onPress={() => router.push(`/login?showtimeId=${id}&next=checkout`)}
           accessibilityRole="button"
         >
@@ -120,11 +120,11 @@ export default function GateScreen() {
           />
           {invalid ? <Text style={styles.error}>{t('gate.emailInvalid')}</Text> : null}
           <Pressable
-            style={[styles.secondary, (!normalized || noSeats) && styles.disabled]}
-            disabled={noSeats}
+            style={[styles.secondary, (!normalized || closed) && styles.disabled]}
+            disabled={closed}
             onPress={asGuest}
             accessibilityRole="button"
-            accessibilityState={{ disabled: !normalized }}
+            accessibilityState={{ disabled: !normalized || closed }}
           >
             <Text style={styles.secondaryText}>{t('gate.guest')}</Text>
           </Pressable>
