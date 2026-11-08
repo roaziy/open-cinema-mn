@@ -4,6 +4,7 @@ import request from 'supertest';
 import { beforeEach, describe, expect, it } from 'vitest';
 import { db } from '../src/db/client';
 import {
+  bookings,
   branches,
   halls,
   movies,
@@ -168,6 +169,32 @@ async function scan(
 }
 
 const scanRows = () => db.select().from(ticketScans);
+
+async function orderNoOf(bookingId: string) {
+  const [b] = await db.select().from(bookings).where(eq(bookings.id, bookingId));
+  return one(b).orderNo;
+}
+
+/** The typed-in path: order number and seat code instead of the QR token. */
+async function scanByOrder(
+  s: S,
+  who: { id: string; role: 'staff' | 'admin' | 'customer' | 'guest' },
+  orderNo: string,
+  seat: string,
+  opts: { scanId?: string; deviceId?: string; deviceLabel?: string; status?: number } = {},
+) {
+  return request(s.app)
+    .post('/v1/staff/scan')
+    .set('Authorization', await bearer(s, who))
+    .send({
+      orderNo,
+      seat,
+      scanId: opts.scanId ?? uuid(),
+      deviceId: opts.deviceId ?? DEV_A,
+      deviceLabel: opts.deviceLabel,
+    })
+    .expect(opts.status ?? 200);
+}
 
 beforeEach(async () => {
   await resetDb();
@@ -580,6 +607,119 @@ describe('scan', () => {
       .set('Authorization', await bearer(s, f.staffA))
       .send({ token: 'x', scanId: 'nope', deviceId: DEV_A })
       .expect(400);
+  });
+});
+
+describe('scan by order number and seat', () => {
+  it('admits through the same path, case-insensitively, and undo works on it', async () => {
+    const s = setup();
+    const f = await fixture();
+    const show = await f.show('2026-11-08T11:00:00Z');
+    const ts = await buy(s, f, show.id, 1, 2);
+    const orderNo = await orderNoOf(one(ts[0]).bookingId);
+    const res = await scanByOrder(s, f.staffA, orderNo.toLowerCase(), 'f2');
+    expect(ScanResultSchema.parse(res.body)).toMatchObject({
+      result: 'admitted',
+      ticket: { seatCode: 'F2', partySize: 2 },
+    });
+    const [row] = await scanRows();
+    expect(row).toMatchObject({ result: 'admitted', staffId: f.staffA.id });
+    const [t] = await db
+      .select()
+      .from(tickets)
+      .where(eq(tickets.id, one(ts.find((x) => x.seatId === f.seatId(2))).id));
+    expect(t?.usedBy).toBe(f.staffA.id);
+    await request(s.app)
+      .post(`/v1/staff/scan/${res.body.scanId}/undo`)
+      .set('Authorization', await bearer(s, f.staffA))
+      .expect(200);
+    const again = await scanByOrder(s, f.staffA, orderNo, 'F2');
+    expect(again.body.result).toBe('admitted');
+  });
+
+  it('same door within 2 minutes is a repeat, another door is already_used with the door label', async () => {
+    const s = setup();
+    const f = await fixture();
+    const show = await f.show('2026-11-08T11:00:00Z');
+    const [t] = await buy(s, f, show.id, 3);
+    const orderNo = await orderNoOf(one(t).bookingId);
+    await scanByOrder(s, f.staffA, orderNo, 'F3', { deviceLabel: '  Хаалга 1 ' });
+    const repeat = await scanByOrder(s, f.staffA, orderNo, 'F3');
+    expect(repeat.body.result).toBe('repeat');
+    expect(repeat.body.previous).toMatchObject({ staffName: 'Staff A', deviceLabel: 'Хаалга 1' });
+    const used = await scanByOrder(s, f.staffB, orderNo, 'F3', {
+      deviceId: DEV_B,
+      deviceLabel: 'Хаалга 2',
+    });
+    expect(used.body.result).toBe('already_used');
+    expect(used.body.previous).toMatchObject({ staffName: 'Staff A', deviceLabel: 'Хаалга 1' });
+    expect((await scanRows()).map((r) => r.deviceLabel)).toEqual(['Хаалга 1', null, 'Хаалга 2']);
+  });
+
+  it('only finds today’s tickets of the staff member’s own branch', async () => {
+    const s = setup();
+    const f = await fixture();
+    const today = await f.show('2026-11-08T11:00:00Z');
+    const tomorrow = await f.show('2026-11-09T11:00:00Z');
+    const [t] = await buy(s, f, today.id, 1);
+    const [later] = await buy(s, f, tomorrow.id, 2);
+    const orderNo = await orderNoOf(one(t).bookingId);
+    const laterNo = await orderNoOf(one(later).bookingId);
+    // another branch: indistinguishable from a ticket that does not exist
+    expect((await scanByOrder(s, f.staffC, orderNo, 'F1')).body).toMatchObject({
+      result: 'invalid',
+      ticket: null,
+    });
+    // another day
+    expect((await scanByOrder(s, f.staffA, laterNo, 'F2')).body.result).toBe('invalid');
+    // wrong seat, unknown order
+    expect((await scanByOrder(s, f.staffA, orderNo, 'F5')).body.result).toBe('invalid');
+    expect((await scanByOrder(s, f.staffA, 'OC-99999999', 'F1')).body.result).toBe('invalid');
+    const [after] = await db
+      .select()
+      .from(tickets)
+      .where(eq(tickets.id, one(t).id));
+    expect(after?.usedAt).toBeNull();
+    // an admin works every branch
+    expect((await scanByOrder(s, f.admin, orderNo, 'F1')).body.result).toBe('admitted');
+  });
+
+  it('is idempotent per scanId and refuses a scanId moved to another ticket', async () => {
+    const s = setup();
+    const f = await fixture();
+    const show = await f.show('2026-11-08T11:00:00Z');
+    const ts = await buy(s, f, show.id, 1, 2);
+    const orderNo = await orderNoOf(one(ts[0]).bookingId);
+    const scanId = uuid();
+    const first = await scanByOrder(s, f.staffA, orderNo, 'F1', { scanId });
+    s.clock.advance(10 * MIN);
+    const again = await scanByOrder(s, f.staffA, orderNo, 'F1', { scanId });
+    expect(again.body).toEqual(first.body);
+    expect(await scanRows()).toHaveLength(1);
+    const moved = await scanByOrder(s, f.staffA, orderNo, 'F2', { scanId, status: 409 });
+    expect(moved.body.error).toBe('scan_id_conflict');
+  });
+
+  it('validates the body and keeps it staff-only', async () => {
+    const s = setup();
+    const f = await fixture();
+    for (const body of [
+      { orderNo: 'XX-1', seat: 'F1' },
+      { orderNo: 'OC-1', seat: 'F' },
+      { orderNo: 'OC-1', seat: '12' },
+      { orderNo: 'OC-1', seat: 'F1', deviceLabel: 'x'.repeat(41) },
+    ]) {
+      await request(s.app)
+        .post('/v1/staff/scan')
+        .set('Authorization', await bearer(s, f.staffA))
+        .send({ ...body, scanId: uuid(), deviceId: DEV_A })
+        .expect(400);
+    }
+    await request(s.app)
+      .post('/v1/staff/scan')
+      .set('Authorization', await bearer(s, f.alice))
+      .send({ orderNo: 'OC-1', seat: 'F1', scanId: uuid(), deviceId: DEV_A })
+      .expect(403);
   });
 });
 
