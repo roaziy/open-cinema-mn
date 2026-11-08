@@ -4,12 +4,13 @@ import path from 'node:path';
 import { verify } from '@node-rs/argon2';
 import { formatUbTime, ubDate } from '@open-cinema/shared';
 import { eq } from 'drizzle-orm';
+import request from 'supertest';
 import { afterAll, beforeAll, beforeEach, describe, expect, it } from 'vitest';
 import { db } from '../src/db/client';
 import { runSeed } from '../src/db/run-seed';
 import { halls, movies, seats, showtimes, users } from '../src/db/schema';
 import { LocalStorage } from '../src/storage/local';
-import { fixedClock, resetDb } from './helpers';
+import { fixedClock, makeTestApp, resetDb } from './helpers';
 
 const NOW = '2026-11-08T04:00:00Z'; // 12:00 in Ulaanbaatar
 let dir: string;
@@ -38,9 +39,13 @@ describe('seed', () => {
     const summary = await seed();
     expect(summary).toMatchObject({ branches: 3, halls: 9, films: 6 });
 
+    const api = await request(makeTestApp({ clock: fixedClock(NOW) })).get('/v1/movies?status=now');
+    expect(api.status).toBe(200);
+    expect(api.body.length).toBeGreaterThanOrEqual(4);
+    for (const m of api.body)
+      expect(m.posterUrl).toMatch(/^http:\/\/localhost:4000\/media\/posters\/.+\.png$/);
+
     const rows = await db.select().from(movies);
-    const now = rows.filter((m) => m.status === 'now');
-    expect(now.length).toBeGreaterThanOrEqual(4);
     for (const m of rows) {
       expect(m.posterUrl).toMatch(/^http:\/\/localhost:4000\/media\/posters\/.+\.png$/);
       expect(m.backdropUrl).toBe(m.posterUrl);
