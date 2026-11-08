@@ -1,0 +1,59 @@
+const API_ORIGIN = (process.env.EXPO_PUBLIC_API_URL ?? 'http://localhost:4000').replace(/\/+$/, '');
+
+export const API_BASE = `${API_ORIGIN}/v1`;
+
+/** Non-2xx response (`{ error, message? }`) or a network failure (`status` 0, `code` "network"). */
+export class ApiError extends Error {
+  constructor(
+    readonly status: number,
+    readonly code: string,
+    message?: string,
+  ) {
+    super(message ?? code);
+    this.name = 'ApiError';
+  }
+}
+
+export type RequestOptions = Omit<RequestInit, 'body'> & {
+  /** Serialized as JSON with the right content type. */
+  json?: unknown;
+  bearer?: string | null;
+};
+
+/** Plain fetch against `/v1`: no auth handling, no retries. Returns undefined for 204. */
+export async function rawRequest<T>(path: string, opts: RequestOptions = {}): Promise<T> {
+  const { json, bearer, headers, ...rest } = opts;
+  const h = new Headers(headers);
+  h.set('Accept', 'application/json');
+  if (json !== undefined) h.set('Content-Type', 'application/json');
+  if (bearer) h.set('Authorization', `Bearer ${bearer}`);
+
+  let res: Response;
+  try {
+    res = await fetch(`${API_BASE}${path}`, {
+      ...rest,
+      headers: h,
+      body: json === undefined ? undefined : JSON.stringify(json),
+    });
+  } catch {
+    throw new ApiError(0, 'network');
+  }
+
+  if (res.status === 204) return undefined as T;
+  const text = await res.text();
+  let body: unknown;
+  try {
+    body = text ? JSON.parse(text) : undefined;
+  } catch {
+    body = undefined;
+  }
+  if (!res.ok) {
+    const err = (body ?? {}) as { error?: unknown; message?: unknown };
+    throw new ApiError(
+      res.status,
+      typeof err.error === 'string' ? err.error : `http_${res.status}`,
+      typeof err.message === 'string' ? err.message : undefined,
+    );
+  }
+  return body as T;
+}
