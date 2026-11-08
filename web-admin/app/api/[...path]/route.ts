@@ -9,6 +9,7 @@ import {
 } from '@/lib/auth/cookies';
 import { refreshSession } from '@/lib/auth/refresh';
 import { bffHeaders, clientOf } from '@/lib/bff';
+import { readCapped } from '@/lib/body-limit';
 import { isSameOrigin } from '@/lib/csrf';
 import { apiUrl } from '@/lib/env';
 import { upstreamPath } from '@/lib/proxy-path';
@@ -65,7 +66,9 @@ async function handle(req: NextRequest, { params }: Ctx): Promise<Response> {
   }
   const client = clientOf(req.headers);
   for (const [k, v] of Object.entries(bffHeaders(client))) forwarded.set(k, v);
-  const body = method === 'GET' ? undefined : await req.arrayBuffer();
+  const read = method === 'GET' ? undefined : await readCapped(req);
+  if (read === null) return json(413, 'file_too_large');
+  const body = read ? new Uint8Array(read) : undefined;
 
   const send = (access: string | undefined) => {
     const headers = new Headers(forwarded);

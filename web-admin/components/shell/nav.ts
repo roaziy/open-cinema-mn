@@ -60,13 +60,14 @@ export const ADMIN_NAV: NavGroupDef[] = [
     items: [
       {
         href: '/admin/branches',
-        label: 'Салбар, заал',
+        label: 'Салбар',
         icon: Buildings,
         hue: 'purple',
         branches: true,
       },
+      { href: '/admin/halls', label: 'Заал', icon: Armchair, hue: 'indigo' },
       { href: '/admin/movies', label: 'Кино', icon: FilmStrip, hue: 'pink' },
-      { href: '/admin/showtimes', label: 'Сеанс, үнэ', icon: Ticket, hue: 'yellow' },
+      { href: '/admin/schedule', label: 'Сеанс, үнэ', icon: Ticket, hue: 'yellow' },
     ],
   },
   {
@@ -82,8 +83,7 @@ export const ADMIN_NAV: NavGroupDef[] = [
     hue: 'yellow',
     icon: ChartBar,
     items: [
-      { href: '/admin/reports/sales', label: 'Борлуулалт', icon: ChartBar, hue: 'green' },
-      { href: '/admin/reports/occupancy', label: 'Дүүргэлт', icon: Armchair, hue: 'indigo' },
+      { href: '/admin/reports', label: 'Борлуулалт, дүүргэлт', icon: ChartBar, hue: 'green' },
     ],
   },
 ];

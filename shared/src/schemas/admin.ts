@@ -217,8 +217,25 @@ export const ShowtimeCancelResultSchema = z.object({
   /** Paid bookings cancelled by this call; 0 when the showtime was already cancelled. */
   cancelledBookings: z.number().int(),
   cancelledTickets: z.number().int(),
+  /** Integer MNT handed back to the paying customers (what was captured, not today's prices). */
+  refundAmount: z.number().int(),
 });
 export type ShowtimeCancelResult = z.infer<typeof ShowtimeCancelResultSchema>;
+
+/** `GET /admin/showtimes/:id/cancel-preview`: what confirming a cancellation would do. */
+export const ShowtimeCancelPreviewSchema = z.object({
+  id: z.string(),
+  startsAt: z.string(),
+  paidBookings: z.number().int(),
+  tickets: z.number().int(),
+  /** Sum of what the paid bookings actually paid. */
+  refundAmount: z.number().int(),
+  /** Unpaid bookings that will be expired. */
+  pendingBookings: z.number().int(),
+  /** Unexpired seat holds that will be dropped. */
+  activeHolds: z.number().int(),
+});
+export type ShowtimeCancelPreview = z.infer<typeof ShowtimeCancelPreviewSchema>;
 
 export const AdminStaffBody = z.object({
   phone: z.string().min(1).max(30),
