@@ -2,7 +2,7 @@
 
 import { AdminLoginBody } from '@open-cinema/shared';
 import { cookies } from 'next/headers';
-import { redirect } from 'next/navigation';
+import { RedirectType, redirect } from 'next/navigation';
 import { readClaims } from '@/lib/auth/claims';
 import { setAuthCookies } from '@/lib/auth/cookies';
 import { safeNext } from '@/lib/auth/redirects';
@@ -33,5 +33,5 @@ export async function adminLogin(_prev: LoginState, form: FormData): Promise<Log
     return { email, error: MESSAGES.invalid_credentials };
   }
   setAuthCookies(await cookies(), { accessToken, refreshToken }, readClaims(accessToken)?.exp);
-  redirect(safeNext(form.get('next'), '/admin'));
+  redirect(safeNext(form.get('next'), '/admin'), RedirectType.replace);
 }

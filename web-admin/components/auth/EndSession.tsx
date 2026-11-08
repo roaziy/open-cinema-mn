@@ -1,15 +1,16 @@
 'use client';
 
 import { useEffect } from 'react';
-import { endSession } from '../shell/sign-out';
+import type { Area } from '@/lib/auth/judge';
+import { endDeadSession } from '../shell/sign-out';
 
 /**
- * A login page reached because a session ended or did not fit (`?error=`) also closes whatever
- * session is still stored, with a POST, so signing out is never a link.
+ * Rendered only when the server already found the stored session dead or unfit for this area.
+ * The action checks again before ending anything, so this is never a way to sign someone out.
  */
-export function EndSession() {
+export function EndSession({ area }: { area: Area }) {
   useEffect(() => {
-    void endSession();
-  }, []);
+    void endDeadSession(area);
+  }, [area]);
   return null;
 }

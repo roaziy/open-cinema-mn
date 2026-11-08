@@ -33,9 +33,12 @@ export async function GET(req: NextRequest) {
   if (!result.ok) {
     // Superseded: a parallel request just rotated it. Cookies are kept, the newer one arrives.
     if (result.reason === 'invalid') return expired();
-    return NextResponse.redirect(
-      to(result.reason === 'superseded' ? next : `${login}?error=unavailable`),
-    );
+    if (result.reason === 'superseded') {
+      const res = NextResponse.redirect(to(next));
+      markRefreshed(res.cookies); // loop guard: if the page still gets 401, the session is dead
+      return res;
+    }
+    return NextResponse.redirect(to(`${login}?error=unavailable`));
   }
   const res = NextResponse.redirect(to(next));
   setAuthCookies(res.cookies, result.tokens, readClaims(result.tokens.accessToken)?.exp);

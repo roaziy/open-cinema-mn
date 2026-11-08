@@ -1,9 +1,11 @@
 import type { Metadata } from 'next';
 import Link from 'next/link';
+import { RedirectType, redirect } from 'next/navigation';
 import { AdminLoginForm } from '@/components/auth/AdminLoginForm';
 import { AuthShell, noticeFor } from '@/components/auth/AuthShell';
 import { EndSession } from '@/components/auth/EndSession';
 import { safeNext } from '@/lib/auth/redirects';
+import { verdictFor } from '@/lib/auth/verdict';
 
 export const metadata: Metadata = { title: 'Админ нэвтрэх' };
 
@@ -13,9 +15,16 @@ export default async function LoginPage({
   searchParams: Promise<{ next?: string; error?: string }>;
 }) {
   const { next, error } = await searchParams;
+  // A session is ended only on proof (see judgeSession); a healthy one just goes home.
+  let endStale = false;
+  if (error === 'expired' || error === 'forbidden') {
+    const verdict = await verdictFor('admin');
+    if (verdict === 'home') redirect('/admin', RedirectType.replace);
+    endStale = verdict === 'end';
+  }
   return (
     <AuthShell>
-      {error === 'expired' || error === 'forbidden' ? <EndSession /> : null}
+      {endStale ? <EndSession area="admin" /> : null}
       <h1 className="text-[26px] font-semibold tracking-[-0.01em] text-ink">Админ нэвтрэх</h1>
       <p className="mb-6 mt-1.5 text-[15px] text-muted">Имэйл, нууц үгээрээ нэвтэрнэ үү.</p>
       <AdminLoginForm next={safeNext(next, '/admin')} notice={noticeFor(error)} />

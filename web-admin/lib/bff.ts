@@ -6,6 +6,11 @@
  */
 const IP_SHAPE = /^[0-9a-f:.]{3,45}$/i;
 
+/**
+ * The address is trusted only because Vercel's edge overwrites `x-real-ip` and `x-forwarded-for`
+ * with the connecting client's address. Behind a proxy that appends instead, a visitor could
+ * choose the value (and dodge per-IP limits): do not deploy this BFF there without changing it.
+ */
 export function clientIp(headers: Headers): string | null {
   const candidate =
     headers.get('x-real-ip')?.trim() || headers.get('x-forwarded-for')?.split(',')[0]?.trim();

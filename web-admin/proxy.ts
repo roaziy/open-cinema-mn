@@ -8,7 +8,7 @@ import {
   type Tokens,
 } from './lib/auth/cookies';
 import { homeFor } from './lib/auth/redirects';
-import { refreshSession } from './lib/auth/refresh';
+import { refreshSession, revokeSession } from './lib/auth/refresh';
 import { clientIp } from './lib/bff';
 
 /**
@@ -25,6 +25,7 @@ export async function proxy(req: NextRequest) {
   // A login page opened because a session ended must not bounce a still-stored session back in.
   const endingSession = isLogin && req.nextUrl.searchParams.has('error');
 
+  const ip = clientIp(req.headers);
   let access = req.cookies.get(ACCESS_COOKIE)?.value;
   const refresh = req.cookies.get(REFRESH_COOKIE)?.value;
   let rotated: Tokens | null = null;
@@ -32,7 +33,7 @@ export async function proxy(req: NextRequest) {
   let stalled = false;
 
   if (!isFresh(access) && refresh) {
-    const result = await refreshSession(refresh, clientIp(req.headers));
+    const result = await refreshSession(refresh, ip);
     if (result.ok) {
       rotated = result.tokens;
       access = result.tokens.accessToken;
@@ -61,6 +62,10 @@ export async function proxy(req: NextRequest) {
       // Let this very request's handlers see the rotated tokens.
       req.cookies.set(ACCESS_COOKIE, rotated.accessToken);
       req.cookies.set(REFRESH_COOKIE, rotated.refreshToken);
+    } else if (drop) {
+      // The API refused these; handlers must not present them again.
+      req.cookies.delete(ACCESS_COOKIE);
+      req.cookies.delete(REFRESH_COOKIE);
     }
     const headers = new Headers(req.headers);
     for (const [k, v] of Object.entries(extra ?? {})) headers.set(k, v);
@@ -74,7 +79,8 @@ export async function proxy(req: NextRequest) {
 
   if (isLogin) return home && !endingSession ? redirectTo(home) : forward();
 
-  if (stalled) {
+  // Nobody to ask for a new token right now. A token that has not expired still works.
+  if (stalled && !isFresh(access, 0)) {
     return new NextResponse('Түр хүлээгээд дахин оролдоно уу.', {
       status: 503,
       headers: { 'retry-after': '2', 'content-type': 'text/plain; charset=utf-8' },
@@ -87,6 +93,9 @@ export async function proxy(req: NextRequest) {
   if (!allowed) {
     // Staff wandering into /admin go home; any other role has no business here at all.
     if (isAdminArea && role === 'staff') return redirectTo('/staff');
+    drop = true;
+    const stored = rotated?.refreshToken ?? refresh;
+    if (stored) await revokeSession(stored, ip);
     return redirectTo(loginPath, { error: 'forbidden' });
   }
 
