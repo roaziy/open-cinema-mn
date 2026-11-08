@@ -4,3 +4,13 @@ node_modules/
 .env.*
 !.env.example
 .DS_Store
+dist/
+.next/
+.expo/
+ios/
+android/
+apps/api/uploads/
+**/fonts/private/
+*.p12
+*.pem
+*.tsbuildinfo
