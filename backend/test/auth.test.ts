@@ -298,7 +298,7 @@ describe('guest, refresh, logout', () => {
   });
 
   it('rotates the refresh token and revokes the family when an old one is reused', async () => {
-    const { app } = setup();
+    const { app, clock } = setup();
     const g = await request(app).post('/v1/auth/guest');
     const first = g.body.refreshToken as string;
     const r1 = await request(app)
@@ -307,13 +307,88 @@ describe('guest, refresh, logout', () => {
       .expect(200);
     expect(r1.body.refreshToken).not.toBe(first);
     expect(r1.body.user.id).toBe(g.body.user.id);
-    // reuse of the rotated token
-    await request(app).post('/v1/auth/refresh').send({ refreshToken: first }).expect(401);
+    // reuse of the rotated token, after the grace
+    clock.advance(31_000);
+    const reuse = await request(app)
+      .post('/v1/auth/refresh')
+      .send({ refreshToken: first })
+      .expect(401);
+    expect(reuse.body.error).toBe('invalid_refresh');
     // the newest token was revoked with the family
     await request(app)
       .post('/v1/auth/refresh')
       .send({ refreshToken: r1.body.refreshToken })
       .expect(401);
+  });
+
+  it('replay within 30 s is refresh_superseded and keeps the newer session', async () => {
+    const { app, clock } = setup();
+    const g = await request(app).post('/v1/auth/guest');
+    const first = g.body.refreshToken as string;
+    const r1 = await request(app)
+      .post('/v1/auth/refresh')
+      .send({ refreshToken: first })
+      .expect(200);
+    clock.advance(29_000);
+    const replay = await request(app)
+      .post('/v1/auth/refresh')
+      .send({ refreshToken: first })
+      .expect(401);
+    expect(replay.body.error).toBe('refresh_superseded');
+    // the newer session still works, and replaying again changes nothing
+    await request(app).post('/v1/auth/refresh').send({ refreshToken: first }).expect(401);
+    await request(app)
+      .post('/v1/auth/refresh')
+      .send({ refreshToken: r1.body.refreshToken })
+      .expect(200);
+  });
+
+  it('replay at 31 s revokes every session', async () => {
+    const { app, clock } = setup();
+    const g = await request(app).post('/v1/auth/guest');
+    const first = g.body.refreshToken as string;
+    const r1 = await request(app)
+      .post('/v1/auth/refresh')
+      .send({ refreshToken: first })
+      .expect(200);
+    clock.advance(31_000);
+    const replay = await request(app)
+      .post('/v1/auth/refresh')
+      .send({ refreshToken: first })
+      .expect(401);
+    expect(replay.body.error).toBe('invalid_refresh');
+    await request(app)
+      .post('/v1/auth/refresh')
+      .send({ refreshToken: r1.body.refreshToken })
+      .expect(401);
+  });
+
+  it('a logged-out token is never given the grace', async () => {
+    const { app } = setup();
+    const g = await request(app).post('/v1/auth/guest');
+    const token = g.body.refreshToken as string;
+    await request(app).post('/v1/auth/logout').send({ refreshToken: token }).expect(204);
+    const res = await request(app)
+      .post('/v1/auth/refresh')
+      .send({ refreshToken: token })
+      .expect(401);
+    expect(res.body.error).toBe('invalid_refresh');
+  });
+
+  it('two simultaneous refreshes of one token: one wins, the other is superseded', async () => {
+    const { app } = setup();
+    const g = await request(app).post('/v1/auth/guest');
+    const send = () =>
+      request(app).post('/v1/auth/refresh').send({ refreshToken: g.body.refreshToken });
+    const [x, y] = await Promise.all([send(), send()]);
+    expect([x.status, y.status].sort()).toEqual([200, 401]);
+    const loser = x.status === 401 ? x : y;
+    const winner = x.status === 200 ? x : y;
+    expect(loser.body.error).toBe('refresh_superseded');
+    await request(app)
+      .post('/v1/auth/refresh')
+      .send({ refreshToken: winner.body.refreshToken })
+      .expect(200);
   });
 
   it('rejects an unknown or expired refresh token', async () => {
@@ -554,5 +629,32 @@ describe('profile and roles', () => {
       .set('Authorization', `Bearer ${staff.accessToken}`);
     expect(ok.status).toBe(200);
     expect(ok.body.id).toBe(staff.user.id);
+  });
+});
+
+describe('trusted BFF client ip', () => {
+  const SECRET = 'test-bff-secret-0123456789abcdef';
+  const guest = (app: ReturnType<typeof setup>['app'], headers: Record<string, string>) =>
+    request(app).post('/v1/auth/guest').set(headers);
+
+  it('gives each forwarded client its own bucket when the secret matches', async () => {
+    const { app } = setup();
+    const a = { 'x-oc-bff-secret': SECRET, 'x-oc-client-ip': '203.0.113.1' };
+    const b = { 'x-oc-bff-secret': SECRET, 'x-oc-client-ip': '203.0.113.2' };
+    for (let i = 0; i < 30; i++) await guest(app, a).expect(200);
+    await guest(app, a).expect(429);
+    await guest(app, b).expect(200);
+  });
+
+  it('ignores the header with a wrong or missing secret', async () => {
+    const { app } = setup();
+    for (let i = 0; i < 30; i++) {
+      await guest(app, { 'x-oc-bff-secret': 'wrong', 'x-oc-client-ip': `203.0.113.${i}` }).expect(
+        200,
+      );
+    }
+    // all of that shared one bucket (the socket address), whatever the header said
+    await guest(app, { 'x-oc-client-ip': '198.51.100.9' }).expect(429);
+    await guest(app, { 'x-oc-bff-secret': 'wrong', 'x-oc-client-ip': '198.51.100.10' }).expect(429);
   });
 });

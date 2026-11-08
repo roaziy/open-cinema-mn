@@ -7,6 +7,8 @@ import { sessions, type users } from '../db/schema';
 import { env } from '../env';
 
 export const ACCESS_TTL_S = 15 * 60;
+/** A just-rotated refresh token replayed within this window is a lost response, not theft. */
+export const REFRESH_GRACE_MS = 30_000;
 export const REFRESH_TTL_MS = 30 * 24 * 60 * 60 * 1000;
 
 const key = () => new TextEncoder().encode(env.JWT_SECRET);
@@ -66,5 +68,8 @@ export async function issueTokens(db: Db, user: UserRow, now: Date): Promise<Aut
 }
 
 export async function revokeAllSessions(db: Db, userId: string, now: Date): Promise<void> {
-  await db.update(sessions).set({ revokedAt: now }).where(eq(sessions.userId, userId));
+  await db
+    .update(sessions)
+    .set({ revokedAt: now, revokedReason: 'revoked_all' })
+    .where(eq(sessions.userId, userId));
 }

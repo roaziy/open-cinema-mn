@@ -19,6 +19,7 @@ export default defineConfig({
       STORAGE_PROVIDER: 'local',
       PAYMENT_PROVIDER: 'mock',
       CORS_ORIGINS: 'http://localhost:3000',
+      BFF_SECRET: 'test-bff-secret-0123456789abcdef',
     },
   },
 });

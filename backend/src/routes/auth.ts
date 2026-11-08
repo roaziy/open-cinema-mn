@@ -17,7 +17,13 @@ import { validate } from '../lib/http';
 import { consumeOtp, issueOtp, type Scope } from '../lib/otp';
 import { verifyDummy, verifyPassword } from '../lib/password';
 import type { Limiters } from '../lib/rate-limit';
-import { issueTokens, revokeAllSessions, sha256, toPublicUser } from '../lib/tokens';
+import {
+  issueTokens,
+  REFRESH_GRACE_MS,
+  revokeAllSessions,
+  sha256,
+  toPublicUser,
+} from '../lib/tokens';
 import { otpEmail, otpSms } from '../messages/templates';
 import { MessageSendError } from '../messages/wesend';
 import { requireAuth } from '../middleware/auth';
@@ -124,6 +130,20 @@ export function createAuthRouter(deps: AppDeps, limiters: Limiters): Router {
     res.json(await issueTokens(db, one(user), now));
   });
 
+  /**
+   * A revoked refresh token came back. Within the grace after a rotation it is most likely a
+   * response the client never received: refuse it, keep the newer session. Anything else
+   * (late, or revoked by logout) is treated as theft and ends every session of the user.
+   */
+  async function rejectReplay(session: typeof sessions.$inferSelect, now: Date): Promise<never> {
+    const age = session.rotatedAt ? now.getTime() - session.rotatedAt.getTime() : null;
+    if (session.revokedReason === 'rotated' && age !== null && age <= REFRESH_GRACE_MS) {
+      throw unauthorized('refresh_superseded');
+    }
+    await revokeAllSessions(db, session.userId, now);
+    throw unauthorized('invalid_refresh');
+  }
+
   r.post('/auth/refresh', validate(RefreshBody), async (req, res) => {
     const { refreshToken } = req.body as RefreshBody;
     const now = clock();
@@ -136,21 +156,19 @@ export function createAuthRouter(deps: AppDeps, limiters: Limiters): Router {
     if (!session) throw unauthorized('invalid_refresh');
     // A revoked token coming back is reuse, expired or not: assume it leaked and end every
     // session of the user.
-    if (session.revokedAt) {
-      await revokeAllSessions(db, session.userId, now);
-      throw unauthorized('invalid_refresh');
-    }
+    if (session.revokedAt) await rejectReplay(session, now);
     // An expired token that was never used is refused without touching other sessions.
     if (session.expiresAt <= now) throw unauthorized('refresh_expired');
     // Rotate atomically: only one caller can flip an active session to revoked.
     const [rotated] = await db
       .update(sessions)
-      .set({ revokedAt: now })
+      .set({ revokedAt: now, revokedReason: 'rotated', rotatedAt: now })
       .where(and(eq(sessions.id, session.id), sql`${sessions.revokedAt} is null`))
       .returning({ id: sessions.id });
     if (!rotated) {
-      await revokeAllSessions(db, session.userId, now);
-      throw unauthorized('invalid_refresh');
+      // Lost a race with a concurrent refresh of the same token: same handling as a replay.
+      const [fresh] = await db.select().from(sessions).where(eq(sessions.id, session.id));
+      await rejectReplay(fresh ?? session, now);
     }
     const [user] = await db.select().from(users).where(eq(users.id, session.userId)).limit(1);
     if (!user) throw unauthorized('invalid_refresh');
@@ -161,7 +179,7 @@ export function createAuthRouter(deps: AppDeps, limiters: Limiters): Router {
     const { refreshToken } = req.body as RefreshBody;
     await db
       .update(sessions)
-      .set({ revokedAt: clock() })
+      .set({ revokedAt: clock(), revokedReason: 'logout' })
       .where(
         and(
           eq(sessions.refreshTokenHash, sha256(refreshToken)),
