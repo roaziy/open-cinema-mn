@@ -2,6 +2,7 @@ import { type ScanResult, type SeatKind, SeatKindSchema } from '@open-cinema/sha
 import { sql } from 'drizzle-orm';
 import {
   boolean,
+  check,
   date,
   doublePrecision,
   index,
@@ -111,11 +112,17 @@ export const sessions = pgTable(
     revokedReason: text('revoked_reason'),
     // When a refresh replaced this session; drives the short replay grace.
     rotatedAt: ts('rotated_at'),
+    // sha256(client ip + user agent) of the client that rotated this session.
+    rotatedByFp: text('rotated_by_fp'),
     createdAt: createdAt(),
   },
   (t) => [
     uniqueIndex('sessions_refresh_token_hash_unique').on(t.refreshTokenHash),
     index('sessions_user_idx').on(t.userId),
+    check(
+      'sessions_revoked_reason_check',
+      sql`${t.revokedReason} in ('rotated', 'logout', 'revoked_all')`,
+    ),
   ],
 );
 

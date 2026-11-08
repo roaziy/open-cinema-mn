@@ -1,6 +1,6 @@
 import { eq } from 'drizzle-orm';
 import request from 'supertest';
-import { beforeEach, describe, expect, it, vi } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { db } from '../src/db/client';
 import {
   bookings,
@@ -16,6 +16,7 @@ import {
 } from '../src/db/schema';
 import { runSweep } from '../src/jobs/sweeper';
 import { SeatHub } from '../src/lib/seat-hub';
+import { TimeoutError } from '../src/lib/timeout';
 import { signAccessToken } from '../src/lib/tokens';
 import { MockPaymentProvider } from '../src/payments/mock';
 import { confirmBooking, refundOwed } from '../src/services/bookings';
@@ -186,6 +187,10 @@ const bookingOf = async (id: string) =>
 
 beforeEach(async () => {
   await resetDb();
+});
+
+afterEach(() => {
+  vi.restoreAllMocks();
 });
 
 describe('admin access', () => {
@@ -1278,5 +1283,37 @@ describe('refund claim ownership and provider timeout', () => {
       .send({ holdIds: held.holds.map((h) => h.id), idempotencyKey: uuid() })
       .expect(200);
     await expect(confirmBooking(db, created.body.id, s.deps, 50)).rejects.toThrow(/timed out/);
+  });
+});
+
+describe('payment poll', () => {
+  it('answers a pending view when the provider check times out', async () => {
+    const quiet = vi.spyOn(console, 'error').mockImplementation(() => {});
+    class Slow extends MockPaymentProvider {
+      override async checkPayment(): Promise<'pending' | 'paid' | 'failed'> {
+        throw new TimeoutError('checkPayment timed out after 20000 ms');
+      }
+    }
+    const s = setup((clock) => new Slow(db, clock));
+    const f = await fixture();
+    const show = await addShowtime(f, '2026-11-08T11:00:00Z');
+    const held = await createHolds(db, {
+      showtimeId: show.id,
+      seatIds: [f.seatId(1)],
+      userId: f.alice.id,
+      now: s.clock(),
+    });
+    const auth = await as(s, f.alice);
+    const created = await request(s.app)
+      .post('/v1/bookings')
+      .set('Authorization', auth)
+      .send({ holdIds: held.holds.map((h) => h.id), idempotencyKey: uuid() })
+      .expect(200);
+    const poll = await request(s.app)
+      .get(`/v1/bookings/${created.body.id}`)
+      .set('Authorization', auth)
+      .expect(200);
+    expect(poll.body.status).toBe('pending');
+    expect(quiet).toHaveBeenCalled();
   });
 });
