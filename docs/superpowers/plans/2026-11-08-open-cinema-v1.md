@@ -4,7 +4,7 @@
 
 **Goal:** Ship the whole platform end to end — API, admin + staff web app (PWA), customer iOS app — running locally on dev/mock providers, so real credentials (Supabase, wesend.mn, Wallet certificate) can be plugged in afterwards with env only.
 
-**Architecture:** npm-workspaces monorepo. `packages/shared` holds zod contracts and pure logic (seat-view math, hall generator, money/time) imported as TypeScript source by every app. `apps/api` is Express 5 + Drizzle on PostgreSQL with SSE for live seats. `apps/admin` is Next.js App Router acting as a BFF (tokens in httpOnly cookies, proxies to the API). `apps/mobile` is Expo SDK 58 with expo-router.
+**Architecture:** npm-workspaces monorepo. `shared` holds zod contracts and pure logic (seat-view math, hall generator, money/time) imported as TypeScript source by every app. `backend` is Express 5 + Drizzle on PostgreSQL with SSE for live seats. `web-admin` is Next.js App Router acting as a BFF (tokens in httpOnly cookies, proxies to the API). `app` is Expo SDK 58 with expo-router.
 
 **Tech Stack:** Node 24, npm workspaces, TypeScript 5, zod, Express 5, Drizzle ORM + drizzle-kit + pg, jose, @node-rs/argon2, vitest, passkit-generator, Next.js (latest stable) + Tailwind v4, barcode-detector, Expo SDK 58 + expo-router + Reanimated + @tanstack/react-query + three/@react-three/fiber + expo-gl, Biome (lint/format for api, shared, admin), `npx expo lint` for mobile.
 
@@ -23,7 +23,7 @@
 - Customer app UI languages: Mongolian (default) + English, strings in one dictionary per app (`mn`, `en`). Admin/staff web: Mongolian only. **(builder call — spec Q14)**
 - Seed data is fictional (6 original films, fictional branches/people). License: MIT. **(builder calls — spec Q14)**
 - Gilroy (`GIP-*.otf`) is commercial: never committed. Apps use it only if files exist at a gitignored local path; otherwise Onest.
-- Expo rule (AGENTS.md): before touching any Expo/RN API, read `apps/mobile/package.json` major version and the versioned docs `https://docs.expo.dev/versions/v58.0.0/`; never trust memory. Use `npx expo install <pkg>` for mobile deps. Never hand-edit `ios/`/`android/`.
+- Expo rule (AGENTS.md): before touching any Expo/RN API, read `app/package.json` major version and the versioned docs `https://docs.expo.dev/versions/v58.0.0/`; never trust memory. Use `npx expo install <pkg>` for mobile deps. Never hand-edit `ios/`/`android/`.
 - Commits: one local commit per task (`feat(scope): …`, conventional). Never push.
 
 ## Visual language (all UI tasks)
@@ -58,8 +58,8 @@ The previous Figma pass was judged flat and soulless. Soul comes from **identity
 ### Task 1: Monorepo scaffold
 
 **Files:**
-- Create: `package.json` (workspaces `apps/*`, `packages/*`; scripts `dev`, `typecheck`, `lint`, `test`, `db:migrate`, `db:seed`), `tsconfig.base.json` (strict, `moduleResolution: bundler`, `target: ES2022`), `biome.json`, `.gitignore` (node_modules, .env*, !.env.example, dist, .next, .expo, ios, android, apps/api/uploads, `**/fonts/private/`, `*.p12`, `*.pem`), `.env.example` (every var in Task 3 + Task 16 with empty/dummy values and a one-line comment each), `LICENSE` (MIT, "Open Cinema contributors"), `README.md` (stub: what it is, quick start placeholder), `.editorconfig`.
-- Create: `packages/shared/package.json` (`"name": "@open-cinema/shared"`, `"exports": { ".": "./src/index.ts" }`, `"type": "module"`), `packages/shared/tsconfig.json`, `packages/shared/src/index.ts`.
+- Create: `package.json` (workspaces `app`, `web-admin`, `backend`, `shared`; scripts `dev`, `typecheck`, `lint`, `test`, `db:migrate`, `db:seed`), `tsconfig.base.json` (strict, `moduleResolution: bundler`, `target: ES2022`), `biome.json`, `.gitignore` (node_modules, .env*, !.env.example, dist, .next, .expo, ios, android, backend/uploads, `**/fonts/private/`, `*.p12`, `*.pem`), `.env.example` (every var in Task 3 + Task 16 with empty/dummy values and a one-line comment each), `LICENSE` (MIT, "Open Cinema contributors"), `README.md` (stub: what it is, quick start placeholder), `.editorconfig`.
+- Create: `shared/package.json` (`"name": "@open-cinema/shared"`, `"exports": { ".": "./src/index.ts" }`, `"type": "module"`), `shared/tsconfig.json`, `shared/src/index.ts`.
 
 - [ ] **Step 1:** Create files; `npm install` at root succeeds.
 - [ ] **Step 2:** `npm run typecheck` passes (empty shared). `npx biome check .` passes.
@@ -68,8 +68,8 @@ The previous Figma pass was judged flat and soulless. Soul comes from **identity
 ### Task 2: Shared logic and contracts
 
 **Files:**
-- Create: `packages/shared/src/money.ts`, `time.ts`, `seat-view.ts`, `hall-generator.ts`, `normalize.ts`, `schemas/{auth,catalog,booking,ticket,scan,admin}.ts`, `index.ts` re-exports.
-- Test: `packages/shared/test/*.test.ts` (vitest; add `vitest` devDependency and `test` script).
+- Create: `shared/src/money.ts`, `time.ts`, `seat-view.ts`, `hall-generator.ts`, `normalize.ts`, `schemas/{auth,catalog,booking,ticket,scan,admin}.ts`, `index.ts` re-exports.
+- Test: `shared/test/*.test.ts` (vitest; add `vitest` devDependency and `test` script).
 
 **Interfaces (Produces — every app relies on these exact names):**
 - `formatMnt(amount: number): string` → `"₮15,000"`.
@@ -110,7 +110,7 @@ expect(at('F', 7).y_m).toBeCloseTo(9); expect(at('F', 7).z_m).toBeCloseTo(0.75);
 ### Task 3: API skeleton, schema, migrations, test harness
 
 **Files:**
-- Create: `apps/api/package.json` (`@open-cinema/api`; scripts `dev` = `tsx watch src/index.ts`, `build` = `tsc`, `test` = `vitest run`, `db:generate`, `db:migrate`, `db:seed`), `tsconfig.json`, `drizzle.config.ts`, `src/env.ts`, `src/app.ts`, `src/index.ts`, `src/db/schema.ts`, `src/db/client.ts`, `src/db/migrate.ts`, `src/lib/errors.ts`, `src/lib/http.ts` (zod `validate(schema)` middleware, `asyncRoute`), `drizzle/` (generated SQL), `test/setup.ts`, `test/helpers.ts`, `test/health.test.ts`, `vitest.config.ts`.
+- Create: `backend/package.json` (`@open-cinema/backend`; scripts `dev` = `tsx watch src/index.ts`, `build` = `tsc`, `test` = `vitest run`, `db:generate`, `db:migrate`, `db:seed`), `tsconfig.json`, `drizzle.config.ts`, `src/env.ts`, `src/app.ts`, `src/index.ts`, `src/db/schema.ts`, `src/db/client.ts`, `src/db/migrate.ts`, `src/lib/errors.ts`, `src/lib/http.ts` (zod `validate(schema)` middleware, `asyncRoute`), `drizzle/` (generated SQL), `test/setup.ts`, `test/helpers.ts`, `test/health.test.ts`, `vitest.config.ts`.
 
 **Interfaces (Produces):**
 - `env` (zod-parsed `process.env`): `PORT=4000`, `DATABASE_URL`, `TEST_DATABASE_URL`, `JWT_SECRET`, `QR_SECRET`, `LINK_SECRET`, `API_PUBLIC_URL`, `WEB_PUBLIC_URL`, `CORS_ORIGINS` (comma list), `MESSAGES_PROVIDER` (`dev|wesend`), `WESEND_API_KEY?`, `WESEND_FROM_NAME`, `WESEND_REPLY_TO?`, `STORAGE_PROVIDER` (`local|supabase`), `SUPABASE_URL?`, `SUPABASE_SERVICE_ROLE_KEY?`, `SUPABASE_BUCKET?`, `PAYMENT_PROVIDER` (`mock`), `WALLET_PASS_TYPE_ID?`, `WALLET_TEAM_ID?`, `WALLET_ORG_NAME`, `WALLET_SIGNER_CERT_PATH?`, `WALLET_SIGNER_KEY_PATH?`, `WALLET_SIGNER_KEY_PASSPHRASE?`, `WALLET_WWDR_PATH?`, `SEED_ADMIN_EMAIL`, `SEED_ADMIN_PASSWORD`, `NODE_ENV`.
@@ -120,14 +120,14 @@ expect(at('F', 7).y_m).toBeCloseTo(9); expect(at('F', 7).z_m).toBeCloseTo(0.75);
 
 - [ ] **Step 1:** Failing test `GET /v1/health → 200 {ok:true, db:true}`.
 - [ ] **Step 2:** Implement app (express 5, helmet, cors from `CORS_ORIGINS`, json limit 1mb, error handler mapping zod → 400 `validation_failed`, `AppError(status, code)` → JSON), schema, `drizzle-kit generate`, `migrate.ts` runs migrations. Global test setup creates/migrates `open_cinema_test` (create DB if missing via `pg` admin connection).
-- [ ] **Step 3:** `npm -w @open-cinema/api test` passes; `npm -w @open-cinema/api run db:migrate` works against `open_cinema_dev`.
+- [ ] **Step 3:** `npm -w @open-cinema/backend test` passes; `npm -w @open-cinema/backend run db:migrate` works against `open_cinema_dev`.
 - [ ] **Step 4:** Commit `feat(api): skeleton, schema, migrations, test harness`.
 
 ### Task 4: Seed
 
-**Files:** Create `apps/api/src/db/seed.ts`, `apps/api/seed/media/*.png` (6 posters, provided by the controller), `apps/api/src/storage/{index.ts,local.ts,supabase.ts}`.
+**Files:** Create `backend/src/db/seed.ts`, `backend/seed/media/*.png` (6 posters, provided by the controller), `backend/src/storage/{index.ts,local.ts,supabase.ts}`.
 
-**Interfaces:** `interface StorageProvider { put(key: string, body: Buffer, contentType: string): Promise<string /* public URL */> }`. `local` writes to `apps/api/uploads/` served at `/media/*` by the API; `supabase` uses `@supabase/supabase-js` `storage.from(bucket).upload` + `getPublicUrl`.
+**Interfaces:** `interface StorageProvider { put(key: string, body: Buffer, contentType: string): Promise<string /* public URL */> }`. `local` writes to `backend/uploads/` served at `/media/*` by the API; `supabase` uses `@supabase/supabase-js` `storage.from(bucket).upload` + `getPublicUrl`.
 
 - [ ] Seed (idempotent: truncates domain tables in dev only, refuses when `NODE_ENV=production`): 3 branches (`Төв салбар`, `Зайсан салбар`, `Яармаг салбар`, real-looking UB addresses/lat-lng), each 2–4 halls generated with `generateSeats` (row J premium, A1/A12 wheelchair), 6 films (titles/meta from the Figma posters: Талын салхи, Шөнийн шугам, Мөсөн гол, Улаан морь, Бага хот, Дохио; synopses 2 sentences, `tone` per poster), showtimes for today + 6 days (UB), prices ₮12,000–₮18,000 standard, premium +₮7,000; admin from `SEED_ADMIN_EMAIL/PASSWORD`; 2 staff (fictional phones `+97688000001`, `+97688000002`) bound to Төв салбар.
 - [ ] Test: `seed then GET /v1/movies?status=now returns ≥4 films with poster URLs`.
@@ -137,7 +137,7 @@ expect(at('F', 7).y_m).toBeCloseTo(9); expect(at('F', 7).z_m).toBeCloseTo(0.75);
 
 ### Task 5: Auth + messages
 
-**Files:** `apps/api/src/lib/{tokens.ts,otp.ts,password.ts,rate-limit.ts}`, `src/messages/{index.ts,dev.ts,wesend.ts,templates.ts}`, `src/routes/auth.ts`, `src/middleware/auth.ts`, tests `test/auth.test.ts`.
+**Files:** `backend/src/lib/{tokens.ts,otp.ts,password.ts,rate-limit.ts}`, `src/messages/{index.ts,dev.ts,wesend.ts,templates.ts}`, `src/routes/auth.ts`, `src/middleware/auth.ts`, tests `test/auth.test.ts`.
 
 **Interfaces (Produces):**
 - `interface Messages { sms(to: string, text: string): Promise<void>; email(m: { to: string; subject: string; html: string; text: string }): Promise<void> }` — `dev` logs (codes visible only in dev), `wesend` POSTs `https://api.wesend.mn/v1/sms` / `/v1/email` with `Authorization: Bearer ${WESEND_API_KEY}` (body fields per research notes in this plan's appendix).
@@ -210,14 +210,14 @@ expect(at('F', 7).y_m).toBeCloseTo(9); expect(at('F', 7).z_m).toBeCloseTo(0.75);
 - [ ] Tests: customer gets 403; overlap → `hall_busy`; cancel refunds paid bookings and cancels tickets; edit locked after sale; regenerate locked; report revenue equals sum of paid bookings.
 - [ ] Commit `feat(api): admin endpoints, reports, cancellation`.
 
-## Phase C — Web (`apps/admin`)
+## Phase C — Web (`web-admin`)
 
 ### Task 12: Next.js shell, auth, alive sidebar, PWA
 
-**Files:** `apps/admin/` (Next.js App Router, TS, Tailwind v4), `app/layout.tsx`, `app/globals.css` (`@theme` tokens from Visual language), `lib/api.ts` (server-side fetch to `API_INTERNAL_URL` with bearer from cookie, refresh on 401), `app/api/[...path]/route.ts` (proxy for client components), `app/login/page.tsx` (admin email+password), `app/staff/login/page.tsx` (phone + OTP), `middleware.ts` (role gate: `/admin/*` admin, `/staff/*` staff), `components/shell/{Sidebar,Rail,NavItem,AccountCard}.tsx`, `app/manifest.ts`, `public/sw.js`, fonts (`next/font/google` Onest; optional local GIP if `ADMIN_FONT_DIR` files exist).
+**Files:** `web-admin/` (Next.js App Router, TS, Tailwind v4), `app/layout.tsx`, `app/globals.css` (`@theme` tokens from Visual language), `lib/api.ts` (server-side fetch to `API_INTERNAL_URL` with bearer from cookie, refresh on 401), `app/api/[...path]/route.ts` (proxy for client components), `app/login/page.tsx` (admin email+password), `app/staff/login/page.tsx` (phone + OTP), `middleware.ts` (role gate: `/admin/*` admin, `/staff/*` staff), `components/shell/{Sidebar,Rail,NavItem,AccountCard}.tsx`, `app/manifest.ts`, `public/sw.js`, fonts (`next/font/google` Onest; optional local GIP if `ADMIN_FONT_DIR` files exist).
 
 - [ ] Sidebar per Visual language: hue icon tiles, groups ("Өнөөдөр", "Кино театр", "Баг", "Тайлан"), branch tree with connector lines and hue dots, counts (today's showtimes, live scans), account card, collapse button.
-- [ ] Verify: `npm -w @open-cinema/admin run build` passes; login flows work against the local API (screenshot via Playwright or the browser pane).
+- [ ] Verify: `npm -w @open-cinema/web-admin run build` passes; login flows work against the local API (screenshot via Playwright or the browser pane).
 - [ ] Commit `feat(admin): shell, auth, sidebar, pwa`.
 
 ### Task 13: Admin pages
@@ -242,11 +242,11 @@ expect(at('F', 7).y_m).toBeCloseTo(9); expect(at('F', 7).z_m).toBeCloseTo(0.75);
 **Files:** `app/t/[token]/page.tsx` (public, mobile-first): paper ticket(s) with QR (`qrcode` npm → SVG), seat, hall, time, branch map link, Add to Apple Wallet badge (official artwork slot `public/wallet-badge-mn.svg` — placeholder text button until the owner provides Apple's file).
 - [ ] Commit `feat(admin): guest ticket page`.
 
-## Phase D — Mobile (`apps/mobile`)
+## Phase D — Mobile (`app`)
 
 ### Task 16: Expo scaffold, theme, i18n, API client, tabs
 
-**Files:** `apps/mobile` created with the SDK 58 template (expo-router, `src/app`), `app.config.ts` (env: `APP_NAME`, `APP_BUNDLE_ID` default `cloud.roaziy.opencinema`, `EXPO_PUBLIC_API_URL`; embeds GIP via expo-font plugin only if `assets/fonts/private/GIP-*.otf` exist, else Onest from `assets/fonts/Onest-*.ttf`), `src/theme/{tokens.ts,type.ts}`, `src/i18n/{mn.ts,en.ts,index.ts}`, `src/lib/{api.ts,auth.ts,queries.ts,sse.ts}`, `src/app/_layout.tsx`, `src/app/(tabs)/_layout.tsx` (NativeTabs: Кино / Тасалбар / Профайл, SF Symbols `film.fill`, `ticket.fill`, `person.crop.circle.fill`; JS tabs on Android).
+**Files:** `app` created with the SDK 58 template (expo-router, `src/app`), `app.config.ts` (env: `APP_NAME`, `APP_BUNDLE_ID` default `cloud.roaziy.opencinema`, `EXPO_PUBLIC_API_URL`; embeds GIP via expo-font plugin only if `assets/fonts/private/GIP-*.otf` exist, else Onest from `assets/fonts/Onest-*.ttf`), `src/theme/{tokens.ts,type.ts}`, `src/i18n/{mn.ts,en.ts,index.ts}`, `src/lib/{api.ts,auth.ts,queries.ts,sse.ts}`, `src/app/_layout.tsx`, `src/app/(tabs)/_layout.tsx` (NativeTabs: Кино / Тасалбар / Профайл, SF Symbols `film.fill`, `ticket.fill`, `person.crop.circle.fill`; JS tabs on Android).
 **Interfaces:** `api<T>(path, init?)` adds bearer, refreshes once on 401; `useAuth()` → `{ user, ensureGuest(), loginWithOtp(), logout() }` (tokens in SecureStore); `useSeatStream(showtimeId)` (uses `react-native-sse`, applies snapshot then deltas).
 - [ ] Verify: `npx tsc --noEmit`, `npx expo lint`, app boots in the booted iPhone 17 simulator (iOS Simulator tool) showing tabs.
 - [ ] Commit `feat(mobile): scaffold, theme, i18n, api client, tabs`.
@@ -290,7 +290,7 @@ expect(at('F', 7).y_m).toBeCloseTo(9); expect(at('F', 7).z_m).toBeCloseTo(0.75);
 
 ---
 
-## Contract reference (packages/shared/src/schemas)
+## Contract reference (shared/src/schemas)
 
 ```
 PublicUser { id, role: 'guest'|'customer'|'staff'|'admin', phone: string|null, email: string|null, emailVerified: boolean, name: string|null, branchId: string|null }
