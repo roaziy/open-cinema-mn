@@ -67,7 +67,7 @@ export function BranchesView({ branches }: { branches: BranchRow[] }) {
                     ['Суудал', b.seats],
                     ['Өнөөдрийн сеанс', b.today],
                   ].map(([label, v]) => (
-                    <div key={label} className="flex flex-col-reverse">
+                    <div key={label}>
                       <dt className="truncate text-xs text-muted">{label}</dt>
                       <dd className="text-lg font-semibold text-ink tabular-nums">
                         {count(v as number)}

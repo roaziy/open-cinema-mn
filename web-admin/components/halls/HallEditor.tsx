@@ -2,7 +2,7 @@
 
 import { type AdminHallDetail, seatViewStats } from '@open-cinema/shared';
 import { useRouter } from 'next/navigation';
-import { useState, useTransition } from 'react';
+import { type ChangeEvent, useState, useTransition } from 'react';
 import { Button } from '@/components/ui/Button';
 import { Labeled, Select, TextInput } from '@/components/ui/Inputs';
 import { Notice } from '@/components/ui/Notice';
@@ -36,6 +36,13 @@ export function HallEditor({
   const [errors, setErrors] = useState<string[]>([]);
   const [saved, setSaved] = useState(false);
   const [busy, start] = useTransition();
+  // Any edit after a save makes "Хадгаллаа" stale.
+  const edited =
+    <A extends unknown[]>(fn: (...a: A) => void) =>
+    (...a: A) => {
+      setSaved(false);
+      fn(...a);
+    };
 
   const locked = !!hall?.locked;
   const sw = Number(screenW) > 0 ? Number(screenW) : (hall?.screen_width_m ?? 10);
@@ -94,12 +101,18 @@ export function HallEditor({
               id="h-name"
               value={name}
               maxLength={120}
-              onChange={(e) => setName(e.target.value)}
+              onChange={edited((e: ChangeEvent<HTMLInputElement>) => setName(e.target.value))}
             />
           </Labeled>
           {!hall && (
             <Labeled label="Салбар" htmlFor="h-branch">
-              <Select id="h-branch" value={branchId} onChange={(e) => setBranchId(e.target.value)}>
+              <Select
+                id="h-branch"
+                value={branchId}
+                onChange={edited((e: ChangeEvent<HTMLSelectElement>) =>
+                  setBranchId(e.target.value),
+                )}
+              >
                 {branches.map((b) => (
                   <option key={b.id} value={b.id}>
                     {b.name}
@@ -117,7 +130,7 @@ export function HallEditor({
                 step="0.5"
                 min={1}
                 value={screenW}
-                onChange={(e) => setScreenW(e.target.value)}
+                onChange={edited((e: ChangeEvent<HTMLInputElement>) => setScreenW(e.target.value))}
               />
             </Labeled>
             <Labeled label="Дэлгэцийн өндөр (м)" htmlFor="h-sh">
@@ -128,7 +141,7 @@ export function HallEditor({
                 step="0.5"
                 min={1}
                 value={screenH}
-                onChange={(e) => setScreenH(e.target.value)}
+                onChange={edited((e: ChangeEvent<HTMLInputElement>) => setScreenH(e.target.value))}
               />
             </Labeled>
           </div>
@@ -142,7 +155,7 @@ export function HallEditor({
               л будаж болно.
             </p>
           )}
-          <GeneratorFields raw={d.raw} setRaw={d.setRaw} locked={locked} />
+          <GeneratorFields raw={d.raw} setRaw={edited(d.setRaw)} locked={locked} />
           {!d.genValid && (
             <Notice>
               Суудлын тохиргооны утгуудыг шалгана уу. Сүүлийн зөв утгаар харуулж байна.
@@ -172,8 +185,8 @@ export function HallEditor({
               screenWidthM={sw}
               screenXM={screenX}
               selected={d.selected}
-              onPaint={d.paint}
-              onPaintRow={d.paintRow}
+              onPaint={edited(d.paint)}
+              onPaintRow={edited(d.paintRow)}
               ariaLabel="Заалны суудлын зураг"
             />
           </div>
@@ -212,7 +225,7 @@ export function HallEditor({
               <span className="text-[13px] text-muted tabular-nums">
                 {d.pending.size} суудал будагдсан
               </span>
-              <Button variant="ghost" size="sm" onClick={d.clearPending}>
+              <Button variant="ghost" size="sm" onClick={edited(d.clearPending)}>
                 Будалтыг болиулах
               </Button>
             </>
