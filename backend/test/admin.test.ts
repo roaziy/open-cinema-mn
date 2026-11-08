@@ -535,8 +535,12 @@ describe('cancelling a showtime', () => {
     expect((await bookingOf(paidA)).status).toBe('cancelled');
     expect((await bookingOf(paidB)).status).toBe('cancelled');
     expect((await bookingOf(pendingRes.body.id)).status).toBe('expired');
-    expect((await paymentOf(paidA)).status).toBe('refunded');
-    expect((await paymentOf(paidB)).status).toBe('refunded');
+    // refunds, seats and emails follow the answer
+    await vi.waitFor(async () => {
+      expect((await paymentOf(paidA)).status).toBe('refunded');
+      expect((await paymentOf(paidB)).status).toBe('refunded');
+      expect(s.messages.sent.filter((m) => m.channel === 'email')).toHaveLength(1);
+    });
     expect((await paymentOf(paidA)).refundedAt).not.toBeNull();
     expect(await db.select().from(tickets).where(eq(tickets.status, 'valid'))).toHaveLength(0);
     expect(await db.select().from(seatHolds)).toHaveLength(0);
@@ -644,8 +648,10 @@ describe('cancelling a showtime', () => {
     ]);
     expect([x.status, y.status]).toEqual([200, 200]);
     expect([x.body.cancelledBookings, y.body.cancelledBookings].sort()).toEqual([0, 1]);
-    expect(s.messages.sent).toHaveLength(1);
-    expect((await paymentOf(booking)).status).toBe('refunded');
+    await vi.waitFor(async () => {
+      expect(s.messages.sent).toHaveLength(1);
+      expect((await paymentOf(booking)).status).toBe('refunded');
+    });
   });
 
   it('falls back to a guest contact email', async () => {
@@ -676,7 +682,38 @@ describe('cancelling a showtime', () => {
       .expect(200);
     s.messages.sent.length = 0;
     await a('post', `/showtimes/${show.id}/cancel`).expect(200);
-    expect(s.messages.sent.map((m) => m.to)).toEqual(['guest@mail.mn']);
+    await vi.waitFor(() => expect(s.messages.sent.map((m) => m.to)).toEqual(['guest@mail.mn']));
+  });
+
+  it('answers as soon as the cancellation is committed, without waiting for the provider', async () => {
+    let release: () => void = () => {};
+    const gate = new Promise<void>((r) => {
+      release = r;
+    });
+    class SlowRefund extends MockPaymentProvider {
+      override async refund(invoiceId: string) {
+        await gate;
+        await super.refund(invoiceId);
+      }
+    }
+    const s = setup((clock) => new SlowRefund(db, clock));
+    const f = await fixture();
+    const a = await api(s, f);
+    const show = await addShowtime(f, '2026-11-08T11:00:00Z');
+    const booking = await buy(s, f, show.id, f.alice, 1);
+
+    const res = await a('post', `/showtimes/${show.id}/cancel`).expect(200);
+    expect(res.body).toMatchObject({
+      cancelledBookings: 1,
+      cancelledTickets: 1,
+      refundAmount: 10000,
+    });
+    // The provider is still holding the refund when the admin already has the answer.
+    expect((await bookingOf(booking)).status).toBe('cancelled');
+    expect(['paid', 'refunding']).toContain((await paymentOf(booking)).status);
+
+    release();
+    await vi.waitFor(async () => expect((await paymentOf(booking)).status).toBe('refunded'));
   });
 
   it('keeps a failed refund owed and lets the sweeper finish it', async () => {
@@ -702,7 +739,10 @@ describe('cancelling a showtime', () => {
     expect((await bookingOf(booking)).status).toBe('cancelled');
     expect((await paymentOf(booking)).status).toBe('paid');
     // the customer is still told, and the row says money is owed
-    expect(s.messages.sent.filter((m) => m.channel === 'email')).toHaveLength(1);
+    await vi.waitFor(() =>
+      expect(s.messages.sent.filter((m) => m.channel === 'email')).toHaveLength(1),
+    );
+    expect((await paymentOf(booking)).status).toBe('paid');
 
     (flaky as FlakyRefund).failing = false;
     await runSweep(db, s.clock(), s.seatHub, {
@@ -1104,7 +1144,7 @@ describe('moving showings with customers mid-purchase', () => {
     expect(res.status).toBe(200);
     expect(res.body).toMatchObject({ cancelledBookings: 1, cancelledTickets: 1 });
     expect((await bookingOf(bookingId)).status).toBe('cancelled');
-    expect((await paymentOf(bookingId)).status).toBe('refunded');
+    await vi.waitFor(async () => expect((await paymentOf(bookingId)).status).toBe('refunded'));
   });
 });
 

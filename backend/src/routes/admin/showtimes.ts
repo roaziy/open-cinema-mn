@@ -5,7 +5,7 @@ import type { AppDeps } from '../../app';
 import { notFound } from '../../lib/errors';
 import { uuidParam, validate } from '../../lib/http';
 import {
-  cancelShowtime,
+  beginCancellation,
   createShowtime,
   listShowtimes,
   previewCancel,
@@ -45,7 +45,11 @@ export function createAdminShowtimesRouter(deps: AppDeps): Router {
   });
 
   r.post('/showtimes/:id/cancel', async (req, res) => {
-    res.json(await cancelShowtime(db, deps, uuidParam(req)));
+    const { result, settle } = await beginCancellation(db, deps, uuidParam(req));
+    res.json(result);
+    // Refunds and emails run after the answer: with a slow provider they would outlast the admin
+    // web's request timeout. The `refundOwed` drain guard and the sweeper remain the safety net.
+    void settle();
   });
 
   return r;

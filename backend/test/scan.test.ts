@@ -1002,7 +1002,8 @@ describe('admin scan history', () => {
     const s = setup();
     const f = await fixture();
     const show = await f.show('2026-11-08T11:00:00Z');
-    const ts = await buy(s, f, show.id, 1, 2, 3);
+    const bought = await buy(s, f, show.id, 1, 2, 3);
+    const ts = [1, 2, 3].map((n) => one(bought.find((x) => x.seatId === f.seatId(n))));
     s.clock.advance(1000);
     const first = await scan(s, f.staffA, one(ts[0]).qrToken, { deviceLabel: 'Хаалга 1' });
     s.clock.advance(1000);

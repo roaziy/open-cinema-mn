@@ -290,17 +290,39 @@ export async function previewCancel(
   };
 }
 
+export type Cancellation = {
+  /** What the commit changed; reported to the admin as soon as it is known. */
+  result: ShowtimeCancelResult;
+  /** Refunds, emails and the seat release. Never rejects; run it after the response is sent. */
+  settle: () => Promise<void>;
+};
+
 /**
- * Cancels a showing (spec 8.7). One transaction cancels the showing, its valid tickets and paid
- * bookings, drops its holds and expires pending bookings. After the commit each paid booking is
- * refunded through the durable path (provider call outside any transaction; the sweeper retries
- * failures), seats are published as free and customers are emailed. Cancelling twice is a no-op.
+ * Cancels a showing (spec 8.7) and waits for the refunds and emails. The admin route does not wait:
+ * it uses `beginCancellation` and answers as soon as the cancellation is committed.
  */
 export async function cancelShowtime(
   db: Db,
   deps: Deps,
   showtimeId: string,
 ): Promise<ShowtimeCancelResult> {
+  const { result, settle } = await beginCancellation(db, deps, showtimeId);
+  await settle();
+  return result;
+}
+
+/**
+ * Commits the cancellation of a showing (spec 8.7). One transaction cancels the showing, its valid tickets and paid
+ * bookings, drops its holds and expires pending bookings. After the commit each paid booking is
+ * refunded through the durable path (provider call outside any transaction; the sweeper retries
+ * failures), seats are published as free and customers are emailed (all in `settle`, so a slow payment
+ * provider cannot hold the admin's request open). Cancelling twice is a no-op.
+ */
+export async function beginCancellation(
+  db: Db,
+  deps: Deps,
+  showtimeId: string,
+): Promise<Cancellation> {
   const done = await db.transaction(async (tx): Promise<Cancelled | null> => {
     const [show] = await tx
       .select({ status: showtimes.status, startsAt: showtimes.startsAt })
@@ -349,35 +371,48 @@ export async function cancelShowtime(
     };
   });
 
-  if (!done)
+  if (!done) {
     return {
+      result: {
+        id: showtimeId,
+        status: 'cancelled',
+        cancelledBookings: 0,
+        cancelledTickets: 0,
+        refundAmount: 0,
+      },
+      settle: async () => {},
+    };
+  }
+
+  const settle = async () => {
+    try {
+      deps.seatHub.publish(
+        showtimeId,
+        done.seatIds.map((seatId) => ({ seatId, state: 'free' as const })),
+      );
+      for (const bookingId of done.bookingIds) {
+        try {
+          // Draining: start no refund; the booking stays owed and the sweeper pays it after restart.
+          if (isDraining()) console.warn(`draining: refund of ${bookingId} left to the sweeper`);
+          else await refundOwed(db, bookingId, deps);
+        } catch (err) {
+          console.error('cancellation refund failed, will retry', err);
+        }
+        await sendCancellationEmail(db, deps, bookingId);
+      }
+    } catch (err) {
+      console.error('showtime cancellation follow-up failed', err);
+    }
+  };
+  return {
+    result: {
       id: showtimeId,
       status: 'cancelled',
-      cancelledBookings: 0,
-      cancelledTickets: 0,
-      refundAmount: 0,
-    };
-
-  deps.seatHub.publish(
-    showtimeId,
-    done.seatIds.map((seatId) => ({ seatId, state: 'free' as const })),
-  );
-  for (const bookingId of done.bookingIds) {
-    try {
-      // Draining: start no refund; the booking stays owed and the sweeper pays it after restart.
-      if (isDraining()) console.warn(`draining: refund of ${bookingId} left to the sweeper`);
-      else await refundOwed(db, bookingId, deps);
-    } catch (err) {
-      console.error('cancellation refund failed, will retry', err);
-    }
-    await sendCancellationEmail(db, deps, bookingId);
-  }
-  return {
-    id: showtimeId,
-    status: 'cancelled',
-    cancelledBookings: done.bookingIds.length,
-    cancelledTickets: done.ticketCount,
-    refundAmount: done.refundAmount,
+      cancelledBookings: done.bookingIds.length,
+      cancelledTickets: done.ticketCount,
+      refundAmount: done.refundAmount,
+    },
+    settle,
   };
 }
 
