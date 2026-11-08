@@ -1,5 +1,5 @@
 import { createApp, createDeps } from './app';
-import { pool } from './db/client';
+import { dbTls, pool } from './db/client';
 import { env } from './env';
 import { startSweeper } from './jobs/sweeper';
 import { startDraining } from './lib/drain';
@@ -21,6 +21,11 @@ if (
   );
 }
 
+if (env.NODE_ENV === 'production' && dbTls.level === 'require') {
+  console.warn(
+    'WARNING: database TLS is encrypted but the server identity is NOT verified (DATABASE_SSL=require). Download the Supabase CA certificate and set DATABASE_SSL=verify and DATABASE_CA_FILE (deploy/README.md 1.2.1).',
+  );
+}
 if (env.NODE_ENV === 'production' && env.PAYMENT_PROVIDER === 'mock') {
   console.warn(
     'WARNING: PAYMENT_PROVIDER=mock in production (ALLOW_MOCK_PAYMENTS=1). Any customer can mark an order paid and receive valid tickets. Demo use only.',

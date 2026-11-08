@@ -1,35 +1,88 @@
 import { describe, expect, it } from 'vitest';
-import { dbSsl, stripSslMode } from '../src/db/ssl';
+import { resolveDbSsl } from '../src/db/ssl';
 
-describe('dbSsl', () => {
-  it('off disables TLS', () => {
-    expect(dbSsl({ DATABASE_SSL: 'off', DATABASE_CA_FILE: undefined })).toBe(false);
-  });
-
-  it('require encrypts without checking the certificate', () => {
-    expect(dbSsl({ DATABASE_SSL: 'require', DATABASE_CA_FILE: undefined })).toEqual({
-      rejectUnauthorized: false,
-    });
-  });
-
-  it('verify reads the CA file and rejects unauthorized peers', () => {
-    const read = (p: string) => (p === '/ca.pem' ? 'PEM' : '');
-    expect(dbSsl({ DATABASE_SSL: 'verify', DATABASE_CA_FILE: '/ca.pem' }, read)).toEqual({
-      ca: 'PEM',
-      rejectUnauthorized: true,
-    });
-    expect(() => dbSsl({ DATABASE_SSL: 'verify', DATABASE_CA_FILE: undefined })).toThrow(
-      /DATABASE_CA_FILE/,
-    );
-  });
+const base = 'postgresql://u:p@h:5432/db';
+const cfg = (
+  url: string,
+  ssl?: 'off' | 'require' | 'verify',
+  ca?: string,
+  fallback: 'off' | 'require' = 'off',
+) => ({
+  DATABASE_URL: url,
+  DATABASE_SSL: ssl ?? fallback,
+  DATABASE_SSL_SET: ssl !== undefined,
+  DATABASE_CA_FILE: ca,
 });
+const read = (p: string) => `PEM(${p})`;
 
-describe('stripSslMode', () => {
-  it('drops ssl parameters that would override DATABASE_SSL and leaves other URLs alone', () => {
-    expect(stripSslMode('postgresql://u:p@h:5432/db?sslmode=require&application_name=x')).toBe(
-      'postgresql://u:p@h:5432/db?application_name=x',
+describe('resolveDbSsl', () => {
+  it('uses the default when nothing is set', () => {
+    expect(resolveDbSsl(cfg(base)).ssl).toBe(false);
+    expect(resolveDbSsl(cfg(base, undefined, undefined, 'require'))).toMatchObject({
+      level: 'require',
+      ssl: { rejectUnauthorized: false },
+    });
+  });
+
+  it('require encrypts without checking the server', () => {
+    expect(resolveDbSsl(cfg(base, 'require')).ssl).toEqual({ rejectUnauthorized: false });
+  });
+
+  it('verify uses the CA file, or the system store without one', () => {
+    expect(resolveDbSsl(cfg(base, 'verify', '/ca.pem'), read).ssl).toEqual({
+      rejectUnauthorized: true,
+      ca: 'PEM(/ca.pem)',
+    });
+    expect(resolveDbSsl(cfg(base, 'verify')).ssl).toEqual({ rejectUnauthorized: true });
+  });
+
+  it('honours sslmode=verify-full, reading sslrootcert, and strips the parameters', () => {
+    const r = resolveDbSsl(
+      cfg(`${base}?sslmode=verify-full&sslrootcert=/x.pem&application_name=a`),
+      read,
     );
-    const plain = 'postgresql://u:p%40w@h:5432/db';
-    expect(stripSslMode(plain)).toBe(plain);
+    expect(r.level).toBe('verify');
+    expect(r.ssl).toEqual({ rejectUnauthorized: true, ca: 'PEM(/x.pem)' });
+    expect(r.url).toBe(`${base}?application_name=a`);
+  });
+
+  it('DATABASE_CA_FILE wins over sslrootcert', () => {
+    const r = resolveDbSsl(
+      cfg(`${base}?sslmode=verify-full&sslrootcert=/x.pem`, undefined, '/own.pem'),
+      read,
+    );
+    expect(r.ssl).toMatchObject({ ca: 'PEM(/own.pem)' });
+  });
+
+  it('verify-ca checks the chain but not the host name', () => {
+    const r = resolveDbSsl(cfg(`${base}?sslmode=verify-ca`));
+    expect(r.ssl).toMatchObject({ rejectUnauthorized: true });
+    expect(typeof (r.ssl as { checkServerIdentity?: unknown }).checkServerIdentity).toBe(
+      'function',
+    );
+    const full = resolveDbSsl(cfg(`${base}?sslmode=verify-full`));
+    expect((full.ssl as { checkServerIdentity?: unknown }).checkServerIdentity).toBeUndefined();
+  });
+
+  it('maps require and disable from the URL', () => {
+    expect(resolveDbSsl(cfg(`${base}?sslmode=require`)).ssl).toEqual({ rejectUnauthorized: false });
+    expect(resolveDbSsl(cfg(`${base}?sslmode=disable`, undefined, undefined, 'require')).ssl).toBe(
+      false,
+    );
+  });
+
+  it('refuses a DATABASE_SSL weaker than the URL, naming both', () => {
+    expect(() => resolveDbSsl(cfg(`${base}?sslmode=verify-full`, 'require'))).toThrow(
+      /DATABASE_SSL=require.*sslmode=verify-full/,
+    );
+    expect(() => resolveDbSsl(cfg(`${base}?sslmode=require`, 'off'))).toThrow(/DATABASE_SSL=off/);
+    expect(() => resolveDbSsl(cfg(`${base}?sslmode=verify-ca`, 'off'))).toThrow(
+      /sslmode=verify-ca/,
+    );
+  });
+
+  it('allows a stronger DATABASE_SSL than the URL', () => {
+    expect(resolveDbSsl(cfg(`${base}?sslmode=require`, 'verify')).level).toBe('verify');
+    expect(resolveDbSsl(cfg(`${base}?sslmode=disable`, 'off')).ssl).toBe(false);
   });
 });
