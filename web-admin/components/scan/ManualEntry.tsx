@@ -6,6 +6,29 @@ import { useEffect, useRef, useState } from 'react';
 const FIELD =
   'focus-ring h-14 rounded-panel border border-hairline bg-surface px-4 text-[20px] uppercase text-ink placeholder:text-muted';
 
+const LOOKALIKES: Record<string, string> = {
+  А: 'A',
+  В: 'B',
+  С: 'C',
+  Е: 'E',
+  Н: 'H',
+  К: 'K',
+  М: 'M',
+  О: 'O',
+  Р: 'P',
+  Т: 'T',
+  Х: 'X',
+  У: 'Y',
+};
+
+/**
+ * Upper-case Latin for a seat or check code. A Mongolian keyboard types look-alike Cyrillic
+ * letters (А В С Е Н К М О Р Т Х У) that no code contains, so they are mapped to their Latin twins.
+ */
+export function toLatinCode(v: string): string {
+  return [...v.toUpperCase()].map((c) => LOOKALIKES[c] ?? c).join('');
+}
+
 /** Digits of a typed or pasted order number: "OC-10029", "oc 10029" and "10029" all give 10029. */
 export function orderDigits(v: string): string {
   return v.replace(/^\s*oc[-\s]*/i, '').replace(/\D/g, '');
@@ -72,7 +95,7 @@ export function ManualEntry({
           <input
             id="manual-seat"
             value={seat}
-            onChange={(e) => setSeat(e.target.value.toUpperCase())}
+            onChange={(e) => setSeat(toLatinCode(e.target.value))}
             autoCapitalize="characters"
             autoComplete="off"
             spellCheck={false}
@@ -88,7 +111,7 @@ export function ManualEntry({
           <input
             id="manual-code"
             value={code}
-            onChange={(e) => setCode(e.target.value.toUpperCase())}
+            onChange={(e) => setCode(toLatinCode(e.target.value))}
             autoCapitalize="characters"
             autoComplete="off"
             autoCorrect="off"

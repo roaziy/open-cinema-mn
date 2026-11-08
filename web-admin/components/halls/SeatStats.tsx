@@ -6,9 +6,9 @@ type Stats = { distanceM: number; viewDeg: number; offCenterDeg: number; label: 
 /** Numbers behind the side profile for the chosen seat. */
 export function SeatStats({ seat, stats }: { seat: string | null; stats: Stats | null }) {
   const row = (label: string, value: string) => (
-    <div className="flex flex-col-reverse">
-      <dd className="text-ink tabular-nums">{value}</dd>
+    <div>
       <dt className="text-xs text-muted">{label}</dt>
+      <dd className="text-ink tabular-nums">{value}</dd>
     </div>
   );
   return (

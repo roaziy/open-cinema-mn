@@ -108,9 +108,9 @@ function Numbers({ p }: { p: ShowtimeCancelPreview }) {
 
 function Stat({ label, value }: { label: string; value: string }) {
   return (
-    <div className="flex flex-col-reverse">
-      <dd className="mt-0.5 text-xl font-semibold text-ink tabular-nums">{value}</dd>
+    <div>
       <dt className="text-xs text-muted">{label}</dt>
+      <dd className="mt-0.5 text-xl font-semibold text-ink tabular-nums">{value}</dd>
     </div>
   );
 }
