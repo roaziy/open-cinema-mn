@@ -164,6 +164,21 @@ describe('env hardening', () => {
     ).not.toThrow();
   });
 
+  it('requires distinct secrets in production', () => {
+    expect(() => parseEnv({ ...base, QR_SECRET: base.JWT_SECRET })).toThrow(/must all differ/);
+    expect(() => parseEnv({ ...base, BFF_SECRET: base.LINK_SECRET })).toThrow(/must all differ/);
+    expect(() =>
+      parseEnv({ ...base, NODE_ENV: 'development', QR_SECRET: base.JWT_SECRET }),
+    ).not.toThrow();
+  });
+
+  it('binds loopback in production and all interfaces otherwise unless HOST is set', () => {
+    expect(parseEnv(base).HOST).toBe('127.0.0.1');
+    expect(parseEnv({ ...base, NODE_ENV: 'development' }).HOST).toBe('0.0.0.0');
+    expect(parseEnv({ ...base, HOST: '10.0.0.5' }).HOST).toBe('10.0.0.5');
+    expect(parseEnv({ ...base, HOST: '' }).HOST).toBe('127.0.0.1');
+  });
+
   it('rejects the default admin password in production', () => {
     expect(() => parseEnv({ ...base, SEED_ADMIN_PASSWORD: 'change-me-admin' })).toThrow(
       /SEED_ADMIN_PASSWORD/,

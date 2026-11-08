@@ -2,6 +2,7 @@ name: ci
 
 on:
   push:
+    branches: [main]
   pull_request:
 
 permissions:
@@ -9,7 +10,7 @@ permissions:
 
 concurrency:
   group: ci-${{ github.ref }}
-  cancel-in-progress: true
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 
 jobs:
   check:
@@ -33,6 +34,8 @@ jobs:
       TEST_DATABASE_URL: postgresql://postgres:postgres@localhost:5432/open_cinema_test
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
       - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
         with:
           node-version: 24
@@ -46,16 +49,30 @@ jobs:
         run: npm test
       - name: Backend production build
         run: npm -w @open-cinema/backend run build
-      - name: Backend bundle starts
+      - name: Backend bundle starts (production mode)
+        env:
+          NODE_ENV: production
+          HOST: 127.0.0.1
+          PORT: 4010
+          DATABASE_URL: postgresql://postgres:postgres@localhost:5432/open_cinema_test
+          JWT_SECRET: ci-jwt-secret-0123456789-abcdefghijklmnop
+          QR_SECRET: ci-qr-secret-0123456789-abcdefghijklmnopq
+          LINK_SECRET: ci-link-secret-0123456789-abcdefghijklmn
+          BFF_SECRET: ci-bff-secret-0123456789-abcdefghijklmno
+          SEED_ADMIN_PASSWORD: ci-admin-password-not-default
+          TRUST_PROXY: 1
         run: |
           set -e
           cd backend
-          DATABASE_URL="$TEST_DATABASE_URL" npm run db:migrate:prod
-          DATABASE_URL="$TEST_DATABASE_URL" JWT_SECRET=ci-jwt-secret-0123456789 QR_SECRET=ci-qr-secret-0123456789 \
-            LINK_SECRET=ci-link-secret-0123456789 PORT=4010 node dist/index.js &
+          npm run db:migrate:prod
+          node dist/index.js &
           pid=$!
           for _ in $(seq 1 20); do
-            if curl -fsS http://localhost:4010/v1/health; then kill "$pid"; exit 0; fi
+            if curl -fsS http://127.0.0.1:4010/v1/health; then
+              kill -TERM "$pid"
+              wait "$pid"   # graceful shutdown must exit 0
+              exit 0
+            fi
             sleep 1
           done
           kill "$pid" || true
@@ -79,6 +96,7 @@ jobs:
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
+          persist-credentials: false
           fetch-depth: 0
       - uses: gitleaks/gitleaks-action@ff98106e4c7b2bc287b24eaf42907196329070c7 # v2.3.9
         env:
