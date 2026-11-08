@@ -12,7 +12,7 @@ const EnvSchema = z
   .object({
     NODE_ENV: z.enum(['development', 'test', 'production']).default('development'),
     // Interface to bind. Unset: loopback in production (the reverse proxy is the only way in, so
-    // `x-forwarded-for` cannot be forged by direct clients), all interfaces otherwise.
+    // `x-forwarded-for` cannot be forged by direct clients); otherwise Node's default (all interfaces).
     HOST: optional(z.string()),
     PORT: z.coerce.number().int().min(1).max(65535).default(4000),
     DATABASE_URL: z.string().min(1),
@@ -86,7 +86,7 @@ const EnvSchema = z
   })
   .transform((e) => ({
     ...e,
-    HOST: e.HOST ?? (e.NODE_ENV === 'production' ? '127.0.0.1' : '0.0.0.0'),
+    HOST: e.HOST ?? (e.NODE_ENV === 'production' ? '127.0.0.1' : undefined),
   }));
 
 export type Env = z.infer<typeof EnvSchema>;

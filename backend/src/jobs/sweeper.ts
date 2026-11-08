@@ -113,23 +113,30 @@ export async function runSweep(
   );
 }
 
-/** Starts the periodic sweep; the returned function stops it. */
-export function startSweeper(deps: AppDeps): () => void {
-  let running = false;
-  const timer = setInterval(async () => {
-    if (running) return;
-    running = true;
-    try {
-      await runSweep(deps.db, deps.clock(), deps.seatHub, {
-        settle: (id) => confirmBooking(deps.db, id, deps),
-        refund: (id) => refundOwed(deps.db, id, deps),
-      });
-    } catch (err) {
-      console.error('sweep failed', err);
-    } finally {
-      running = false;
-    }
+/**
+ * Starts the periodic sweep. The returned function stops the timer and resolves once a pass that
+ * is currently running has finished.
+ */
+export function startSweeper(deps: AppDeps): () => Promise<void> {
+  let current: Promise<void> | null = null;
+  const timer = setInterval(() => {
+    if (current) return;
+    current = (async () => {
+      try {
+        await runSweep(deps.db, deps.clock(), deps.seatHub, {
+          settle: (id) => confirmBooking(deps.db, id, deps),
+          refund: (id) => refundOwed(deps.db, id, deps),
+        });
+      } catch (err) {
+        console.error('sweep failed', err);
+      } finally {
+        current = null;
+      }
+    })();
   }, SWEEP_INTERVAL_MS);
   timer.unref();
-  return () => clearInterval(timer);
+  return async () => {
+    clearInterval(timer);
+    await current;
+  };
 }

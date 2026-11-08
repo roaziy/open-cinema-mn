@@ -182,24 +182,35 @@ The admin web app does not rely on this: it forwards the end user's address with
 
 ```bash
 cd ~/open-cinema
+before=$(git rev-parse HEAD)
 git pull --ff-only
-npm ci
+# npm ci deletes node_modules first, so only run it when the lockfile changed, with the API stopped
+if ! git diff --quiet "$before" HEAD -- package-lock.json; then
+  pm2 stop open-cinema-api
+  npm ci
+fi
 npm -w @open-cinema/backend run build
 npm -w @open-cinema/backend run db:migrate:prod
-pm2 reload open-cinema-api
+pm2 startOrReload backend/ecosystem.config.cjs
 curl -s http://127.0.0.1:4000/v1/health
 ```
 
-The build writes to `backend/dist.next/` and swaps it into `backend/dist/` in one rename, so pm2
-can never restart into a half-built tree (for example after a memory restart mid-build). The running
-process keeps serving from memory throughout. The one unprotected moment is `npm ci` rewriting
-`node_modules`: for a release that changes dependencies, run `pm2 stop open-cinema-api` before
-`npm ci` and `pm2 start open-cinema-api` after the migration, and accept about a minute of downtime.
+What this guarantees:
 
-Migrations are additive and run before the new code starts. A reload stops the process gracefully
-(it closes open connections and the database pool on SIGINT, with a hard exit after 4 s, before pm2's
-5 s kill timeout) and starts the new one; the app reconnects its seat feed and receives a full
-snapshot first.
+- **No half-built tree.** The build writes `backend/dist.next/`, then moves `dist` to `dist.old`,
+  `dist.next` to `dist`, and deletes `dist.old`. There is no moment when `dist/` is missing or
+  partial, so a pm2 restart during a build always finds a complete tree.
+- **No broken `node_modules`.** `npm ci` runs only when `package-lock.json` changed, and only while
+  the API is stopped (about a minute of downtime for those releases). `startOrReload` starts it again
+  afterwards (and also works when nothing was stopped).
+- Migrations run before the new code starts, so they must be additive (see rollback).
+
+On `pm2 reload` (or stop) the API receives SIGINT and drains: it stops accepting connections,
+ends the live seat streams (clients reconnect and get a full snapshot first), lets requests that are
+already running, and a sweep pass that is mid-run, finish, and only then closes the database pool.
+This is what keeps a payment or refund call from being cut off half way. Connections still open
+after 7 s are destroyed, and the process exits with code 1 after 9 s at the latest, inside pm2's
+10 s `kill_timeout`.
 
 ### 1.7 Roll back
 
@@ -207,9 +218,10 @@ snapshot first.
 cd ~/open-cinema
 git log --oneline -5              # pick the last good commit
 git checkout <good-sha>
+pm2 stop open-cinema-api
 npm ci
 npm -w @open-cinema/backend run build
-pm2 reload open-cinema-api
+pm2 startOrReload backend/ecosystem.config.cjs
 ```
 
 Migrations are not reverted automatically. Keep them backward compatible with the previous release

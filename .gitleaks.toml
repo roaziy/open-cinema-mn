@@ -5,15 +5,6 @@ useDefault = true
 
 [allowlist]
 description = "Fixed test fixtures, never real secrets"
-paths = [
-  '''backend/vitest\.config\.ts''',
-  '''backend/test/.*''',
-  '''shared/test/.*''',
-  '''web-admin/test/.*''',
-  '''web-admin/vitest\.config\.ts''',
-  '''\.github/workflows/ci\.yml''',
-  '''\.env\.example''',
-]
 regexes = [
   '''test-(jwt|qr|link|bff)-secret-[0-9a-f]+''',
   '''ci-(jwt|qr|link|bff)-secret-[0-9a-z-]+''',
