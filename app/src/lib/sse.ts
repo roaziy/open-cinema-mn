@@ -3,6 +3,7 @@ import { useCallback, useEffect, useState } from 'react';
 import { AppState } from 'react-native';
 import EventSource from 'react-native-sse';
 import { API_BASE } from './http';
+import { startWatchdog } from './watchdog';
 
 export type SeatLiveState = 'free' | 'held' | 'sold';
 /** `live` only once a snapshot has arrived; `error` means the stream was refused (e.g. unknown showtime) and is not retried. */
@@ -25,9 +26,10 @@ function parse(data: string | null): unknown {
 
 /**
  * Live seat states for a showtime: `{ [seatId]: 'free' | 'held' | 'sold' }`.
- * The first `snapshot` event replaces everything, `delta` events patch it. The library
- * reconnects by itself and the server sends a fresh snapshot on every (re)connect, which
- * replaces the state again, so no delta can be applied to a stale base.
+ * The first `snapshot` event replaces everything, `delta` events patch it. The library re-opens
+ * after an HTTP response ends, `scheduleReopen` after a network failure, and a watchdog after
+ * silence (the server pings every 20 s). The server sends a fresh snapshot on every (re)connect,
+ * which replaces the state again, so no delta can be applied to a stale base.
  */
 export function useSeatStream(showtimeId: string | null | undefined) {
   // Tagged with the showtime it belongs to, so switching showtimes never shows stale seats.
@@ -51,7 +53,7 @@ export function useSeatStream(showtimeId: string | null | undefined) {
         return { id: showtimeId, ...update(cur) };
       });
 
-    const es = new EventSource<'snapshot' | 'delta'>(
+    const es = new EventSource<'snapshot' | 'delta' | 'ping'>(
       `${API_BASE}/showtimes/${encodeURIComponent(showtimeId)}/seats/stream`,
       { pollingInterval: HTTP_REPOLL_MS }, // public stream: no bearer, so a reconnect never replays an expired token
     );
@@ -102,7 +104,21 @@ export function useSeatStream(showtimeId: string | null | undefined) {
       es.open();
     });
 
+    // A connection can die without any event (a proxy dropping an idle stream, a sleeping radio).
+    // No event of any kind for 45 s: start over, which also brings a fresh snapshot.
+    const watchdog = startWatchdog(() => {
+      if (stopped) return;
+      patch((c) => ({ ...c, status: 'reconnecting' }));
+      if (retryTimer) clearTimeout(retryTimer);
+      retryTimer = null;
+      es.close();
+      es.open();
+    });
+    es.addEventListener('open', () => watchdog.feed());
+    es.addEventListener('ping', () => watchdog.feed());
+
     es.addEventListener('snapshot', (e) => {
+      watchdog.feed();
       const list = seatList.safeParse((parse(e.data) as { seats?: unknown } | null)?.seats);
       if (!list.success) return;
       const seats = Object.fromEntries(list.data.map((s) => [s.seatId, s.state]));
@@ -111,6 +127,7 @@ export function useSeatStream(showtimeId: string | null | undefined) {
     });
 
     es.addEventListener('delta', (e) => {
+      watchdog.feed();
       const list = seatList.safeParse((parse(e.data) as { changes?: unknown } | null)?.changes);
       if (!list.success || list.data.length === 0) return;
       const changes = list.data;
@@ -123,6 +140,7 @@ export function useSeatStream(showtimeId: string | null | undefined) {
 
     return () => {
       stopped = true;
+      watchdog.stop();
       if (retryTimer) clearTimeout(retryTimer);
       appState.remove();
       es.removeAllEventListeners();

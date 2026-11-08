@@ -1,6 +1,9 @@
 import {
+  HOLD_TTL_MS,
   type Hold,
   HoldSchema,
+  HoldsResponseSchema,
+  MAX_SEATS_PER_BOOKING,
   type SeatMap,
   SeatMapSchema,
   type SeatState,
@@ -13,9 +16,6 @@ import { ApiError, api } from './api';
 import { ensureGuest, useAuth } from './auth';
 import { haptic } from './haptics';
 import { showToast } from './toast';
-
-export const MAX_SEATS = 10;
-const HOLD_MS = 10 * 60_000;
 
 export const seatKeys = {
   map: (showtimeId: string) => ['seatmap', showtimeId] as const,
@@ -120,7 +120,7 @@ export function useSeatActions(showtimeId: string, t: (key: TKey) => string, pat
           return;
         }
 
-        if (read().length >= MAX_SEATS) {
+        if (read().length >= MAX_SEATS_PER_BOOKING) {
           haptic.error();
           showToast(t('seats.maxToast'), 'error');
           return;
@@ -130,20 +130,18 @@ export function useSeatActions(showtimeId: string, t: (key: TKey) => string, pat
           id: `tmp-${seatId}`,
           seatId,
           showtimeId,
-          expiresAt: new Date(Date.now() + HOLD_MS).toISOString(),
+          expiresAt: new Date(Date.now() + HOLD_TTL_MS).toISOString(),
           bookingId: null,
         };
         // A hold list still loading must not land after, and wipe, the optimistic write.
         await qc.cancelQueries({ queryKey: holdsKey });
         qc.setQueryData<Hold[]>(holdsKey, (cur) => [...(cur ?? []), optimistic]);
         try {
-          const res = holdList.parse(
-            (
-              await api<{ holds: unknown }>(`/showtimes/${showtimeId}/holds`, {
-                method: 'POST',
-                json: { seatIds: [seatId] },
-              })
-            ).holds,
+          const { holds: res } = HoldsResponseSchema.parse(
+            await api(`/showtimes/${showtimeId}/holds`, {
+              method: 'POST',
+              json: { seatIds: [seatId] },
+            }),
           );
           qc.setQueryData<Hold[]>(holdsKey, (cur) => [
             ...(cur ?? []).filter((h) => h.id !== optimistic.id),

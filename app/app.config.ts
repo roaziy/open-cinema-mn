@@ -12,10 +12,12 @@ const hasGilroy = GILROY.every((f) => existsSync(resolve(__dirname, f)));
 const fonts = hasGilroy ? GILROY : ONEST;
 
 const CANVAS = '#0B0B0D';
+const APP_NAME = process.env.APP_NAME ?? 'Open Cinema';
+const CALENDAR_REASON = `Үзвэрийн цагийг календарьт нэмэхийн тулд хандах эрх хэрэгтэй. / ${APP_NAME} adds your showtime to your calendar.`;
 
 export default ({ config }: ConfigContext): ExpoConfig => ({
   ...config,
-  name: process.env.APP_NAME ?? 'Open Cinema',
+  name: APP_NAME,
   slug: 'open-cinema',
   scheme: 'opencinema',
   version: '0.1.0',
@@ -55,10 +57,8 @@ export default ({ config }: ConfigContext): ExpoConfig => ({
         writeOnlyAccess: true,
         // The app never touches reminders.
         remindersPermission: false,
-        writeOnlyCalendarPermission:
-          'Үзвэрийн цагийг календарьт нэмэхийн тулд хандах эрх хэрэгтэй. / Open Cinema adds your showtime to your calendar.',
-        calendarPermission:
-          'Үзвэрийн цагийг календарьт нэмэхийн тулд хандах эрх хэрэгтэй. / Open Cinema adds your showtime to your calendar.',
+        writeOnlyCalendarPermission: CALENDAR_REASON,
+        calendarPermission: CALENDAR_REASON,
       },
     ],
   ],

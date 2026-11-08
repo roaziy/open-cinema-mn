@@ -14,14 +14,25 @@ const LABEL_HUE: Record<Stats['label'], string> = {
   very_close: hues.yellow,
 };
 
-export function StatsCard({ seatLabel, stats }: { seatLabel: string; stats: Stats }) {
+export function StatsCard({
+  seatLabel,
+  kind,
+  stats,
+}: {
+  seatLabel: string;
+  kind?: string;
+  stats: Stats;
+}) {
   const { t } = useI18n();
   const hue = LABEL_HUE[stats.label];
   return (
     <View style={styles.card}>
       <View style={styles.head}>
         <View style={styles.headText}>
-          <Text style={styles.seat}>{t('view.seat', { seat: seatLabel })}</Text>
+          <Text style={styles.seat}>
+            {t('view.seat', { seat: seatLabel })}
+            {kind === 'wheelchair' ? ` · ${t('seats.kind.wheelchair')}` : ''}
+          </Text>
           <Text style={styles.hint} numberOfLines={2}>
             {t(`view.hint.${stats.label}` as TKey)}
           </Text>

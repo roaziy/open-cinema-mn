@@ -6,7 +6,7 @@ import { useEffect } from 'react';
 import { GestureHandlerRootView } from 'react-native-gesture-handler';
 import { ToastHost } from '@/components/toast-host';
 import { hydrateLocale, useI18n } from '@/i18n';
-import { ensureGuest, hydrateAuth, useAuth } from '@/lib/auth';
+import { hydrateAuth } from '@/lib/auth';
 import { hydrateBranch } from '@/lib/branch';
 import { queryClient } from '@/lib/queries';
 import { colors } from '@/theme/tokens';
@@ -29,7 +29,6 @@ const theme = {
 };
 
 export default function RootLayout() {
-  const { ready, user } = useAuth();
   const { t } = useI18n();
 
   useEffect(() => {
@@ -37,12 +36,6 @@ export default function RootLayout() {
       SplashScreen.hideAsync().catch(() => {});
     });
   }, []);
-
-  // Everyone is at least a guest: start one in the background after launch and after logout.
-  // Offline failures are fine; the next api() call retries.
-  useEffect(() => {
-    if (ready && !user) ensureGuest().catch(() => {});
-  }, [ready, user]);
 
   return (
     <GestureHandlerRootView style={{ flex: 1, backgroundColor: colors.canvas }}>

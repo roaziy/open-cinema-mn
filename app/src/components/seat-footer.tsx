@@ -1,4 +1,4 @@
-import { formatMnt, type SeatState } from '@open-cinema/shared';
+import { formatMnt, type SeatState, seatPrice } from '@open-cinema/shared';
 import { Clock, Eye } from 'phosphor-react-native';
 import { ScrollView, StyleSheet, Text, View } from 'react-native';
 import Animated, { FadeIn, FadeOut, LinearTransition } from 'react-native-reanimated';
@@ -24,10 +24,6 @@ type Props = {
 
 const MIDDLE_HEIGHT = 36 + space.md + 48;
 
-export function seatPrice(seat: SeatState, standard: number, premium: number): number {
-  return seat.kind === 'premium' ? premium : standard;
-}
-
 /** Floating-sheet footer: chosen seats, running total, hold timer and the two actions. */
 export function SeatFooter({
   selected,
@@ -42,7 +38,10 @@ export function SeatFooter({
   const { t } = useI18n();
   const insets = useSafeAreaInsets();
   const secondsLeft = useCountdown(expiresAt, onExpire);
-  const total = selected.reduce((sum, s) => sum + seatPrice(s, priceStandard, pricePremium), 0);
+  const total = selected.reduce(
+    (sum, s) => sum + seatPrice(s.kind, { priceStandard, pricePremium }),
+    0,
+  );
   const shown = useTween(total);
   const empty = selected.length === 0;
   // At 00:00 the holds are gone even if the refetch has not landed yet.

@@ -1,4 +1,4 @@
-import { formatMnt, formatUbTime, normalizeEmail } from '@open-cinema/shared';
+import { formatMnt, formatUbTime, normalizeEmail, seatPrice } from '@open-cinema/shared';
 import { useQueryClient } from '@tanstack/react-query';
 import { router, Stack, useIsFocused, useLocalSearchParams } from 'expo-router';
 import { useHeaderHeight } from 'expo-router/react-navigation';
@@ -9,7 +9,6 @@ import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { IconTile } from '@/components/icon-tile';
 import { Poster } from '@/components/poster';
 import { Pressable } from '@/components/pressable';
-import { seatPrice } from '@/components/seat-footer';
 import { Skeleton } from '@/components/skeleton';
 import { ErrorState } from '@/components/state-views';
 import { type TKey, useI18n } from '@/i18n';
@@ -114,9 +113,7 @@ export default function CheckoutScreen() {
     () =>
       live.flatMap((h) => {
         const seat = seatsById.get(h.seatId);
-        return seat && show
-          ? [{ seat, price: seatPrice(seat, show.priceStandard, show.pricePremium) }]
-          : [];
+        return seat && show ? [{ seat, price: seatPrice(seat.kind, show) }] : [];
       }),
     [live, seatsById, show],
   );

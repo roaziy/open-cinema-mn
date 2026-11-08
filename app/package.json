@@ -3,7 +3,6 @@
   "version": "1.0.0",
   "main": "expo-router/entry",
   "dependencies": {
-    "@expo/ui": "~58.0.27",
     "@open-cinema/shared": "*",
     "@react-three/fiber": "9.8.2",
     "@tanstack/react-query": "^5.107.1",
