@@ -4,10 +4,11 @@ import { Router } from 'express';
 import { z } from 'zod';
 import type { AppDeps } from '../app';
 import { bookings, tickets } from '../db/schema';
+import { env } from '../env';
 import { forbidden, notFound } from '../lib/errors';
 import { validate } from '../lib/http';
 import type { Limiters } from '../lib/rate-limit';
-import { verifyLink, verifyPassSig } from '../lib/sign';
+import { signPassUrl, verifyLink, verifyPassSig } from '../lib/sign';
 import { requireAuth } from '../middleware/auth';
 import { bookingView } from '../services/bookings';
 import { myTickets, ticketViews } from '../services/tickets';
@@ -57,6 +58,28 @@ export function createTicketsRouter(deps: AppDeps, limiters: Limiters): Router {
       tickets: await ticketViews(db, eq(tickets.bookingId, bookingId), clock()),
     };
     res.json(body);
+  });
+
+  // A fresh short-lived pass URL for one ticket of the link's booking, minted when the guest taps
+  // "Add to Wallet". The page never holds a pass URL, so a cached or forwarded page cannot leak one.
+  r.get('/t/:linkToken/pass/:ticketId', limiters.ticketLink, async (req, res) => {
+    const bookingId = verifyLink(String(req.params.linkToken));
+    const ticketId = String(req.params.ticketId);
+    if (!bookingId || !UUID.safeParse(bookingId).success || !UUID.safeParse(ticketId).success) {
+      throw notFound();
+    }
+    res.set('Cache-Control', 'no-store');
+    if (!walletConfig()) {
+      res.status(503).json({ error: 'wallet_not_configured' });
+      return;
+    }
+    const [view] = await ticketViews(
+      db,
+      sql`${eq(tickets.id, ticketId)} and ${eq(tickets.bookingId, bookingId)}`,
+      clock(),
+    );
+    if (view?.status !== 'valid') throw notFound();
+    res.json({ url: `${env.API_PUBLIC_URL}${signPassUrl(ticketId, clock())}` });
   });
 
   // Authorised by a short-lived signature in the URL, so the Wallet app can fetch it unauthenticated.
