@@ -18,13 +18,13 @@ export default async function LoginPage({
   // A session is ended only on proof (see judgeSession); a healthy one just goes home.
   let endStale = false;
   if (error === 'expired' || error === 'forbidden') {
-    const verdict = await verdictFor('admin');
-    if (verdict === 'home') redirect('/admin', RedirectType.replace);
+    const { verdict, home } = await verdictFor();
+    if (verdict === 'home' && home) redirect(home, RedirectType.replace);
     endStale = verdict === 'end';
   }
   return (
     <AuthShell>
-      {endStale ? <EndSession area="admin" /> : null}
+      {endStale ? <EndSession /> : null}
       <h1 className="text-[26px] font-semibold tracking-[-0.01em] text-ink">Админ нэвтрэх</h1>
       <p className="mb-6 mt-1.5 text-[15px] text-muted">Имэйл, нууц үгээрээ нэвтэрнэ үү.</p>
       <AdminLoginForm next={safeNext(next, '/admin')} notice={noticeFor(error)} />

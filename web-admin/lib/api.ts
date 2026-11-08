@@ -41,14 +41,15 @@ export async function apiFetch(path: string, init: RequestInit = {}): Promise<Re
     toLogin();
   }
 
+  // `init.headers` may be a plain object, tuples or a Headers instance: normalize, then set ours.
+  const merged = new Headers(init.headers);
+  for (const [k, v] of Object.entries(bffHeaders(clientOf(await headers())))) merged.set(k, v);
+  merged.set('authorization', `Bearer ${access}`);
+
   const res = await fetch(`${apiUrl()}/v1${path}`, {
     ...init,
     cache: 'no-store',
-    headers: {
-      ...init.headers,
-      ...bffHeaders(clientOf(await headers())),
-      authorization: `Bearer ${access}`,
-    },
+    headers: merged,
     signal: init.signal ?? AbortSignal.timeout(10_000),
   });
 
