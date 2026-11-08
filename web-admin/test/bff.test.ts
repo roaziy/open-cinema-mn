@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
-import { bffHeaders, clientIp } from '../lib/bff';
+import { bffHeaders, clientIp, clientOf } from '../lib/bff';
 
 afterEach(() => vi.unstubAllEnvs());
 
@@ -20,18 +20,30 @@ describe('clientIp', () => {
   });
 });
 
+const UA = 'Mozilla/5.0 (iPhone; CPU iPhone OS 18_0 like Mac OS X) Safari/605.1.15';
+
 describe('bffHeaders', () => {
-  it('sends nothing without a secret', () => {
+  it('forwards the user-agent unchanged even without a secret', () => {
     vi.stubEnv('BFF_SECRET', '');
-    expect(bffHeaders('203.0.113.7')).toEqual({});
+    expect(bffHeaders({ ip: '203.0.113.7', userAgent: UA })).toEqual({ 'user-agent': UA });
   });
 
-  it('sends the secret and the address together', () => {
+  it('sends the secret, the address and the user-agent together', () => {
     vi.stubEnv('BFF_SECRET', 's3cret');
-    expect(bffHeaders('203.0.113.7')).toEqual({
+    expect(bffHeaders({ ip: '203.0.113.7', userAgent: UA })).toEqual({
+      'user-agent': UA,
       'x-oc-bff-secret': 's3cret',
       'x-oc-client-ip': '203.0.113.7',
     });
-    expect(bffHeaders(null)).toEqual({ 'x-oc-bff-secret': 's3cret' });
+    expect(bffHeaders({ ip: null, userAgent: null })).toEqual({ 'x-oc-bff-secret': 's3cret' });
+  });
+});
+
+describe('clientOf', () => {
+  it('reads the address and the original user-agent from the incoming request', () => {
+    const h = new Headers({ 'x-forwarded-for': '198.51.100.2', 'user-agent': UA });
+    expect(clientOf(h)).toEqual({ ip: '198.51.100.2', userAgent: UA });
+    vi.stubEnv('BFF_SECRET', 's3cret');
+    expect(bffHeaders(clientOf(h))['user-agent']).toBe(UA);
   });
 });

@@ -4,7 +4,7 @@ import { redirect } from 'next/navigation';
 import type { ZodType } from 'zod';
 import { ACCESS_COOKIE, REFRESH_COOKIE, REFRESHED_COOKIE } from './auth/cookies';
 import { loginPathFor } from './auth/redirects';
-import { bffHeaders, clientIp } from './bff';
+import { bffHeaders, clientOf } from './bff';
 import { apiUrl } from './env';
 
 export class ApiError extends Error {
@@ -46,7 +46,7 @@ export async function apiFetch(path: string, init: RequestInit = {}): Promise<Re
     cache: 'no-store',
     headers: {
       ...init.headers,
-      ...bffHeaders(clientIp(await headers())),
+      ...bffHeaders(clientOf(await headers())),
       authorization: `Bearer ${access}`,
     },
     signal: init.signal ?? AbortSignal.timeout(10_000),

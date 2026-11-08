@@ -1,5 +1,5 @@
 import { AuthTokensSchema, type PublicUser } from '@open-cinema/shared';
-import { bffHeaders } from '../bff';
+import { bffHeaders, type Client } from '../bff';
 import { apiUrl } from '../env';
 import type { Tokens } from './cookies';
 
@@ -19,11 +19,11 @@ export type RefreshResult =
 const INVALID_KEEP_MS = 5_000;
 const inflight = new Map<string, Promise<RefreshResult>>();
 
-async function callRefresh(refreshToken: string, ip: string | null): Promise<RefreshResult> {
+async function callRefresh(refreshToken: string, client: Client): Promise<RefreshResult> {
   try {
     const res = await fetch(`${apiUrl()}/v1/auth/refresh`, {
       method: 'POST',
-      headers: { 'content-type': 'application/json', ...bffHeaders(ip) },
+      headers: { 'content-type': 'application/json', ...bffHeaders(client) },
       body: JSON.stringify({ refreshToken }),
       cache: 'no-store',
       signal: AbortSignal.timeout(8_000),
@@ -49,10 +49,10 @@ async function callRefresh(refreshToken: string, ip: string | null): Promise<Ref
  * Only a bare `invalid` (no credentials in it) is remembered for a few seconds, to avoid
  * hammering the API with a token it already refused.
  */
-export function refreshSession(refreshToken: string, ip: string | null): Promise<RefreshResult> {
+export function refreshSession(refreshToken: string, client: Client): Promise<RefreshResult> {
   const shared = inflight.get(refreshToken);
   if (shared) return shared;
-  const call = callRefresh(refreshToken, ip).then((result) => {
+  const call = callRefresh(refreshToken, client).then((result) => {
     if (!result.ok && result.reason === 'invalid') {
       setTimeout(() => inflight.delete(refreshToken), INVALID_KEEP_MS).unref?.();
     } else {
@@ -65,11 +65,11 @@ export function refreshSession(refreshToken: string, ip: string | null): Promise
 }
 
 /** Best-effort `POST /auth/logout`: closes the session on the API. Never throws. */
-export async function revokeSession(refreshToken: string, ip: string | null): Promise<void> {
+export async function revokeSession(refreshToken: string, client: Client): Promise<void> {
   try {
     await fetch(`${apiUrl()}/v1/auth/logout`, {
       method: 'POST',
-      headers: { 'content-type': 'application/json', ...bffHeaders(ip) },
+      headers: { 'content-type': 'application/json', ...bffHeaders(client) },
       body: JSON.stringify({ refreshToken }),
       cache: 'no-store',
       signal: AbortSignal.timeout(5_000),

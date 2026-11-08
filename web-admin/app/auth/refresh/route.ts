@@ -8,7 +8,7 @@ import {
 } from '@/lib/auth/cookies';
 import { loginPathFor, safeNext } from '@/lib/auth/redirects';
 import { refreshSession } from '@/lib/auth/refresh';
-import { clientIp } from '@/lib/bff';
+import { clientOf } from '@/lib/bff';
 
 /**
  * Where server components send the browser when the access token is gone or rejected. Rotates the
@@ -29,7 +29,7 @@ export async function GET(req: NextRequest) {
   };
   if (!refreshToken) return expired();
 
-  const result = await refreshSession(refreshToken, clientIp(req.headers));
+  const result = await refreshSession(refreshToken, clientOf(req.headers));
   if (!result.ok) {
     // Superseded: a parallel request just rotated it. Cookies are kept, the newer one arrives.
     if (result.reason === 'invalid') return expired();

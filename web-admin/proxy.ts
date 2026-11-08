@@ -9,7 +9,7 @@ import {
 } from './lib/auth/cookies';
 import { homeFor } from './lib/auth/redirects';
 import { refreshSession, revokeSession } from './lib/auth/refresh';
-import { clientIp } from './lib/bff';
+import { clientOf } from './lib/bff';
 
 /**
  * The one place that refreshes ahead of time (pages and `/api/*` alike), so the access token a
@@ -25,7 +25,7 @@ export async function proxy(req: NextRequest) {
   // A login page opened because a session ended must not bounce a still-stored session back in.
   const endingSession = isLogin && req.nextUrl.searchParams.has('error');
 
-  const ip = clientIp(req.headers);
+  const client = clientOf(req.headers);
   let access = req.cookies.get(ACCESS_COOKIE)?.value;
   const refresh = req.cookies.get(REFRESH_COOKIE)?.value;
   let rotated: Tokens | null = null;
@@ -33,7 +33,7 @@ export async function proxy(req: NextRequest) {
   let stalled = false;
 
   if (!isFresh(access) && refresh) {
-    const result = await refreshSession(refresh, ip);
+    const result = await refreshSession(refresh, client);
     if (result.ok) {
       rotated = result.tokens;
       access = result.tokens.accessToken;
@@ -95,7 +95,7 @@ export async function proxy(req: NextRequest) {
     if (isAdminArea && role === 'staff') return redirectTo('/staff');
     drop = true;
     const stored = rotated?.refreshToken ?? refresh;
-    if (stored) await revokeSession(stored, ip);
+    if (stored) await revokeSession(stored, client);
     return redirectTo(loginPath, { error: 'forbidden' });
   }
 

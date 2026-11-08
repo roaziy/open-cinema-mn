@@ -17,8 +17,24 @@ export function clientIp(headers: Headers): string | null {
   return candidate && IP_SHAPE.test(candidate) ? candidate : null;
 }
 
-export function bffHeaders(ip: string | null): Record<string, string> {
+/** What the API needs to know about the end user behind this server's request. */
+export type Client = { ip: string | null; userAgent: string | null };
+
+export function clientOf(headers: Headers): Client {
+  return { ip: clientIp(headers), userAgent: headers.get('user-agent') };
+}
+
+/**
+ * The user-agent always goes along, unchanged: the API binds the refresh grace window to the
+ * caller's address plus user-agent, and without it a parallel refresh would sign the user out.
+ */
+export function bffHeaders(client: Client): Record<string, string> {
+  const out: Record<string, string> = {};
+  if (client.userAgent) out['user-agent'] = client.userAgent;
   const secret = process.env.BFF_SECRET;
-  if (!secret) return {};
-  return ip ? { 'x-oc-bff-secret': secret, 'x-oc-client-ip': ip } : { 'x-oc-bff-secret': secret };
+  if (secret) {
+    out['x-oc-bff-secret'] = secret;
+    if (client.ip) out['x-oc-client-ip'] = client.ip;
+  }
+  return out;
 }

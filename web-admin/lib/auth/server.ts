@@ -1,7 +1,7 @@
 import 'server-only';
 import { type AuthTokens, AuthTokensSchema } from '@open-cinema/shared';
 import { headers } from 'next/headers';
-import { bffHeaders, clientIp } from '../bff';
+import { bffHeaders, clientOf } from '../bff';
 import { apiUrl } from '../env';
 
 export type ApiOutcome<T> = { ok: true; data: T } | { ok: false; status: number; code: string };
@@ -11,7 +11,7 @@ export async function postJson(path: string, body: unknown): Promise<ApiOutcome<
   try {
     const res = await fetch(`${apiUrl()}/v1${path}`, {
       method: 'POST',
-      headers: { 'content-type': 'application/json', ...bffHeaders(clientIp(await headers())) },
+      headers: { 'content-type': 'application/json', ...bffHeaders(clientOf(await headers())) },
       body: JSON.stringify(body),
       cache: 'no-store',
       signal: AbortSignal.timeout(10_000),
