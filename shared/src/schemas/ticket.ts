@@ -20,6 +20,8 @@ export const TicketViewSchema = z.object({
   movie: MovieSummarySchema,
   branch: BranchSchema,
   qrToken: z.string(),
+  /** 4 characters printed next to the order number; a door that types the order needs it too. */
+  checkCode: z.string(),
   passUrl: z.string().nullable(),
 });
 export type TicketView = z.infer<typeof TicketViewSchema>;

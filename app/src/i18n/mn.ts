@@ -149,6 +149,7 @@ export const mn = {
   'pay.back': 'Суудал сонгох руу буцах',
   'ticket.title': 'Тасалбар',
   'ticket.order': 'Захиалга {no}',
+  'ticket.checkCode': 'Код',
   'ticket.seat': 'Суудал',
   'ticket.hall': 'Танхим',
   'ticket.date': 'Огноо',

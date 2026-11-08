@@ -26,6 +26,8 @@ export function StaffShell({
   children: ReactNode;
 }) {
   const pathname = usePathname();
+  // The scanner owns the whole screen: camera edge to edge, no header or tab bar over it.
+  if (pathname.startsWith('/staff/scan')) return <>{children}</>;
   return (
     <div className="mx-auto flex min-h-dvh max-w-2xl flex-col px-2 pt-[max(0.5rem,env(safe-area-inset-top))]">
       <header className="flex items-center gap-2.5 px-2 py-2">

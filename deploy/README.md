@@ -277,13 +277,18 @@ The admin web app (`web-admin/`, Next.js) is deployed from the same repository a
    **Build Command**: `npm run build`. Framework preset: Next.js. Node.js version: 24.x.
 4. Environment variables (Production and Preview):
 
-   | Variable           | Value                                                                                   |
-   | ------------------ | --------------------------------------------------------------------------------------- |
-   | `API_INTERNAL_URL` | `https://cinema-api.roaziy.cloud`                                                       |
-   | `BFF_SECRET`       | the same value as on the VPS                                                            |
-   | `ADMIN_FONT_DIR`   | leave unset on Vercel (licensed fonts are never committed; the app falls back to Onest) |
+   | Variable            | Value                                                                                                                                                                                        |
+   | ------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+   | `API_INTERNAL_URL`  | `https://cinema-api.roaziy.cloud`                                                                                                                                                            |
+   | `BFF_SECRET`        | the same value as on the VPS                                                                                                                                                                 |
+   | `ADMIN_FONT_DIR`    | leave unset on Vercel (licensed fonts are never committed; the app falls back to Onest)                                                                                                      |
+   | `WALLET_BADGE_FILE` | set to `1` only after you put Apple's "Add to Apple Wallet" artwork at `web-admin/public/wallet-badge-mn.svg` (Apple's licence applies; until then the guest page shows a plain text button) |
 
    Check `.env.example` (the "Admin web" section) for any variable added since this was written.
+   The door scanner (`/staff/scan`) opens the phone camera, which browsers only allow on HTTPS (or
+   localhost), so the staff phones must use the https domain. `npm run build` first copies the QR
+   decoder's wasm into `public/zxing/` (`prebuild` / `predev`); a bare `next build` or `next dev`
+   skips that step and the scanner then cannot load its decoder.
 5. `web-admin/next.config.ts` already sets `transpilePackages: ['@open-cinema/shared']`, which the
    shared package needs because it ships TypeScript source. Keep it if you edit the config.
 6. Domain: add `cinema.roaziy.cloud` under Project, Settings, Domains and create the DNS record

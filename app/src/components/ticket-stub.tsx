@@ -99,7 +99,9 @@ export function TicketStub({ ticket }: { ticket: TicketView }) {
               ecl="M"
             />
           </View>
-          <Text style={styles.order}>{t('ticket.order', { no: ticket.orderNo })}</Text>
+          <Text style={styles.order}>
+            {t('ticket.order', { no: ticket.orderNo })} · {t('ticket.checkCode')} {ticket.checkCode}
+          </Text>
         </View>
         {cancelled || used ? (
           <View style={styles.badge}>

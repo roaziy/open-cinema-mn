@@ -1,0 +1,1 @@
+ALTER TABLE "ticket_scans" ADD COLUMN "device_label" text;

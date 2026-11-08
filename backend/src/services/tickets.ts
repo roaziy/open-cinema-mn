@@ -3,7 +3,7 @@ import { asc, desc, eq, type SQL, sql } from 'drizzle-orm';
 import type { Db } from '../db/client';
 import { bookings, branches, halls, movies, seats, showtimes, tickets } from '../db/schema';
 import { env } from '../env';
-import { signPassUrl } from '../lib/sign';
+import { checkCode, signPassUrl } from '../lib/sign';
 import { walletConfig } from '../wallet/pass';
 import { toBranch, toSummary } from './catalog-views';
 
@@ -57,6 +57,7 @@ export async function ticketViews(
     movie: toSummary(r.movie),
     branch: toBranch(r.branch),
     qrToken: r.ticket.qrToken,
+    checkCode: checkCode(r.ticket.id),
     passUrl:
       wallet && r.ticket.status === 'valid'
         ? `${env.API_PUBLIC_URL}${signPassUrl(r.ticket.id, now)}`

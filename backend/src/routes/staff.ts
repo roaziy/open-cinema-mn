@@ -1,5 +1,5 @@
 import { ScanBody } from '@open-cinema/shared';
-import { type Request, Router } from 'express';
+import { type Request, type RequestHandler, Router } from 'express';
 import { z } from 'zod';
 import type { AppDeps } from '../app';
 import { notFound } from '../lib/errors';
@@ -18,9 +18,19 @@ export function createStaffRouter(deps: AppDeps, limiters: Limiters): Router {
   const staff = [requireAuth(deps), requireRole('staff', 'admin')];
   const me = (req: Request) => req.user as AuthUser;
 
-  r.post('/staff/scan', ...staff, limiters.scan, validate(ScanBody), async (req, res) => {
-    res.json(await scanTicket(db, me(req), req.body, clock()));
-  });
+  const manualOnly: RequestHandler = (req, res, next) =>
+    'orderNo' in req.body ? limiters.manualScan(req, res, next) : next();
+
+  r.post(
+    '/staff/scan',
+    ...staff,
+    limiters.scan,
+    validate(ScanBody),
+    manualOnly,
+    async (req, res) => {
+      res.json(await scanTicket(db, me(req), req.body, clock()));
+    },
+  );
 
   r.post('/staff/scan/:scanId/undo', ...staff, limiters.scan, async (req, res) => {
     const scanId = String(req.params.scanId);

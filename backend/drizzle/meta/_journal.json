@@ -57,6 +57,13 @@
       "when": 1794151366798,
       "tag": "0007_refresh_fingerprint",
       "breakpoints": true
+    },
+    {
+      "idx": 8,
+      "version": "7",
+      "when": 1794160811595,
+      "tag": "0008_ticket_scans_device_label",
+      "breakpoints": true
     }
   ]
 }

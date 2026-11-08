@@ -39,7 +39,7 @@ self.addEventListener('fetch', (event) => {
   }
 
   // Hashed build assets never change, so they can be served from cache.
-  if (url.pathname.startsWith('/_next/static/') || url.pathname.startsWith('/icons/')) {
+  if (url.pathname.startsWith('/_next/static/') || url.pathname.startsWith('/icons/') || url.pathname.startsWith('/zxing/')) {
     event.respondWith(
       caches.match(request).then(
         (hit) =>

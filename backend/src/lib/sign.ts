@@ -54,3 +54,28 @@ export function verifyPassSig(ticketId: string, exp: number, sig: string, now: D
   if (!Number.isInteger(exp) || exp < Math.floor(now.getTime() / 1000)) return false;
   return safeEqual(sig, passMac(ticketId, exp));
 }
+
+const CROCKFORD = '0123456789ABCDEFGHJKMNPQRSTVWXYZ';
+export const CHECK_CODE_LENGTH = 4;
+
+/**
+ * The 4-character code printed next to a ticket's order number. Order numbers run in sequence, so
+ * "order + seat" alone could be guessed at the door; the code cannot be derived without the
+ * secret. Crockford base32 (no I, L, O, U) of the first 20 bits of HMAC-SHA256("check:" + id).
+ */
+export function checkCode(ticketId: string, secret: string = env.QR_SECRET): string {
+  const h = createHmac('sha256', secret).update(`check:${ticketId}`).digest();
+  const n = ((h[0] as number) << 12) | ((h[1] as number) << 4) | ((h[2] as number) >> 4);
+  let out = '';
+  for (let i = CHECK_CODE_LENGTH - 1; i >= 0; i--) out += CROCKFORD[(n >> (i * 5)) & 31];
+  return out;
+}
+
+/** What a person types: any case, and the look-alikes Crockford folds together (O/0, I/L/1). */
+const normalizeCheck = (v: string): string =>
+  v.toUpperCase().replace(/O/g, '0').replace(/[IL]/g, '1');
+
+/** Constant-time check of a typed code against the ticket's. */
+export function verifyCheckCode(ticketId: string, given: string): boolean {
+  return safeEqual(normalizeCheck(given), normalizeCheck(checkCode(ticketId)));
+}
