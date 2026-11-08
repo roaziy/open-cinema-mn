@@ -1,8 +1,9 @@
 import { eq } from 'drizzle-orm';
 import { beforeEach, describe, expect, it } from 'vitest';
 import { db } from '../src/db/client';
-import { users } from '../src/db/schema';
+import { sessions, users } from '../src/db/schema';
 import { verifyPassword } from '../src/lib/password';
+import { issueTokens } from '../src/lib/tokens';
 import { AdminAccountError, createAdmin } from '../src/services/admin-account';
 import { resetDb } from './helpers';
 
@@ -52,6 +53,28 @@ describe('createAdmin', () => {
     const row = await find('boss@example.com');
     expect(row).toMatchObject({ failedLogins: 0, lockedUntil: null });
     expect(await verifyPassword(row?.passwordHash ?? '', 'another-one-22')).toBe(true);
+  });
+
+  it('reset revokes every existing session of that admin only', async () => {
+    await createAdmin(db, { email: 'boss@example.com', password: 'long-enough-1', now });
+    await createAdmin(db, { email: 'other@example.com', password: 'long-enough-1', now });
+    const boss = await find('boss@example.com');
+    const other = await find('other@example.com');
+    if (!boss || !other) throw new Error('setup');
+    await issueTokens(db, boss, now);
+    await issueTokens(db, boss, now);
+    await issueTokens(db, other, now);
+    await createAdmin(db, {
+      email: 'boss@example.com',
+      password: 'another-one-22',
+      resetPassword: true,
+      now,
+    });
+    const rows = await db.select().from(sessions);
+    const of = (id: string) => rows.filter((r) => r.userId === id);
+    expect(of(boss.id)).toHaveLength(2);
+    expect(of(boss.id).every((r) => r.revokedAt !== null)).toBe(true);
+    expect(of(other.id).every((r) => r.revokedAt === null)).toBe(true);
   });
 
   it('rejects bad input and non-admin owners of the email', async () => {

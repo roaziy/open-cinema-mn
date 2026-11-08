@@ -46,7 +46,10 @@ const EnvSchema = z
     // Production refuses the mock provider (anyone can mark an order paid) unless this is set.
     ALLOW_MOCK_PAYMENTS: flag.default(false),
     // Product name used in customer-facing text such as the invoice description.
-    APP_NAME: z.string().min(1).default('Open Cinema'),
+    APP_NAME: z.preprocess(
+      (v) => (typeof v === 'string' && v.trim() === '' ? undefined : v),
+      z.string().default('Open Cinema'),
+    ),
     WALLET_PASS_TYPE_ID: optional(z.string()),
     WALLET_TEAM_ID: optional(z.string()),
     WALLET_ORG_NAME: z.string().default('Open Cinema'),

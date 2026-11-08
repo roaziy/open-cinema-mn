@@ -2,6 +2,7 @@
 
 import { AdminPasswordBody, AuthTokensSchema } from '@open-cinema/shared';
 import { cookies } from 'next/headers';
+import { unstable_rethrow } from 'next/navigation';
 import { apiFetch } from '@/lib/api';
 import { readClaims } from '@/lib/auth/claims';
 import { setAuthCookies } from '@/lib/auth/cookies';
@@ -28,7 +29,8 @@ export async function changePassword(_prev: PasswordState, form: FormData): Prom
       headers: { 'content-type': 'application/json' },
       body: JSON.stringify(parsed.data),
     });
-  } catch {
+  } catch (err) {
+    unstable_rethrow(err);
     return { error: 'Серверт холбогдож чадсангүй. Дахин оролдоно уу.' };
   }
   if (!res.ok) {

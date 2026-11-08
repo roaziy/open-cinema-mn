@@ -3,6 +3,7 @@ import { eq } from 'drizzle-orm';
 import type { Db } from '../db/client';
 import { users } from '../db/schema';
 import { hashPassword } from '../lib/password';
+import { revokeAllSessions } from '../lib/tokens';
 
 export type CreateAdminResult = 'created' | 'password_reset';
 
@@ -17,7 +18,7 @@ export class AdminAccountError extends Error {
 
 /**
  * Creates the first (or another) admin without touching any other data. An existing admin is
- * left alone unless `resetPassword` is set, which also clears a lockout.
+ * left alone unless `resetPassword` is set, which also clears a lockout and revokes every session.
  */
 export async function createAdmin(
   db: Db,
@@ -59,5 +60,6 @@ export async function createAdmin(
       ...(opts.name !== undefined && { name: opts.name }),
     })
     .where(eq(users.id, existing.id));
+  await revokeAllSessions(db, existing.id, opts.now);
   return 'password_reset';
 }

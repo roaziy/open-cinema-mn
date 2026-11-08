@@ -9,6 +9,7 @@ import { Skeleton } from '@/components/skeleton';
 import { EmptyState, ErrorState } from '@/components/state-views';
 import { ticketSummary } from '@/components/ticket-stub';
 import { useI18n } from '@/i18n';
+import { useAuth } from '@/lib/auth';
 import { formatMonthDay } from '@/lib/format';
 import { offlineSince, useTickets } from '@/lib/orders';
 import { colors, radius, space } from '@/theme/tokens';
@@ -19,6 +20,8 @@ type Scope = 'upcoming' | 'past';
 export default function TicketsScreen() {
   const { t } = useI18n();
   const [scope, setScope] = useState<Scope>('upcoming');
+  const { ready, user } = useAuth();
+  const noSession = ready && !user;
   const q = useTickets(scope);
   const { refetch } = q;
   const [pulling, setPulling] = useState(false);
@@ -26,8 +29,9 @@ export default function TicketsScreen() {
   // A ticket bought on another screen shows up the moment this tab is opened.
   useFocusEffect(
     useCallback(() => {
-      refetch();
-    }, [refetch]),
+      // refetch() ignores `enabled`; without a session it would create a guest just to list nothing.
+      if (user) refetch();
+    }, [refetch, user]),
   );
 
   const header = (
@@ -77,7 +81,7 @@ export default function TicketsScreen() {
       ListEmptyComponent={
         q.isError ? (
           <ErrorState error={q.error} onRetry={() => refetch()} />
-        ) : q.isPending ? (
+        ) : q.isPending && !noSession ? (
           <View style={styles.skeletons}>
             <Skeleton height={104} radius={radius.card} />
             <Skeleton height={104} radius={radius.card} />
