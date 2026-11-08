@@ -1,8 +1,8 @@
 import { type AdminMovie, AdminMovieBody, AdminMoviePatch } from '@open-cinema/shared';
-import { desc, eq } from 'drizzle-orm';
+import { and, desc, eq, gt } from 'drizzle-orm';
 import { Router } from 'express';
 import type { AppDeps } from '../../app';
-import { movies } from '../../db/schema';
+import { movies, showtimes } from '../../db/schema';
 import { conflict, isForeignKeyViolation, notFound } from '../../lib/errors';
 import { uuidParam, validate } from '../../lib/http';
 
@@ -21,7 +21,7 @@ const toAdminMovie = (m: typeof movies.$inferSelect): AdminMovie => ({
   status: m.status,
 });
 
-export function createAdminMoviesRouter({ db }: AppDeps): Router {
+export function createAdminMoviesRouter({ db, clock }: AppDeps): Router {
   const r = Router();
 
   r.get('/movies', async (_req, res) => {
@@ -46,6 +46,27 @@ export function createAdminMoviesRouter({ db }: AppDeps): Router {
   r.patch('/movies/:id', validate(AdminMoviePatch), async (req, res) => {
     const id = uuidParam(req);
     const patch = req.body as Record<string, unknown>;
+    if (typeof patch.durationMin === 'number') {
+      // A different running time would shift the cleaning gaps of showings already on sale.
+      const [cur] = await db
+        .select({ durationMin: movies.durationMin })
+        .from(movies)
+        .where(eq(movies.id, id));
+      if (cur && cur.durationMin !== patch.durationMin) {
+        const [future] = await db
+          .select({ id: showtimes.id })
+          .from(showtimes)
+          .where(
+            and(
+              eq(showtimes.movieId, id),
+              eq(showtimes.status, 'scheduled'),
+              gt(showtimes.startsAt, clock()),
+            ),
+          )
+          .limit(1);
+        if (future) throw conflict('movie_locked');
+      }
+    }
     const [row] =
       Object.keys(patch).length > 0
         ? await db.update(movies).set(patch).where(eq(movies.id, id)).returning()

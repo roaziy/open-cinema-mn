@@ -1,6 +1,6 @@
 import { randomUUID } from 'node:crypto';
 import type { BookingCreateBody, BookingView, SeatDelta } from '@open-cinema/shared';
-import { and, asc, eq, gt, inArray, sql } from 'drizzle-orm';
+import { and, asc, eq, gt, inArray, lt, or, sql } from 'drizzle-orm';
 import type { AppDeps } from '../app';
 import type { Db } from '../db/client';
 import {
@@ -117,7 +117,8 @@ async function createInTransaction(
     })
     .from(showtimes)
     .where(eq(showtimes.id, a.showtimeId))
-    .limit(1);
+    .limit(1)
+    .for('share');
   if (!show) throw notFound();
   if (show.status !== 'scheduled' || show.startsAt <= a.now) throw badRequest('showtime_closed');
 
@@ -362,7 +363,10 @@ export async function confirmBooking(db: Db, bookingId: string, deps: Deps): Pro
     if (issued) {
       await tx.update(payments).set({ status: 'paid' }).where(eq(payments.id, pay.id));
       await tx.delete(seatHolds).where(eq(seatHolds.bookingId, bookingId));
-      await tx.update(bookings).set({ status: 'paid' }).where(eq(bookings.id, bookingId));
+      await tx
+        .update(bookings)
+        .set({ status: 'paid', paidAt: deps.clock() })
+        .where(eq(bookings.id, bookingId));
       return { kind: 'paid', seatIds: locked.seatIds };
     }
 
@@ -390,32 +394,52 @@ export async function confirmBooking(db: Db, bookingId: string, deps: Deps): Pro
   }
 }
 
+/** A refund claim older than this is assumed dead (the process crashed mid-call). */
+export const REFUND_CLAIM_TTL_MS = 2 * 60_000;
+
 /**
- * Pays back a failed or cancelled booking whose payment is still `paid`. Runs outside any transaction; a
- * provider error is logged and the sweeper tries again. Safe to call repeatedly.
+ * Pays back a failed or cancelled booking whose payment is still `paid`. Runs outside any
+ * transaction; a provider error is logged and the sweeper tries again. Safe to call repeatedly
+ * and concurrently: the payment row is claimed (`refunding`) before the provider is called, so
+ * the cancel loop and the sweeper never both call it.
  */
 export async function refundOwed(db: Db, bookingId: string, deps: Deps): Promise<void> {
-  const [p] = await db
-    .select()
+  const now = deps.clock();
+  const stale = new Date(now.getTime() - REFUND_CLAIM_TTL_MS);
+  const [owed] = await db
+    .select({ id: payments.id })
     .from(payments)
     .innerJoin(bookings, eq(bookings.id, payments.bookingId))
     .where(
+      and(eq(payments.bookingId, bookingId), inArray(bookings.status, ['failed', 'cancelled'])),
+    );
+  if (!owed) return;
+  const [p] = await db
+    .update(payments)
+    .set({ status: 'refunding', refundClaimedAt: now })
+    .where(
       and(
-        eq(payments.bookingId, bookingId),
-        eq(payments.status, 'paid'),
-        inArray(bookings.status, ['failed', 'cancelled']),
+        eq(payments.id, owed.id),
+        or(
+          eq(payments.status, 'paid'),
+          and(eq(payments.status, 'refunding'), lt(payments.refundClaimedAt, stale)),
+        ),
       ),
     )
-    .then((r) => r.map((x) => x.payments));
+    .returning();
   if (!p) return;
   try {
     await deps.payments.refund(p.invoiceId);
     await db
       .update(payments)
       .set({ status: 'refunded', refundedAt: deps.clock() })
-      .where(and(eq(payments.id, p.id), eq(payments.status, 'paid')));
+      .where(and(eq(payments.id, p.id), eq(payments.status, 'refunding')));
   } catch (err) {
     console.error('refund failed, will retry', err);
+    await db
+      .update(payments)
+      .set({ status: 'paid', refundClaimedAt: null })
+      .where(and(eq(payments.id, p.id), eq(payments.status, 'refunding')));
   }
 }
 

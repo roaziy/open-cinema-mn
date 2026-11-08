@@ -6,7 +6,7 @@ import type {
   ShowtimeCancelResult,
 } from '@open-cinema/shared';
 import { ubDayRange } from '@open-cinema/shared';
-import { and, asc, eq, inArray, sql } from 'drizzle-orm';
+import { and, asc, eq, gt, inArray, sql } from 'drizzle-orm';
 import type { AppDeps } from '../app';
 import type { Db } from '../db/client';
 import {
@@ -19,7 +19,7 @@ import {
   tickets,
   users,
 } from '../db/schema';
-import { conflict, notFound } from '../lib/errors';
+import { badRequest, conflict, notFound } from '../lib/errors';
 import { showtimeCancelledEmail } from '../messages/templates';
 import { refundOwed } from './bookings';
 import { SLOT_COLUMNS } from './catalog-views';
@@ -28,6 +28,7 @@ import type { Tx } from './holds';
 /** Cleaning time kept free between two showings in one hall. */
 export const CLEANING_GAP_MIN = 15;
 const MIN_MS = 60_000;
+const SHOWTIME_LIST_CAP = 500;
 
 const REFUND_NOTE = 'Таны төлбөр буцаагдана.';
 
@@ -75,8 +76,9 @@ async function assertHallExists(tx: Tx, hallId: string): Promise<void> {
   if (!h) throw notFound('hall_not_found');
 }
 
-export async function createShowtime(db: Db, body: AdminShowtimeBody): Promise<string> {
+export async function createShowtime(db: Db, body: AdminShowtimeBody, now: Date): Promise<string> {
   const startsAt = new Date(body.startsAt);
+  if (startsAt <= now) throw badRequest('showtime_in_past');
   return db.transaction(async (tx) => {
     await assertHallExists(tx, body.hallId);
     const durationMin = await durationOf(tx, body.movieId);
@@ -99,11 +101,23 @@ export async function createShowtime(db: Db, body: AdminShowtimeBody): Promise<s
 
 /**
  * Prices may change any time (existing bookings keep what they paid). Moving the showing,
- * switching its hall, film or format is refused once a valid ticket exists.
+ * switching its hall, film or format is refused once anything is committed to it: a valid
+ * ticket, an unexpired hold or a pending booking.
  */
-export async function updateShowtime(db: Db, id: string, patch: AdminShowtimePatch): Promise<void> {
+export async function updateShowtime(
+  db: Db,
+  id: string,
+  patch: AdminShowtimePatch,
+  now: Date,
+): Promise<void> {
   await db.transaction(async (tx) => {
-    const [cur] = await tx.select().from(showtimes).where(eq(showtimes.id, id)).for('update');
+    // NO KEY UPDATE conflicts with the FOR SHARE that holds and bookings take, but not with the
+    // key-share lock a ticket insert takes through its foreign key, so it cannot deadlock confirm.
+    const [cur] = await tx
+      .select()
+      .from(showtimes)
+      .where(eq(showtimes.id, id))
+      .for('no key update');
     if (!cur) throw notFound();
     if (cur.status === 'cancelled') throw conflict('showtime_cancelled');
 
@@ -120,12 +134,25 @@ export async function updateShowtime(db: Db, id: string, patch: AdminShowtimePat
       next.format !== cur.format;
 
     if (moved) {
+      if (next.startsAt.getTime() !== cur.startsAt.getTime() && next.startsAt <= now) {
+        throw badRequest('showtime_in_past');
+      }
       const [sold] = await tx
         .select({ id: tickets.id })
         .from(tickets)
         .where(and(eq(tickets.showtimeId, id), eq(tickets.status, 'valid')))
         .limit(1);
-      if (sold) throw conflict('showtime_locked');
+      const [held] = await tx
+        .select({ id: seatHolds.id })
+        .from(seatHolds)
+        .where(and(eq(seatHolds.showtimeId, id), gt(seatHolds.expiresAt, now)))
+        .limit(1);
+      const [pending] = await tx
+        .select({ id: bookings.id })
+        .from(bookings)
+        .where(and(eq(bookings.showtimeId, id), eq(bookings.status, 'pending')))
+        .limit(1);
+      if (sold || held || pending) throw conflict('showtime_locked');
       await assertHallExists(tx, next.hallId);
       const durationMin = await durationOf(tx, next.movieId);
       await lockHall(tx, next.hallId);
@@ -150,7 +177,7 @@ export async function updateShowtime(db: Db, id: string, patch: AdminShowtimePat
 export async function listShowtimes(
   db: Db,
   q: AdminShowtimeListQuery & { id?: string },
-): Promise<AdminShowtime[]> {
+): Promise<{ items: AdminShowtime[]; truncated: boolean }> {
   const rows = await db
     .select({
       id: showtimes.id,
@@ -188,12 +215,13 @@ export async function listShowtimes(
       ),
     )
     .orderBy(asc(showtimes.startsAt), asc(halls.name))
-    .limit(500);
-  return rows.map(({ durationMin, startsAt, ...r }) => ({
+    .limit(SHOWTIME_LIST_CAP + 1);
+  const items = rows.slice(0, SHOWTIME_LIST_CAP).map(({ durationMin, startsAt, ...r }) => ({
     ...r,
     startsAt: startsAt.toISOString(),
     endsAt: new Date(startsAt.getTime() + durationMin * MIN_MS).toISOString(),
   }));
+  return { items, truncated: rows.length > SHOWTIME_LIST_CAP };
 }
 
 type Cancelled = { bookingIds: string[]; seatIds: string[]; ticketCount: number };
@@ -211,12 +239,13 @@ export async function cancelShowtime(
 ): Promise<ShowtimeCancelResult> {
   const done = await db.transaction(async (tx): Promise<Cancelled | null> => {
     const [show] = await tx
-      .select({ status: showtimes.status })
+      .select({ status: showtimes.status, startsAt: showtimes.startsAt })
       .from(showtimes)
       .where(eq(showtimes.id, showtimeId))
-      .for('update');
+      .for('no key update');
     if (!show) throw notFound();
     if (show.status === 'cancelled') return null;
+    if (show.startsAt <= deps.clock()) throw conflict('showtime_started');
     await tx.update(showtimes).set({ status: 'cancelled' }).where(eq(showtimes.id, showtimeId));
 
     // Lock every booking of the showing first: a confirm racing with us either finished before

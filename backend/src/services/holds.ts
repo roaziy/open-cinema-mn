@@ -97,7 +97,9 @@ async function holdInTransaction(
     .select({ status: showtimes.status, startsAt: showtimes.startsAt, hallId: showtimes.hallId })
     .from(showtimes)
     .where(eq(showtimes.id, showtimeId))
-    .limit(1);
+    .limit(1)
+    // Blocks an admin moving or cancelling the showing until this hold is committed.
+    .for('share');
   if (!show) throw notFound();
   if (show.status !== 'scheduled' || show.startsAt <= now) {
     throw badRequest('showtime_closed');

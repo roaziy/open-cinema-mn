@@ -103,7 +103,7 @@ export async function buildReport(
   };
 }
 
-/** Today against yesterday (sales by purchase time), plus what is coming up. All days are UB days. */
+/** Today against yesterday (sales by payment time), plus what is coming up. All days are UB days. */
 export async function buildDashboard(
   db: Db,
   now: Date,
@@ -113,10 +113,10 @@ export async function buildDashboard(
   const yesterday = { start: new Date(today.start.getTime() - DAY_MS), end: today.start };
   const inBranch = branchId ? eq(halls.branchId, branchId) : undefined;
 
-  const sales = await db
+  const salesRows = await db
     .select({
       total: bookings.total,
-      createdAt: bookings.createdAt,
+      paidAt: bookings.paidAt,
       tickets: sql<number>`cardinality(${bookings.seatIds})::int`,
       movieId: movies.id,
       title: movies.title,
@@ -130,14 +130,16 @@ export async function buildDashboard(
     .where(
       and(
         eq(bookings.status, 'paid'),
-        gte(bookings.createdAt, yesterday.start),
-        lt(bookings.createdAt, today.end),
+        gte(bookings.paidAt, yesterday.start),
+        lt(bookings.paidAt, today.end),
         inBranch,
       ),
     );
+  // paid_at is set whenever a booking turns paid; the filter above already excludes null.
+  const sales = salesRows.flatMap((r) => (r.paidAt ? [{ ...r, paidAt: r.paidAt }] : []));
 
   const day = (r: { start: Date; end: Date }) => {
-    const mine = sales.filter((s) => s.createdAt >= r.start && s.createdAt < r.end);
+    const mine = sales.filter((s) => s.paidAt >= r.start && s.paidAt < r.end);
     return {
       mine,
       revenue: mine.reduce((n, s) => n + s.total, 0),
@@ -158,7 +160,7 @@ export async function buildDashboard(
 
   const hourly = Array.from({ length: 24 }, (_, hour) => ({ hour, revenue: 0, tickets: 0 }));
   for (const s of t.mine) {
-    const hour = new Date(s.createdAt.getTime() + UB_OFFSET_MS).getUTCHours();
+    const hour = new Date(s.paidAt.getTime() + UB_OFFSET_MS).getUTCHours();
     const slot = hourly[hour];
     if (slot) {
       slot.revenue += s.total;

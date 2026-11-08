@@ -22,8 +22,15 @@ const Uuid = z.string().uuid();
 const Hex = z.string().regex(/^#[0-9a-fA-F]{6}$/);
 const IsoInstant = z.string().datetime({ offset: true });
 /** Ulaanbaatar calendar date, YYYY-MM-DD. */
-const UbDate = z.string().regex(/^\d{4}-\d{2}-\d{2}$/);
-const PriceMnt = z.number().int().positive();
+const UbDate = z
+  .string()
+  .regex(/^\d{4}-\d{2}-\d{2}$/)
+  .refine((v) => new Date(`${v}T00:00:00Z`).toISOString().startsWith(v), 'not a real date');
+const HttpUrl = z
+  .string()
+  .max(1000)
+  .regex(/^https?:\/\/[^\s/][^\s]*$/i, 'must be an http(s) URL');
+const PriceMnt = z.number().int().positive().max(10_000_000);
 
 export const AdminBranchBody = z.object({
   name: z.string().trim().min(1).max(120),
@@ -97,9 +104,9 @@ export const AdminMovieBody = z.object({
   durationMin: z.number().int().min(1).max(600),
   ageRating: z.string().trim().min(1).max(10),
   genres: z.array(z.string().trim().min(1).max(40)).max(10).default([]),
-  posterUrl: z.string().min(1).max(1000),
-  backdropUrl: z.string().min(1).max(1000).nullable().default(null),
-  trailerUrl: z.string().min(1).max(1000).nullable().default(null),
+  posterUrl: HttpUrl,
+  backdropUrl: HttpUrl.nullable().default(null),
+  trailerUrl: HttpUrl.nullable().default(null),
   tone: Hex.default('#2E6BF0'),
   releaseDate: UbDate,
   status: z.enum(['now', 'soon', 'archived']).default('soon'),
@@ -113,9 +120,9 @@ export const AdminMoviePatch = z
     durationMin: AdminMovieBody.shape.durationMin,
     ageRating: AdminMovieBody.shape.ageRating,
     genres: z.array(z.string().trim().min(1).max(40)).max(10),
-    posterUrl: z.string().min(1).max(1000),
-    backdropUrl: z.string().min(1).max(1000).nullable(),
-    trailerUrl: z.string().min(1).max(1000).nullable(),
+    posterUrl: HttpUrl,
+    backdropUrl: HttpUrl.nullable(),
+    trailerUrl: HttpUrl.nullable(),
     tone: Hex,
     releaseDate: UbDate,
     status: z.enum(['now', 'soon', 'archived']),
@@ -192,6 +199,13 @@ export const AdminShowtimeSchema = z.object({
   capacity: z.number().int(),
 });
 export type AdminShowtime = z.infer<typeof AdminShowtimeSchema>;
+
+export const AdminShowtimeListSchema = z.object({
+  items: z.array(AdminShowtimeSchema),
+  /** True when more than the cap (500) matched; narrow the filters. */
+  truncated: z.boolean(),
+});
+export type AdminShowtimeList = z.infer<typeof AdminShowtimeListSchema>;
 
 export const ShowtimeCancelResultSchema = z.object({
   id: z.string(),

@@ -16,7 +16,7 @@ export function createAdminShowtimesRouter(deps: AppDeps): Router {
   const r = Router();
 
   const one = async (id: string) => {
-    const [row] = await listShowtimes(db, { id });
+    const [row] = (await listShowtimes(db, { id })).items;
     if (!row) throw notFound();
     return row;
   };
@@ -30,12 +30,12 @@ export function createAdminShowtimesRouter(deps: AppDeps): Router {
   });
 
   r.post('/showtimes', validate(AdminShowtimeBody), async (req, res) => {
-    res.status(201).json(await one(await createShowtime(db, req.body)));
+    res.status(201).json(await one(await createShowtime(db, req.body, deps.clock())));
   });
 
   r.patch('/showtimes/:id', validate(AdminShowtimePatch), async (req, res) => {
     const id = uuidParam(req);
-    await updateShowtime(db, id, req.body);
+    await updateShowtime(db, id, req.body, deps.clock());
     res.json(await one(id));
   });
 
