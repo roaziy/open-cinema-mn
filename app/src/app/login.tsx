@@ -14,6 +14,7 @@ import {
 import Animated, { FadeIn } from 'react-native-reanimated';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Pressable } from '@/components/pressable';
+import { ToastHost } from '@/components/toast-host';
 import { type TKey, useI18n } from '@/i18n';
 import { ApiError } from '@/lib/api';
 import { requestOtp } from '@/lib/auth';
@@ -127,10 +128,12 @@ export default function LoginScreen() {
     if (!target || busy) return;
     setBusy(true);
     setError(null);
+    // The login clears cached data for the old identity: keep the seat names for the message.
+    const seatMap = showtimeId ? qc.getQueryData<SeatMap>(seatKeys.map(showtimeId)) : undefined;
     try {
       const { lostSeatIds } = await loginKeepingHolds(channel, target, digits, showtimeId);
       haptic.success();
-      const lost = lostLabels(showtimeId, lostSeatIds);
+      const lost = lostLabels(seatMap, lostSeatIds);
       if (showtimeId && next === 'checkout' && lost.length === 0) {
         router.dismissTo(`/showtime/${showtimeId}`);
         router.push(`/checkout/${showtimeId}`);
@@ -154,14 +157,11 @@ export default function LoginScreen() {
     }
   };
 
-  const lostLabels = (id: string | undefined, seatIds: string[]): string[] => {
-    if (!id || seatIds.length === 0) return [];
-    const map = qc.getQueryData<SeatMap>(seatKeys.map(id));
-    return seatIds.flatMap((sid) => {
-      const seat = map?.seats.find((s) => s.id === sid);
+  const lostLabels = (map: SeatMap | undefined, seatIds: string[]): string[] =>
+    seatIds.flatMap((sid) => {
+      const seat = map?.seats.find((x) => x.id === sid);
       return seat ? [seatLabel(seat)] : [];
     });
-  };
 
   const onCodeChange = (text: string) => {
     const digits = text.replace(/\D/g, '').slice(0, CODE_LEN);
@@ -183,6 +183,7 @@ export default function LoginScreen() {
       style={styles.root}
       behavior={Platform.OS === 'ios' ? 'padding' : undefined}
     >
+      <ToastHost />
       <View
         style={[styles.body, { paddingTop: space.xxl, paddingBottom: insets.bottom + space.lg }]}
       >
