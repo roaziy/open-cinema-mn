@@ -79,7 +79,7 @@ export function topDownPosition(
   fovDeg: number,
   aspect: number,
 ): { position: Vec3; target: Vec3 } {
-  const depth = ext.maxY + 1.5;
+  const depth = hallDepth(ext);
   const half = hallHalfWidth(ext, hall);
   const h = topDownHeight(half, depth, fovDeg, aspect);
   return { position: [0, h, depth / 2], target: [0, 0, depth / 2] };
@@ -133,4 +133,49 @@ export function coverTransform(imageAspect: number, planeAspect: number) {
   }
   const ry = imageAspect / planeAspect;
   return { rx: 1, ry, ox: 0, oy: (1 - ry) / 2 };
+}
+
+/** Screen wall to back wall: the deepest seat plus a margin. */
+export function hallDepth(ext: Extents): number {
+  return ext.maxY + 1.5;
+}
+
+export type Row = { label: string; y: number; z: number };
+
+/** One entry per row, nearest the screen first. Curved halls use the row's mean position. */
+export function rowsOf(seats: readonly (SeatPos & { rowLabel: string })[]): Row[] {
+  const byRow = new Map<string, { y: number; z: number; n: number }>();
+  for (const s of seats) {
+    const r = byRow.get(s.rowLabel) ?? { y: 0, z: 0, n: 0 };
+    r.y += s.y_m;
+    r.z += s.z_m;
+    r.n++;
+    byRow.set(s.rowLabel, r);
+  }
+  return [...byRow.entries()]
+    .map(([label, r]) => ({ label, y: r.y / r.n, z: r.z / r.n }))
+    .sort((a, b) => a.y - b.y);
+}
+
+export type StepSpan = { from: number; to: number; height: number };
+
+const MIN_STEP_M = 0.05;
+
+/** Floor step per row: it owns the stretch halfway to its neighbours (first from the screen wall, last to the back wall). */
+export function stepSpans(rows: readonly Row[], depth: number): StepSpan[] {
+  return rows.map((r, i) => {
+    const prev = rows[i - 1];
+    const next = rows[i + 1];
+    return {
+      from: prev ? (prev.y + r.y) / 2 : 0,
+      to: next ? (r.y + next.y) / 2 : depth,
+      height: Math.max(r.z, MIN_STEP_M),
+    };
+  });
+}
+
+/** Largest texture side we will upload: the GPU limit, capped (posters are never this big). */
+export function textureFits(width: number, height: number, maxTextureSize: number, cap = 4096) {
+  const limit = Math.min(maxTextureSize > 0 ? maxTextureSize : cap, cap);
+  return width > 0 && height > 0 && Math.max(width, height) <= limit;
 }

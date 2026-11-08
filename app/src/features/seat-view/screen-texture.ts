@@ -1,14 +1,23 @@
 import { Asset } from 'expo-asset';
 import { useEffect, useState } from 'react';
 import * as THREE from 'three';
-import { coverTransform, type ScreenSource } from './camera-math';
+import { coverTransform, type ScreenSource, textureFits } from './camera-math';
+
+const warn = (what: string, e?: unknown) => {
+  if (__DEV__) console.warn(`[seat-view] screen texture: ${what}`, e ? String(e) : '');
+};
 
 /**
  * Film backdrop/poster as a three texture. expo-asset downloads the remote image to a file;
- * r3f's native TextureLoader hands that local uri to expo-gl (texImage2D { localUri }).
- * Returns null while loading or on any failure, so the screen stays a flat film-tone colour.
+ * r3f native's patched TextureLoader hands that local uri to expo-gl (texImage2D { localUri }).
+ * Returns null while loading, on any failure, or when the image is larger than the GPU allows,
+ * so the screen is never left black: it stays the flat film-tone colour.
  */
-export function useScreenTexture(source: ScreenSource, planeAspect: number): THREE.Texture | null {
+export function useScreenTexture(
+  source: ScreenSource,
+  planeAspect: number,
+  maxTextureSize: number,
+): THREE.Texture | null {
   const [texture, setTexture] = useState<THREE.Texture | null>(null);
   const url = source.kind === 'remote' ? source.url : null;
 
@@ -24,11 +33,12 @@ export function useScreenTexture(source: ScreenSource, planeAspect: number): THR
         new THREE.TextureLoader().load(
           uri,
           (t) => {
-            if (cancelled) {
+            const img = t.image as { width: number; height: number };
+            if (cancelled || !textureFits(img.width, img.height, maxTextureSize)) {
+              if (!cancelled) warn(`image ${img.width}x${img.height} too large, using flat tone`);
               t.dispose();
               return;
             }
-            const img = t.image as { width: number; height: number };
             const c = coverTransform(img.width / img.height, planeAspect);
             t.repeat.set(c.rx, c.ry);
             t.offset.set(c.ox, c.oy);
@@ -37,16 +47,16 @@ export function useScreenTexture(source: ScreenSource, planeAspect: number): THR
             setTexture(t);
           },
           undefined,
-          () => {},
+          (e) => warn('decode failed', e),
         );
       })
-      .catch(() => {});
+      .catch((e) => warn('download failed', e));
     return () => {
       cancelled = true;
       loaded?.dispose();
       setTexture(null);
     };
-  }, [url, planeAspect]);
+  }, [url, planeAspect, maxTextureSize]);
 
   return url ? texture : null;
 }

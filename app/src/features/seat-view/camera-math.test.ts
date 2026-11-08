@@ -5,11 +5,15 @@ import {
   eyePosition,
   flightProgress,
   fovForAspect,
+  hallDepth,
   hallExtents,
   lerp3,
   pickScreenSource,
+  rowsOf,
   safeTone,
   screenCenter,
+  stepSpans,
+  textureFits,
   topDownHeight,
   topDownPosition,
 } from './camera-math';
@@ -122,5 +126,38 @@ describe('coverTransform', () => {
     expect(coverTransform(1, 2)).toEqual({ rx: 1, ry: 0.5, ox: 0, oy: 0.25 });
     expect(coverTransform(1.5, 1.5)).toEqual({ rx: 1, ry: 1, ox: 0, oy: 0 });
     expect(coverTransform(0, 1)).toEqual({ rx: 1, ry: 1, ox: 0, oy: 0 });
+  });
+});
+
+describe('rows and steps', () => {
+  const seats = [
+    { rowLabel: 'B', x_m: 0, y_m: 6, z_m: 0.6 },
+    { rowLabel: 'A', x_m: 0, y_m: 4, z_m: 0 },
+    { rowLabel: 'A', x_m: 1, y_m: 4.2, z_m: 0 },
+    { rowLabel: 'C', x_m: 0, y_m: 8, z_m: 1.2 },
+  ];
+  it('groups by row label, nearest the screen first, averaging curved rows', () => {
+    const rows = rowsOf(seats);
+    expect(rows.map((r) => r.label)).toEqual(['A', 'B', 'C']);
+    expect(rows[0]?.y).toBeCloseTo(4.1);
+  });
+  it('gives each row a step from halfway to its neighbours, with a minimum thickness', () => {
+    const rows = rowsOf(seats);
+    const depth = hallDepth(hallExtents(seats));
+    expect(depth).toBe(9.5);
+    const spans = stepSpans(rows, depth);
+    expect(spans[0]).toEqual({ from: 0, to: (4.1 + 6) / 2, height: 0.05 });
+    expect(spans[1]?.from).toBe(spans[0]?.to);
+    expect(spans[2]).toEqual({ from: 7, to: 9.5, height: 1.2 });
+  });
+});
+
+describe('textureFits', () => {
+  it('rejects empty, oversize and over-cap images', () => {
+    expect(textureFits(960, 1440, 8192)).toBe(true);
+    expect(textureFits(0, 10, 8192)).toBe(false);
+    expect(textureFits(5000, 100, 8192)).toBe(false);
+    expect(textureFits(3000, 100, 2048)).toBe(false);
+    expect(textureFits(100, 100, 0)).toBe(true);
   });
 });
