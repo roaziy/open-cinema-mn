@@ -1,15 +1,111 @@
-import { FilmSlate } from 'phosphor-react-native';
-import { TabScreen } from '@/components/tab-screen';
+import { RefreshControl, ScrollView, StyleSheet, Text, View } from 'react-native';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
+import { BranchChip } from '@/components/branch-chip';
+import { HERO_HEIGHT, HeroPager } from '@/components/hero-pager';
+import { PosterRow, PosterRowSkeleton } from '@/components/poster-row';
+import { Skeleton } from '@/components/skeleton';
+import { EmptyState, ErrorState } from '@/components/state-views';
 import { useI18n } from '@/i18n';
-import { hues } from '@/theme/tokens';
+import { useMovies } from '@/lib/catalog';
+import { shortDate } from '@/lib/format';
+import { colors, space } from '@/theme/tokens';
+import { type } from '@/theme/type';
 
 export default function MoviesScreen() {
   const { t } = useI18n();
+  const insets = useSafeAreaInsets();
+  const now = useMovies('now');
+  const soon = useMovies('soon');
+  const refreshing = now.isRefetching || soon.isRefetching;
+
   return (
-    <TabScreen
-      title={t('movies.title')}
-      message={t('movies.empty')}
-      tile={{ sf: 'film.fill', phosphor: FilmSlate, hue: hues.indigo }}
-    />
+    <View style={styles.root}>
+      <ScrollView
+        contentInsetAdjustmentBehavior="never"
+        showsVerticalScrollIndicator={false}
+        contentContainerStyle={{ paddingBottom: insets.bottom + 110 }}
+        refreshControl={
+          <RefreshControl
+            refreshing={refreshing}
+            tintColor={colors.muted}
+            onRefresh={() => {
+              now.refetch();
+              soon.refetch();
+            }}
+          />
+        }
+      >
+        {now.isPending ? (
+          <HeroSkeleton top={insets.top} />
+        ) : now.isError ? (
+          <View style={{ paddingTop: insets.top + 64 }}>
+            <ErrorState error={now.error} onRetry={() => now.refetch()} />
+          </View>
+        ) : now.data.length === 0 ? (
+          <View style={{ paddingTop: insets.top + 64 }}>
+            <EmptyState title={t('home.empty')} />
+          </View>
+        ) : (
+          <HeroPager movies={now.data.slice(0, 5)} />
+        )}
+
+        {now.data && now.data.length > 0 ? (
+          <PosterRow
+            title={t('home.nowShowing')}
+            movies={now.data}
+            caption={(m) => [m.ageRating, m.genres[0]].filter(Boolean).join(' · ')}
+          />
+        ) : null}
+
+        {soon.isPending ? (
+          <View style={styles.soonSkeleton}>
+            <Skeleton width={150} height={24} style={{ marginLeft: space.lg }} />
+            <PosterRowSkeleton>
+              {[0, 1, 2].map((i) => (
+                <Skeleton key={i} width={132} height={198} radius={14} />
+              ))}
+            </PosterRowSkeleton>
+          </View>
+        ) : soon.data && soon.data.length > 0 ? (
+          <PosterRow
+            title={t('home.comingSoon')}
+            movies={soon.data}
+            caption={(m) => t('home.opens', { date: shortDate(m.releaseDate) })}
+          />
+        ) : null}
+      </ScrollView>
+
+      <View style={[styles.header, { top: insets.top + space.sm }]} pointerEvents="box-none">
+        <Text style={styles.headerTitle} accessibilityRole="header">
+          {t('movies.title')}
+        </Text>
+        <BranchChip />
+      </View>
+    </View>
   );
 }
+
+function HeroSkeleton({ top }: { top: number }) {
+  return (
+    <View style={[styles.heroSkeleton, { paddingTop: top + 64 }]}>
+      <Skeleton width={176} height={264} radius={18} />
+      <Skeleton width={200} height={26} />
+      <Skeleton width={140} height={16} />
+    </View>
+  );
+}
+
+const styles = StyleSheet.create({
+  root: { flex: 1, backgroundColor: colors.canvas },
+  header: {
+    position: 'absolute',
+    left: space.lg,
+    right: space.lg,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+  },
+  headerTitle: { ...type.title, color: colors.ink },
+  heroSkeleton: { height: HERO_HEIGHT, alignItems: 'center', gap: space.md },
+  soonSkeleton: { gap: space.md, marginTop: space.xxl },
+});
