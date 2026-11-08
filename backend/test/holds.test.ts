@@ -184,7 +184,7 @@ describe('seat holds', () => {
     await post(app, f.show.id, f.alice.auth, [7, 8, 9, 10, 11].map(f.seatId)).expect(200);
   });
 
-  it('returns an own active hold as-is with a refreshed expiry', async () => {
+  it('returns an own active hold as-is without extending its expiry', async () => {
     const f = await fixture();
     const c = fixedClock('2026-11-08T04:00:00Z');
     const hub = new SeatHub();
@@ -196,9 +196,50 @@ describe('seat holds', () => {
     const again = await post(app, f.show.id, f.alice.auth, [f.seatId(1), f.seatId(2)]).expect(200);
     const same = again.body.holds.find((h: { seatId: string }) => h.seatId === f.seatId(1));
     expect(same.id).toBe(first.body.holds[0].id);
-    expect(same.expiresAt).toBe('2026-11-08T04:14:00.000Z');
+    expect(same.expiresAt).toBe('2026-11-08T04:10:00.000Z');
     expect(seen).toHaveLength(2);
     expect(seen[1]).toEqual([{ seatId: f.seatId(2), state: 'held' }]);
+  });
+
+  it('never lets one user exceed 10 seats with parallel requests', async () => {
+    const f = await fixture();
+    const app = makeTestApp({ clock });
+    const [a, b] = await Promise.all([
+      post(app, f.show.id, f.alice.auth, [1, 2, 3, 4, 5, 6].map(f.seatId)),
+      post(app, f.show.id, f.alice.auth, [7, 8, 9, 10, 11, 12].map(f.seatId)),
+    ]);
+    expect([a.status, b.status].sort()).toEqual([200, 400]);
+    expect((await db.select().from(seatHolds)).length).toBeLessThanOrEqual(10);
+  });
+
+  it('treats identical parallel requests from one user as an idempotent re-hold', async () => {
+    const f = await fixture();
+    const hub = new SeatHub();
+    const seen: unknown[] = [];
+    hub.subscribe(f.show.id, (c) => seen.push(c));
+    const app = makeTestApp({ clock, seatHub: hub });
+    const [a, b] = await Promise.all([
+      post(app, f.show.id, f.alice.auth, [f.seatId(1), f.seatId(2)]),
+      post(app, f.show.id, f.alice.auth, [f.seatId(1), f.seatId(2)]),
+    ]);
+    expect([a.status, b.status]).toEqual([200, 200]);
+    expect(a.body.holds.map((h: { id: string }) => h.id).sort()).toEqual(
+      b.body.holds.map((h: { id: string }) => h.id).sort(),
+    );
+    expect(seen).toHaveLength(1);
+  });
+
+  it('does not deadlock when two users hold the same seats in opposite order', async () => {
+    const f = await fixture();
+    const app = makeTestApp({ clock });
+    for (let i = 0; i < 4; i++) {
+      await db.delete(seatHolds);
+      const [a, b] = await Promise.all([
+        post(app, f.show.id, f.alice.auth, [f.seatId(1), f.seatId(2)]),
+        post(app, f.show.id, f.bob.auth, [f.seatId(2), f.seatId(1)]),
+      ]);
+      expect([a.status, b.status].sort()).toEqual([200, 409]);
+    }
   });
 
   it('rejects a blocked seat and a seat with a valid ticket', async () => {
