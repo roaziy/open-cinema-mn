@@ -5,9 +5,11 @@ import {
   AdminHallSchema,
   AdminMovieSchema,
   AdminReportSchema,
+  AdminScanPageSchema,
   AdminShowtimeListSchema,
   AdminStaffSchema,
   BranchSchema,
+  TodayShowtimeSchema,
 } from '@open-cinema/shared';
 import { notFound, unstable_rethrow } from 'next/navigation';
 import { z } from 'zod';
@@ -55,3 +57,14 @@ export const getStaff = () => apiGet('/admin/staff', z.array(AdminStaffSchema));
 
 export const getReport = (p: { from: string; to: string; branchId?: string }) =>
   apiGet(`/admin/reports${q(p)}`, AdminReportSchema);
+
+export const getScans = (p: {
+  branchId?: string;
+  date?: string;
+  showtimeId?: string;
+  result?: string;
+  cursor?: string;
+}) => apiGet(`/admin/scans${q(p)}`, AdminScanPageSchema);
+
+/** Today's showtimes of every branch (the current business day). */
+export const getTodayAll = () => apiGet('/staff/today', z.array(TodayShowtimeSchema));

@@ -1,3 +1,4 @@
+import Link from 'next/link';
 import { Poster } from '@/components/ui/Poster';
 import { clockUb, count } from '@/lib/format';
 import type { TodayShowtime } from '@/lib/schemas';
@@ -17,7 +18,16 @@ function phaseOf(startsAt: string, now: number): Phase {
 }
 
 /** Today's showings at this branch with door progress; the ones being let in now are marked. */
-export function TodayList({ rows, now }: { rows: TodayShowtime[]; now: number }) {
+export function TodayList({
+  rows,
+  now,
+  scansHref,
+}: {
+  rows: TodayShowtime[];
+  now: number;
+  /** Where a row's "scans" link leads (admin only). */
+  scansHref?: (row: TodayShowtime) => string;
+}) {
   return (
     <ul className="flex flex-col gap-2">
       {rows.map((r) => {
@@ -65,6 +75,14 @@ export function TodayList({ rows, now }: { rows: TodayShowtime[]; now: number })
                   {' / '}
                   {count(r.sold)}
                 </p>
+                {scansHref && (
+                  <Link
+                    href={scansHref(r)}
+                    className="focus-ring shrink-0 rounded-tile px-2 py-1 text-[13px] font-medium text-body hover:bg-white/[0.06] hover:text-ink"
+                  >
+                    Шалгалт
+                  </Link>
+                )}
               </div>
             </div>
           </li>

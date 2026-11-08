@@ -13,7 +13,7 @@ export const VIBRATION: Record<SoundKind, number[]> = {
   reject: [140, 70, 140, 70, 140],
 };
 
-const TITLES: Record<ScanResultCode, string> = {
+export const RESULT_TITLES: Record<ScanResultCode, string> = {
   admitted: 'Орууллаа',
   repeat: 'Дахин уншууллаа',
   already_used: 'Ашиглагдсан билет',
@@ -23,7 +23,7 @@ const TITLES: Record<ScanResultCode, string> = {
   undone: 'Буцаалаа',
 };
 
-const TONES: Record<ScanResultCode, Tone> = {
+export const RESULT_TONES: Record<ScanResultCode, Tone> = {
   admitted: 'admit',
   repeat: 'neutral',
   undone: 'neutral',
@@ -36,12 +36,12 @@ const TONES: Record<ScanResultCode, Tone> = {
 export type Via = 'qr' | 'manual';
 
 export function cardFor(r: ScanResult, via: Via = 'qr'): CardInfo {
-  const tone = TONES[r.result];
+  const tone = RESULT_TONES[r.result];
   const sound: SoundKind = tone === 'admit' ? 'admit' : tone === 'neutral' ? 'repeat' : 'reject';
   const notFound = via === 'manual' && r.result === 'invalid' && r.ticket === null;
   return {
     tone,
-    title: notFound ? 'Билет олдсонгүй' : TITLES[r.result],
+    title: notFound ? 'Билет олдсонгүй' : RESULT_TITLES[r.result],
     detail: notFound
       ? 'Энэ салбарт өнөөдрийн захиалга олдсонгүй. Дугаар, суудал, кодоо шалгана уу.'
       : detailFor(r),

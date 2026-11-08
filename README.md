@@ -40,6 +40,8 @@ the screen, how much of your view it fills, and how far off-center you sit.
 
 - Branches, halls with seat geometry, films, showtimes and prices
 - Sales reports
+- Today's showtimes across branches with sold and admitted counts
+- Scan history across branches: filter by branch, day and result, down to a single showtime
 - Staff accounts per branch
 
 **Staff web (PWA, same app)**

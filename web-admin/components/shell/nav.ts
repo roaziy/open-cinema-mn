@@ -88,8 +88,6 @@ export const ADMIN_NAV: NavGroupDef[] = [
   },
 ];
 
-export const ADMIN_ITEMS = ADMIN_NAV.flatMap((g) => g.items);
-
 export function isActive(pathname: string, href: string): boolean {
   if (href === '/admin') return pathname === '/admin';
   return pathname === href || pathname.startsWith(`${href}/`);
