@@ -1,5 +1,5 @@
 import type { TicketView } from '@open-cinema/shared';
-import { and, asc, desc, eq, type SQL, sql } from 'drizzle-orm';
+import { asc, desc, eq, type SQL, sql } from 'drizzle-orm';
 import type { Db } from '../db/client';
 import { bookings, branches, halls, movies, seats, showtimes, tickets } from '../db/schema';
 import { env } from '../env';
@@ -15,7 +15,7 @@ export type TicketScope = 'upcoming' | 'past';
  */
 export async function ticketViews(
   db: Db,
-  where: SQL | undefined,
+  where: SQL,
   now: Date,
   order: 'asc' | 'desc' = 'asc',
 ): Promise<TicketView[]> {
@@ -57,7 +57,10 @@ export async function ticketViews(
     movie: toSummary(r.movie),
     branch: toBranch(r.branch),
     qrToken: r.ticket.qrToken,
-    passUrl: wallet ? `${env.API_PUBLIC_URL}${signPassUrl(r.ticket.id, now)}` : null,
+    passUrl:
+      wallet && r.ticket.status === 'valid'
+        ? `${env.API_PUBLIC_URL}${signPassUrl(r.ticket.id, now)}`
+        : null,
   }));
 }
 
@@ -70,7 +73,7 @@ export function myTickets(db: Db, userId: string, scope: TicketScope, now: Date)
       : sql`${ends} <= ${now.toISOString()}::timestamptz`;
   return ticketViews(
     db,
-    and(eq(bookings.userId, userId), sql`${bookings.status} in ('paid', 'cancelled')`, when),
+    sql`${eq(bookings.userId, userId)} and ${bookings.status} in ('paid', 'cancelled') and ${when}`,
     now,
     scope === 'upcoming' ? 'asc' : 'desc',
   );

@@ -1,6 +1,12 @@
 import { z } from 'zod';
 import { SeatKindSchema } from './admin';
-import { BranchSchema, MovieSummarySchema, ShowtimeFormatSchema } from './catalog';
+import { BookingStatusSchema } from './booking';
+import {
+  BranchSchema,
+  MovieSummarySchema,
+  SeatMapShowtimeSchema,
+  ShowtimeFormatSchema,
+} from './catalog';
 
 export const TicketViewSchema = z.object({
   id: z.string(),
@@ -17,3 +23,15 @@ export const TicketViewSchema = z.object({
   passUrl: z.string().nullable(),
 });
 export type TicketView = z.infer<typeof TicketViewSchema>;
+
+/** Response of the public `GET /t/:linkToken`: no contact details, no invoice. */
+export const PublicTicketsSchema = z.object({
+  booking: z.object({
+    orderNo: z.string(),
+    status: BookingStatusSchema,
+    total: z.number().int(),
+    showtime: SeatMapShowtimeSchema,
+  }),
+  tickets: z.array(TicketViewSchema),
+});
+export type PublicTickets = z.infer<typeof PublicTicketsSchema>;

@@ -1,4 +1,5 @@
-import { and, eq } from 'drizzle-orm';
+import type { PublicTickets } from '@open-cinema/shared';
+import { eq, sql } from 'drizzle-orm';
 import { Router } from 'express';
 import { z } from 'zod';
 import type { AppDeps } from '../app';
@@ -10,7 +11,7 @@ import { verifyLink, verifyPassSig } from '../lib/sign';
 import { requireAuth } from '../middleware/auth';
 import { bookingView } from '../services/bookings';
 import { myTickets, ticketViews } from '../services/tickets';
-import { buildPass, walletConfig } from '../wallet/pass';
+import { buildPass, WalletUnavailableError, walletConfig } from '../wallet/pass';
 
 const UUID = z.string().uuid();
 const ScopeQuery = z.object({ scope: z.enum(['upcoming', 'past']).default('upcoming') });
@@ -34,7 +35,7 @@ export function createTicketsRouter(deps: AppDeps, limiters: Limiters): Router {
     // Someone else's ticket looks exactly like a missing one.
     const [view] = await ticketViews(
       db,
-      and(eq(tickets.id, id), eq(bookings.userId, user.id)),
+      sql`${eq(tickets.id, id)} and ${eq(bookings.userId, user.id)}`,
       clock(),
     );
     if (!view) throw notFound();
@@ -45,9 +46,8 @@ export function createTicketsRouter(deps: AppDeps, limiters: Limiters): Router {
   r.get('/t/:linkToken', limiters.ticketLink, async (req, res) => {
     const bookingId = verifyLink(String(req.params.linkToken));
     if (!bookingId || !UUID.safeParse(bookingId).success) throw notFound();
-    const view = await bookingView(db, bookingId, clock()).catch(() => null);
-    if (!view) throw notFound();
-    res.json({
+    const view = await bookingView(db, bookingId, clock());
+    const body: PublicTickets = {
       booking: {
         orderNo: view.orderNo,
         status: view.status,
@@ -55,7 +55,8 @@ export function createTicketsRouter(deps: AppDeps, limiters: Limiters): Router {
         showtime: view.showtime,
       },
       tickets: await ticketViews(db, eq(tickets.bookingId, bookingId), clock()),
-    });
+    };
+    res.json(body);
   });
 
   // Authorised by a short-lived signature in the URL, so the Wallet app can fetch it unauthenticated.
@@ -70,10 +71,16 @@ export function createTicketsRouter(deps: AppDeps, limiters: Limiters): Router {
     }
     const [view] = await ticketViews(db, eq(tickets.id, id), clock());
     if (view?.status !== 'valid') throw notFound();
-    res
-      .type('application/vnd.apple.pkpass')
-      .set('Content-Disposition', `attachment; filename="ticket-${view.orderNo}.pkpass"`)
-      .send(await buildPass(cfg, view));
+    try {
+      const pkpass = await buildPass(cfg, view);
+      res
+        .type('application/vnd.apple.pkpass')
+        .set('Content-Disposition', `attachment; filename="ticket-${view.orderNo}.pkpass"`)
+        .send(pkpass);
+    } catch (err) {
+      if (!(err instanceof WalletUnavailableError)) throw err;
+      res.status(503).json({ error: 'wallet_not_configured' });
+    }
   });
 
   return r;
