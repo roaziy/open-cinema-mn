@@ -101,7 +101,12 @@ export async function runSweep(
     .select({ id: bookings.id })
     .from(bookings)
     .innerJoin(payments, eq(payments.bookingId, bookings.id))
-    .where(and(inArray(bookings.status, ['failed', 'cancelled']), eq(payments.status, 'paid')));
+    .where(
+      and(
+        inArray(bookings.status, ['failed', 'cancelled']),
+        inArray(payments.status, ['paid', 'refunding']),
+      ),
+    );
   await each(
     owed.map((o) => o.id),
     hooks.refund,

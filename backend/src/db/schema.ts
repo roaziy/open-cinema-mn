@@ -33,7 +33,13 @@ export const bookingStatus = pgEnum('booking_status', [
   'expired',
   'cancelled',
 ]);
-export const paymentStatus = pgEnum('payment_status', ['pending', 'paid', 'failed', 'refunded']);
+export const paymentStatus = pgEnum('payment_status', [
+  'pending',
+  'paid',
+  'refunding',
+  'failed',
+  'refunded',
+]);
 export const ticketStatus = pgEnum('ticket_status', ['valid', 'cancelled']);
 export const scanResult = pgEnum('scan_result', [
   'admitted',
@@ -202,6 +208,7 @@ export const bookings = pgTable(
     seatIds: uuid('seat_ids').array().notNull().default(sql`'{}'::uuid[]`),
     expiresAt: ts('expires_at'),
     seatsLost: boolean('seats_lost').notNull().default(false),
+    paidAt: ts('paid_at'),
     createdAt: createdAt(),
   },
   (t) => [
@@ -247,6 +254,8 @@ export const payments = pgTable(
     status: paymentStatus('status').notNull().default('pending'),
     amount: integer('amount').notNull(),
     raw: jsonb('raw'),
+    // Set while a refund call to the provider is in flight; a stale claim can be taken over.
+    refundClaimedAt: ts('refund_claimed_at'),
     refundedAt: ts('refunded_at'),
     createdAt: createdAt(),
   },

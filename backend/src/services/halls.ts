@@ -8,9 +8,11 @@ import type {
 import { generateSeats } from '@open-cinema/shared';
 import { and, asc, eq, gt, inArray, sql } from 'drizzle-orm';
 import type { Db } from '../db/client';
-import { halls, seats, showtimes, tickets } from '../db/schema';
+import { bookings, halls, seatHolds, seats, showtimes, tickets } from '../db/schema';
 import { conflict, isForeignKeyViolation, notFound } from '../lib/errors';
+import type { SeatHub } from '../lib/seat-hub';
 import type { Tx } from './holds';
+import { nonFreeSeats } from './seat-state';
 
 const INSERT_CHUNK = 1000;
 
@@ -123,9 +125,15 @@ export async function createHall(
 
 /**
  * Replaces all seats of a hall. Refused once any ticket (of any status) ever referenced one of
- * its seats: `tickets.seat_id` is a restrict foreign key, and old tickets must keep their seat.
+ * its seats (`tickets.seat_id` is a restrict foreign key, and old tickets must keep their seat),
+ * and while a customer is mid-purchase: an unexpired hold or a pending booking in the hall.
  */
-export async function regenerateHall(db: Db, id: string, gen: HallGenParams): Promise<void> {
+export async function regenerateHall(
+  db: Db,
+  id: string,
+  gen: HallGenParams,
+  now: Date,
+): Promise<void> {
   try {
     await db.transaction(async (tx) => {
       const [hall] = await tx
@@ -141,6 +149,19 @@ export async function regenerateHall(db: Db, id: string, gen: HallGenParams): Pr
         .where(eq(seats.hallId, id))
         .limit(1);
       if (used) throw conflict('hall_locked');
+      const [held] = await tx
+        .select({ id: seatHolds.id })
+        .from(seatHolds)
+        .innerJoin(seats, eq(seats.id, seatHolds.seatId))
+        .where(and(eq(seats.hallId, id), gt(seatHolds.expiresAt, now)))
+        .limit(1);
+      const [pending] = await tx
+        .select({ id: bookings.id })
+        .from(bookings)
+        .innerJoin(showtimes, eq(showtimes.id, bookings.showtimeId))
+        .where(and(eq(showtimes.hallId, id), eq(bookings.status, 'pending')))
+        .limit(1);
+      if (held || pending) throw conflict('hall_locked');
       await tx.delete(seats).where(eq(seats.hallId, id));
       await insertSeats(tx, id, gen);
     });
@@ -151,9 +172,14 @@ export async function regenerateHall(db: Db, id: string, gen: HallGenParams): Pr
   }
 }
 
-/** Sets seat kinds in a hall. A seat with a live ticket on an upcoming showing cannot be blocked. */
+/**
+ * Sets seat kinds in a hall. A seat with a live ticket on an upcoming showing, or an unexpired
+ * hold, cannot be blocked. Afterwards the changed seats' real state is pushed to open seat maps
+ * of the hall's upcoming showings so clients refresh them.
+ */
 export async function changeSeatKinds(
   db: Db,
+  seatHub: SeatHub,
   hallId: string,
   changes: { seatId: string; kind: SeatKind }[],
   now: Date,
@@ -185,10 +211,34 @@ export async function changeSeatKinds(
         )
         .limit(1);
       if (sold.length > 0) throw conflict('seat_sold');
+      const held = await tx
+        .select({ id: seatHolds.id })
+        .from(seatHolds)
+        .where(and(inArray(seatHolds.seatId, blocking), gt(seatHolds.expiresAt, now)))
+        .limit(1);
+      if (held.length > 0) throw conflict('seat_held');
     }
     for (const kind of new Set(final.values())) {
       const group = ids.filter((i) => final.get(i) === kind);
       await tx.update(seats).set({ kind }).where(inArray(seats.id, group));
     }
   });
+
+  const upcoming = await db
+    .select({ id: showtimes.id })
+    .from(showtimes)
+    .where(
+      and(
+        eq(showtimes.hallId, hallId),
+        eq(showtimes.status, 'scheduled'),
+        gt(showtimes.startsAt, now),
+      ),
+    );
+  for (const show of upcoming) {
+    const taken = await nonFreeSeats(db, show.id, now);
+    seatHub.publish(
+      show.id,
+      ids.map((seatId) => ({ seatId, state: taken.get(seatId) ?? ('free' as const) })),
+    );
+  }
 }

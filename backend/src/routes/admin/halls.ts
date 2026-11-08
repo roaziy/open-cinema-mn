@@ -20,7 +20,7 @@ import {
   regenerateHall,
 } from '../../services/halls';
 
-export function createAdminHallsRouter({ db, clock }: AppDeps): Router {
+export function createAdminHallsRouter({ db, clock, seatHub }: AppDeps): Router {
   const r = Router();
 
   r.get('/halls', validate(AdminHallListQuery, 'query'), async (_req, res) => {
@@ -76,13 +76,13 @@ export function createAdminHallsRouter({ db, clock }: AppDeps): Router {
 
   r.put('/halls/:id/regenerate', validate(AdminHallRegenerateBody), async (req, res) => {
     const id = uuidParam(req);
-    await regenerateHall(db, id, req.body.gen);
+    await regenerateHall(db, id, req.body.gen, clock());
     res.json(await hallDetail(db, id));
   });
 
   r.patch('/halls/:id/seats', validate(AdminSeatChangesBody), async (req, res) => {
     const id = uuidParam(req);
-    await changeSeatKinds(db, id, req.body.changes, clock());
+    await changeSeatKinds(db, seatHub, id, req.body.changes, clock());
     res.json(await hallDetail(db, id));
   });
 

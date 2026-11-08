@@ -9,6 +9,10 @@ export interface PaymentProvider {
     expiresAt: Date;
   }>;
   checkPayment(invoiceId: string): Promise<'pending' | 'paid' | 'failed'>;
+  /**
+   * Must be idempotent per invoice: refunding an invoice that is already refunded is a success,
+   * not an error. The app retries after crashes and provider errors and relies on this.
+   */
   refund(invoiceId: string): Promise<void>;
 }
 

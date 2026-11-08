@@ -1,6 +1,6 @@
 import { eq } from 'drizzle-orm';
 import request from 'supertest';
-import { beforeEach, describe, expect, it } from 'vitest';
+import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { db } from '../src/db/client';
 import {
   bookings,
@@ -192,6 +192,14 @@ describe('admin access', () => {
   it('rejects anonymous callers with 401 and customers and staff with 403', async () => {
     const s = setup();
     const f = await fixture();
+    const door = one(
+      (
+        await db
+          .insert(users)
+          .values({ role: 'staff', phone: '+97688000001', branchId: f.branch.id })
+          .returning()
+      )[0],
+    );
     await request(s.app).get('/v1/admin/branches').expect(401);
     for (const path of ['/branches', '/halls', '/movies', '/showtimes', '/staff', '/dashboard']) {
       await request(s.app)
@@ -201,7 +209,7 @@ describe('admin access', () => {
     }
     await request(s.app)
       .post(`/v1/admin/showtimes/${uuid()}/cancel`)
-      .set('Authorization', await as(s, { id: f.bob.id, role: 'staff' }))
+      .set('Authorization', await as(s, door))
       .expect(403);
   });
 });
@@ -602,6 +610,7 @@ describe('cancelling a showtime', () => {
   });
 
   it('keeps a failed refund owed and lets the sweeper finish it', async () => {
+    const quiet = vi.spyOn(console, 'error').mockImplementation(() => {});
     class FlakyRefund extends MockPaymentProvider {
       failing = true;
       override async refund(invoiceId: string) {
@@ -631,6 +640,8 @@ describe('cancelling a showtime', () => {
       refund: (id) => refundOwed(db, id, s.deps),
     });
     expect((await paymentOf(booking)).status).toBe('refunded');
+    expect(quiet).toHaveBeenCalled();
+    quiet.mockRestore();
   });
 
   it('refunds a payment that lands after the cancellation instead of issuing a ticket', async () => {
@@ -819,5 +830,341 @@ describe('reports and dashboard', () => {
       hallName: 'Hall 1',
       capacity: 6,
     });
+  });
+});
+
+const JPEG = Buffer.concat([Buffer.from([0xff, 0xd8, 0xff, 0xe0]), Buffer.alloc(32)]);
+const WEBP = Buffer.concat([
+  Buffer.from('RIFF'),
+  Buffer.from([0x20, 0, 0, 0]),
+  Buffer.from('WEBP'),
+  Buffer.alloc(32),
+]);
+
+describe('uploads by type', () => {
+  it('accepts JPEG and WebP and names them by their real type', async () => {
+    const s = setup();
+    const f = await fixture();
+    const auth = await as(s, f.admin);
+    const jpg = await request(s.app)
+      .post('/v1/admin/uploads')
+      .set('Authorization', auth)
+      .attach('file', JPEG, { filename: 'a.jpeg', contentType: 'image/jpeg' })
+      .expect(201);
+    const webp = await request(s.app)
+      .post('/v1/admin/uploads')
+      .set('Authorization', auth)
+      .attach('file', WEBP, { filename: 'a.webp', contentType: 'image/webp' })
+      .expect(201);
+    expect(jpg.body.url).toMatch(/\.jpg$/);
+    expect(webp.body.url).toMatch(/\.webp$/);
+  });
+
+  it('names a spoofed upload by its bytes, never its claimed name or type', async () => {
+    const s = setup();
+    const f = await fixture();
+    const auth = await as(s, f.admin);
+    // a JPEG sent as "x.png" is stored as jpg
+    const real = await request(s.app)
+      .post('/v1/admin/uploads')
+      .set('Authorization', auth)
+      .attach('file', JPEG, { filename: 'x.png', contentType: 'image/png' })
+      .expect(201);
+    expect(real.body.url).toMatch(/\.jpg$/);
+    // text pretending to be a png is refused
+    await request(s.app)
+      .post('/v1/admin/uploads')
+      .set('Authorization', auth)
+      .attach('file', Buffer.from('not an image at all'), {
+        filename: 'x.png',
+        contentType: 'image/png',
+      })
+      .expect(415);
+    expect(s.stored).toHaveLength(1);
+  });
+});
+
+async function secondHall(f: F) {
+  const hall = one(
+    (
+      await db
+        .insert(halls)
+        .values({
+          branchId: f.branch.id,
+          name: 'Hall 2',
+          screenWidthM: 10,
+          screenHeightM: 5,
+          screenXM: 0,
+        })
+        .returning()
+    )[0],
+  );
+  await db.insert(seats).values({ hallId: hall.id, rowLabel: 'A', number: 1, xM: 0, yM: 1 });
+  return hall;
+}
+
+describe('moving showings with customers mid-purchase', () => {
+  it('refuses a hall change while a hold or a pending booking exists', async () => {
+    const s = setup();
+    const f = await fixture();
+    const a = await api(s, f);
+    const other = await secondHall(f);
+    const show = await addShowtime(f, '2026-11-09T12:00:00Z');
+    const held = await createHolds(db, {
+      showtimeId: show.id,
+      seatIds: [f.seatId(1)],
+      userId: f.alice.id,
+      now: s.clock(),
+    });
+    const res = await a('patch', `/showtimes/${show.id}`).send({ hallId: other.id }).expect(409);
+    expect(res.body.error).toBe('showtime_locked');
+    await request(s.app)
+      .post('/v1/bookings')
+      .set('Authorization', await as(s, f.alice))
+      .send({ holdIds: held.holds.map((h) => h.id), idempotencyKey: uuid() })
+      .expect(200);
+    await a('patch', `/showtimes/${show.id}`)
+      .send({ startsAt: '2026-11-09T15:00:00Z' })
+      .expect(409);
+    // prices stay editable
+    await a('patch', `/showtimes/${show.id}`).send({ priceStandard: 11000 }).expect(200);
+    // once the hold has expired and the booking with it, the move goes through
+    s.clock.advance(11 * MIN);
+    await runSweep(db, s.clock(), s.seatHub);
+    await a('patch', `/showtimes/${show.id}`).send({ hallId: other.id }).expect(200);
+  });
+
+  it('refuses to create or move a showing into the past and to cancel one that started', async () => {
+    const s = setup();
+    const f = await fixture();
+    const a = await api(s, f);
+    const base = {
+      movieId: f.movie.id,
+      hallId: f.hall.id,
+      priceStandard: 10000,
+      pricePremium: 15000,
+    };
+    const past = await a('post', '/showtimes')
+      .send({ ...base, startsAt: '2026-11-08T09:00:00Z' })
+      .expect(400);
+    expect(past.body.error).toBe('showtime_in_past');
+    const ok = await a('post', '/showtimes')
+      .send({ ...base, startsAt: '2026-11-09T12:00:00Z' })
+      .expect(201);
+    await a('patch', `/showtimes/${ok.body.id}`)
+      .send({ startsAt: '2026-11-07T12:00:00Z' })
+      .expect(400);
+    s.clock.advance(48 * 60 * MIN);
+    const later = await api(s, f);
+    const started = await later('post', `/showtimes/${ok.body.id}/cancel`).expect(409);
+    expect(started.body.error).toBe('showtime_started');
+  });
+
+  it('lets exactly one of two concurrent creates win the same hall slot', async () => {
+    const s = setup();
+    const f = await fixture();
+    const a = await api(s, f);
+    const body = {
+      movieId: f.movie.id,
+      hallId: f.hall.id,
+      startsAt: '2026-11-09T12:00:00Z',
+      priceStandard: 10000,
+      pricePremium: 15000,
+    };
+    const res = await Promise.all([
+      a('post', '/showtimes').send(body),
+      a('post', '/showtimes').send(body),
+    ]);
+    expect(res.map((r) => r.status).sort()).toEqual([201, 409]);
+    expect(await db.select().from(showtimes)).toHaveLength(1);
+  });
+
+  it('cancel and a confirm paused mid-transaction both finish without a 500', async () => {
+    const s = setup();
+    const f = await fixture();
+    const a = await api(s, f);
+    const show = await addShowtime(f, '2026-11-08T11:00:00Z');
+    const held = await createHolds(db, {
+      showtimeId: show.id,
+      seatIds: [f.seatId(1)],
+      userId: f.alice.id,
+      now: s.clock(),
+    });
+    const created = await request(s.app)
+      .post('/v1/bookings')
+      .set('Authorization', await as(s, f.alice))
+      .send({ holdIds: held.holds.map((h) => h.id), idempotencyKey: uuid() })
+      .expect(200);
+    const bookingId = created.body.id as string;
+    const pay = await paymentOf(bookingId);
+    await new MockPaymentProvider(db, s.clock).markPaid(pay.invoiceId);
+
+    let release: () => void = () => {};
+    const gate = new Promise<void>((r) => {
+      release = r;
+    });
+    let locked: () => void = () => {};
+    const lockedBooking = new Promise<void>((r) => {
+      locked = r;
+    });
+    // What confirm does inside its transaction, held open before the commit.
+    const confirmLike = db.transaction(async (tx) => {
+      await tx.select().from(bookings).where(eq(bookings.id, bookingId)).for('update');
+      await tx.insert(tickets).values({
+        bookingId,
+        showtimeId: show.id,
+        seatId: f.seatId(1),
+        qrToken: 'qr',
+      });
+      await tx.update(payments).set({ status: 'paid' }).where(eq(payments.id, pay.id));
+      await tx.delete(seatHolds).where(eq(seatHolds.bookingId, bookingId));
+      await tx
+        .update(bookings)
+        .set({ status: 'paid', paidAt: s.clock() })
+        .where(eq(bookings.id, bookingId));
+      locked();
+      await gate;
+    });
+    await lockedBooking;
+    const cancelling = a('post', `/showtimes/${show.id}/cancel`).then((r) => r);
+    await new Promise((r) => setTimeout(r, 200));
+    release();
+    await confirmLike;
+    const res = await cancelling;
+    expect(res.status).toBe(200);
+    expect(res.body).toMatchObject({ cancelledBookings: 1, cancelledTickets: 1 });
+    expect((await bookingOf(bookingId)).status).toBe('cancelled');
+    expect((await paymentOf(bookingId)).status).toBe('refunded');
+  });
+});
+
+describe('hall and movie edits respect customers', () => {
+  it('locks regeneration and seat blocking while holds or pending bookings exist, and republishes', async () => {
+    const s = setup();
+    const f = await fixture();
+    const a = await api(s, f);
+    const show = await addShowtime(f, '2026-11-09T12:00:00Z');
+    await createHolds(db, {
+      showtimeId: show.id,
+      seatIds: [f.seatId(1)],
+      userId: f.alice.id,
+      now: s.clock(),
+    });
+    const lockedRegen = await a('put', `/halls/${f.hall.id}/regenerate`)
+      .send({ gen: GEN })
+      .expect(409);
+    expect(lockedRegen.body.error).toBe('hall_locked');
+    const held = await a('patch', `/halls/${f.hall.id}/seats`)
+      .send({ changes: [{ seatId: f.seatId(1), kind: 'blocked' }] })
+      .expect(409);
+    expect(held.body.error).toBe('seat_held');
+
+    const deltas: { seatId: string; state: string }[] = [];
+    s.seatHub.subscribe(show.id, (c) => deltas.push(...c));
+    await a('patch', `/halls/${f.hall.id}/seats`)
+      .send({ changes: [{ seatId: f.seatId(2), kind: 'premium' }] })
+      .expect(200);
+    expect(deltas).toEqual([{ seatId: f.seatId(2), state: 'free' }]);
+
+    s.clock.advance(11 * MIN);
+    await runSweep(db, s.clock(), s.seatHub);
+    await a('put', `/halls/${f.hall.id}/regenerate`).send({ gen: GEN }).expect(200);
+  });
+
+  it('refuses a new running time while future showings exist', async () => {
+    const s = setup();
+    const f = await fixture();
+    const a = await api(s, f);
+    await a('patch', `/movies/${f.movie.id}`).send({ durationMin: 120 }).expect(200);
+    await addShowtime(f, '2026-11-09T12:00:00Z');
+    const res = await a('patch', `/movies/${f.movie.id}`).send({ durationMin: 90 }).expect(409);
+    expect(res.body.error).toBe('movie_locked');
+    await a('patch', `/movies/${f.movie.id}`)
+      .send({ durationMin: 120, title: 'Renamed' })
+      .expect(200);
+  });
+});
+
+describe('admin validation', () => {
+  it('rejects absurd prices, impossible dates and non-http urls', async () => {
+    const s = setup();
+    const f = await fixture();
+    const a = await api(s, f);
+    const show = {
+      movieId: f.movie.id,
+      hallId: f.hall.id,
+      startsAt: '2026-11-09T12:00:00Z',
+      priceStandard: 10000,
+      pricePremium: 15000,
+    };
+    await a('post', '/showtimes')
+      .send({ ...show, priceStandard: 10_000_001 })
+      .expect(400);
+    await a('get', '/reports?from=2026-02-31&to=2026-03-01').expect(400);
+    const movie = {
+      title: 'T',
+      durationMin: 90,
+      ageRating: '12+',
+      posterUrl: 'https://x.mn/p.jpg',
+      releaseDate: '2026-12-01',
+    };
+    await a('post', '/movies')
+      .send({ ...movie, posterUrl: 'javascript:alert(1)' })
+      .expect(400);
+    await a('post', '/movies')
+      .send({ ...movie, trailerUrl: 'ftp://x.mn/t' })
+      .expect(400);
+    await a('post', '/movies')
+      .send({ ...movie, releaseDate: '2026-02-30' })
+      .expect(400);
+    await a('post', '/movies').send(movie).expect(201);
+  });
+
+  it('lists showtimes with a truncation flag', async () => {
+    const s = setup();
+    const f = await fixture();
+    const a = await api(s, f);
+    await addShowtime(f, '2026-11-09T12:00:00Z');
+    const res = await a('get', '/showtimes').expect(200);
+    expect(res.body.truncated).toBe(false);
+    expect(res.body.items).toHaveLength(1);
+  });
+});
+
+describe('refund claim', () => {
+  it('lets only one of two concurrent refund attempts call the provider', async () => {
+    let calls = 0;
+    class Slow extends MockPaymentProvider {
+      override async refund(invoiceId: string) {
+        calls++;
+        await new Promise((r) => setTimeout(r, 100));
+        await super.refund(invoiceId);
+      }
+    }
+    const s = setup((clock) => new Slow(db, clock));
+    const f = await fixture();
+    const show = await addShowtime(f, '2026-11-08T11:00:00Z');
+    const booking = await buy(s, f, show.id, f.alice, 1);
+    await db.update(bookings).set({ status: 'cancelled' }).where(eq(bookings.id, booking));
+    await Promise.all([refundOwed(db, booking, s.deps), refundOwed(db, booking, s.deps)]);
+    expect(calls).toBe(1);
+    expect((await paymentOf(booking)).status).toBe('refunded');
+  });
+
+  it('takes over a claim whose process died', async () => {
+    const s = setup();
+    const f = await fixture();
+    const show = await addShowtime(f, '2026-11-08T11:00:00Z');
+    const booking = await buy(s, f, show.id, f.alice, 1);
+    await db.update(bookings).set({ status: 'cancelled' }).where(eq(bookings.id, booking));
+    await db
+      .update(payments)
+      .set({ status: 'refunding', refundClaimedAt: s.clock() })
+      .where(eq(payments.bookingId, booking));
+    await refundOwed(db, booking, s.deps);
+    expect((await paymentOf(booking)).status).toBe('refunding');
+    s.clock.advance(3 * MIN);
+    await refundOwed(db, booking, s.deps);
+    expect((await paymentOf(booking)).status).toBe('refunded');
   });
 });
