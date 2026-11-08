@@ -52,12 +52,15 @@ export function liveHolds(holds: Hold[] | undefined, now = Date.now()): Hold[] {
   return (holds ?? []).filter((h) => new Date(h.expiresAt).getTime() > now);
 }
 
+type Patch = (changes: { seatId: string; state: 'free' | 'held' | 'sold' }[]) => void;
+
 /**
- * Tap-to-hold and tap-to-release for one showtime. The change shows at once and rolls
- * back if the server refuses. A seat with a request in flight ignores further taps, and
- * the list is only re-read from the server when nothing is in flight.
+ * Tap-to-hold and tap-to-release for one showtime. The change shows at once (the seat map
+ * is patched locally too, so a released seat is free before the stream says so) and rolls
+ * back if the server refuses. A seat with a request in flight ignores further taps, and the
+ * list is only re-read from the server when nothing is in flight.
  */
-export function useSeatActions(showtimeId: string, t: (key: TKey) => string) {
+export function useSeatActions(showtimeId: string, t: (key: TKey) => string, patchSeats: Patch) {
   const qc = useQueryClient();
   const pending = useRef(new Set<string>());
 
@@ -68,22 +71,25 @@ export function useSeatActions(showtimeId: string, t: (key: TKey) => string) {
       let key: ReturnType<typeof seatKeys.holds> | null = null;
       try {
         const user = await ensureGuest();
-        key = seatKeys.holds(showtimeId, user.id);
-        const holdsKey = key;
+        const holdsKey = seatKeys.holds(showtimeId, user.id);
+        key = holdsKey;
         const read = () => liveHolds(qc.getQueryData<Hold[]>(holdsKey));
         const mine = read().find((h) => h.seatId === seatId);
 
         if (mine) {
           haptic.select();
+          await qc.cancelQueries({ queryKey: holdsKey });
           qc.setQueryData<Hold[]>(holdsKey, (cur) =>
             (cur ?? []).filter((h) => h.seatId !== seatId),
           );
+          patchSeats([{ seatId, state: 'free' }]);
           try {
             await api<void>(`/holds/${mine.id}`, { method: 'DELETE' });
           } catch (e) {
             // Already gone (expired) is the outcome we wanted; anything else comes back.
             if (!(e instanceof ApiError && e.status === 404)) {
               qc.setQueryData<Hold[]>(holdsKey, (cur) => [...(cur ?? []), mine]);
+              patchSeats([{ seatId, state: 'held' }]);
               haptic.error();
               showToast(t('seats.failedToast'), 'error');
             }
@@ -103,6 +109,8 @@ export function useSeatActions(showtimeId: string, t: (key: TKey) => string) {
           showtimeId,
           expiresAt: new Date(Date.now() + HOLD_MS).toISOString(),
         };
+        // A hold list still loading must not land after, and wipe, the optimistic write.
+        await qc.cancelQueries({ queryKey: holdsKey });
         qc.setQueryData<Hold[]>(holdsKey, (cur) => [...(cur ?? []), optimistic]);
         try {
           const res = holdList.parse(
@@ -122,33 +130,44 @@ export function useSeatActions(showtimeId: string, t: (key: TKey) => string) {
             (cur ?? []).filter((h) => h.id !== optimistic.id),
           );
           haptic.error();
-          const taken = e instanceof ApiError && e.status === 409;
-          showToast(t(taken ? 'seats.takenToast' : 'seats.failedToast'), 'error');
+          if (e instanceof ApiError && e.status === 409) {
+            const lost = Array.isArray(e.body?.seatIds) ? (e.body.seatIds as string[]) : [seatId];
+            patchSeats(lost.map((id) => ({ seatId: id, state: 'held' as const })));
+            showToast(t('seats.takenToast'), 'error');
+          } else if (e instanceof ApiError && e.code === 'showtime_closed') {
+            showToast(t('seats.closedToast'), 'error');
+          } else if (e instanceof ApiError && e.code === 'too_many_seats') {
+            showToast(t('seats.maxToast'), 'error');
+          } else {
+            showToast(t('seats.failedToast'), 'error');
+          }
         }
       } catch {
         haptic.error();
         showToast(t('seats.failedToast'), 'error');
       } finally {
         pending.current.delete(seatId);
-        if (pending.current.size === 0) {
-          if (key) qc.invalidateQueries({ queryKey: key });
-        }
+        if (pending.current.size === 0 && key) qc.invalidateQueries({ queryKey: key });
       }
     },
-    [qc, showtimeId, t],
+    [qc, showtimeId, t, patchSeats],
   );
 }
 
+const wallClock = () => Date.now();
+
 /** Seconds left until `expiresAt`, ticking every second; null when there is nothing to count. */
 export function useCountdown(expiresAt: string | null, onExpire?: () => void): number | null {
-  const [now, setNow] = useState(() => Date.now());
+  const [clock, setClock] = useState(() => ({ for: expiresAt, now: Date.now() }));
+  // A new deadline starts from the present, so the first second is never stale.
+  if (clock.for !== expiresAt) setClock({ for: expiresAt, now: wallClock() });
   useEffect(() => {
     if (!expiresAt) return;
-    const timer = setInterval(() => setNow(Date.now()), 1000);
+    const timer = setInterval(() => setClock({ for: expiresAt, now: Date.now() }), 1000);
     return () => clearInterval(timer);
   }, [expiresAt]);
   const left = expiresAt
-    ? Math.max(0, Math.ceil((new Date(expiresAt).getTime() - now) / 1000))
+    ? Math.max(0, Math.ceil((new Date(expiresAt).getTime() - clock.now) / 1000))
     : null;
   useEffect(() => {
     if (left === 0) onExpire?.();

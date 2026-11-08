@@ -108,9 +108,11 @@ export function SeatCanvas({ layout, tone, onSeat, statusOf, labelOf }: Props) {
   };
 
   return (
-    <View style={styles.viewport} onLayout={onLayout}>
-      {view.w > 0 ? (
-        <GestureDetector gesture={gesture}>
+    // The detector sits on the fixed viewport (not on the moving canvas), so the margins
+    // around the hall pan and pinch too and focal points are in viewport coordinates.
+    <GestureDetector gesture={gesture}>
+      <View style={styles.viewport} onLayout={onLayout}>
+        {view.w > 0 ? (
           <Animated.View
             style={[
               styles.canvas,
@@ -156,9 +158,9 @@ export function SeatCanvas({ layout, tone, onSeat, statusOf, labelOf }: Props) {
               })}
             </View>
           </Animated.View>
-        </GestureDetector>
-      ) : null}
-    </View>
+        ) : null}
+      </View>
+    </GestureDetector>
   );
 }
 

@@ -1,3 +1,4 @@
+import type { Hold } from '@open-cinema/shared';
 import { formatUbTime } from '@open-cinema/shared';
 import { useQueryClient } from '@tanstack/react-query';
 import { router, Stack, useLocalSearchParams } from 'expo-router';
@@ -14,7 +15,7 @@ import { ErrorState } from '@/components/state-views';
 import { useI18n } from '@/i18n';
 import { useAuth } from '@/lib/auth';
 import { layoutSeats } from '@/lib/seat-layout';
-import { liveHolds, useMyHolds, useSeatActions, useSeatMap } from '@/lib/seats';
+import { liveHolds, seatLabel, useMyHolds, useSeatActions, useSeatMap } from '@/lib/seats';
 import { useSeatStream } from '@/lib/sse';
 import { showToast } from '@/lib/toast';
 import { colors, radius, space } from '@/theme/tokens';
@@ -31,7 +32,7 @@ export default function SeatMapScreen() {
   const map = useSeatMap(id);
   const holds = useMyHolds(id);
   const stream = useSeatStream(id);
-  const toggle = useSeatActions(id, t);
+  const toggle = useSeatActions(id, t, stream.patch);
 
   const seats = map.data?.seats;
   const layout = useMemo(() => layoutSeats(seats ?? [], seatAreaWidth(width)), [seats, width]);
@@ -59,7 +60,13 @@ export default function SeatMapScreen() {
           : status === 'taken'
             ? t('seats.taken')
             : t('seats.free');
-      return t('seats.a11y', { row: seat.rowLabel, n: seat.number, state });
+      const kind =
+        seat.kind === 'premium'
+          ? `${t('seats.kind.premium')}, `
+          : seat.kind === 'wheelchair'
+            ? `${t('seats.kind.wheelchair')}, `
+            : '';
+      return t('seats.a11y', { row: seat.rowLabel, n: seat.number, state: `${kind}${state}` });
     },
     [bySeat, t],
   );
@@ -67,10 +74,26 @@ export default function SeatMapScreen() {
   const selected = useMemo(() => mine.flatMap((h) => bySeat.get(h.seatId) ?? []), [mine, bySeat]);
   const earliest = useMemo(() => mine.map((h) => h.expiresAt).sort()[0] ?? null, [mine]);
 
+  // Holds run out one by one: release only the ones that lapsed, and say which.
+  const { patch } = stream;
   const onExpire = useCallback(() => {
+    const cache = qc.getQueriesData<Hold[]>({ queryKey: ['holds', id] });
+    const lapsed = new Set<string>();
+    for (const [key, list] of cache) {
+      if (!list) continue;
+      const keep = list.filter((h) => new Date(h.expiresAt).getTime() > Date.now());
+      for (const h of list) if (!keep.includes(h)) lapsed.add(h.seatId);
+      qc.setQueryData(key, keep);
+    }
+    if (lapsed.size === 0) return;
+    patch([...lapsed].map((seatId) => ({ seatId, state: 'free' as const })));
+    const names = [...lapsed].flatMap((sid) => {
+      const seat = bySeat.get(sid);
+      return seat ? [seatLabel(seat)] : [];
+    });
+    showToast(t('seats.expired', { seats: names.join(', ') }), 'error');
     qc.invalidateQueries({ queryKey: ['holds', id] });
-    showToast(t('seats.expired'), 'error');
-  }, [qc, id, t]);
+  }, [qc, id, t, patch, bySeat]);
 
   const show = map.data?.showtime;
   const tone = show?.movie.tone ?? colors.canvas;

@@ -1,6 +1,6 @@
 import { type Hold, HoldSchema, type OtpChannel } from '@open-cinema/shared';
 import { ApiError, api } from './api';
-import { getAccessToken, getUser, loginWithOtp } from './auth';
+import { getAccessToken, getRefreshToken, getUser, loginWithOtp } from './auth';
 import { rawRequest } from './http';
 import { queryClient } from './queries';
 
@@ -16,35 +16,55 @@ export async function loginKeepingHolds(
   code: string,
   showtimeId?: string,
 ): Promise<{ lostSeatIds: string[] }> {
-  let guestToken: string | null = null;
-  let guestHolds: Hold[] = [];
+  let guest: { token: string; refresh: string | null; holds: Hold[] } | null = null;
 
-  if (showtimeId && getUser()?.role === 'guest') {
-    try {
-      // api() refreshes an expired access token first, so the token read afterwards is fresh.
-      guestHolds = HoldSchema.array().parse(await api(`/showtimes/${showtimeId}/holds/mine`));
-      guestToken = getAccessToken();
-    } catch {
-      guestHolds = [];
+  if (getUser()?.role === 'guest') {
+    let holds: Hold[] = [];
+    if (showtimeId) {
+      // Let a failure here stop the login before anything changes, so the customer can retry
+      // with the same code: swallowing it would drop the seats without a word.
+      // api() refreshes an expired access token first, so the tokens read afterwards are fresh.
+      holds = HoldSchema.array().parse(await api(`/showtimes/${showtimeId}/holds/mine`));
     }
+    const token = getAccessToken();
+    if (token) guest = { token, refresh: getRefreshToken(), holds };
   }
 
   // A wrong code throws here and nothing has changed yet.
   await loginWithOtp(channel, target, code);
+  if (!guest) return { lostSeatIds: [] };
+  const { token, refresh, holds } = guest;
 
-  if (!showtimeId || !guestToken || guestHolds.length === 0) return { lostSeatIds: [] };
+  let lostSeatIds: string[] = [];
+  if (showtimeId && holds.length > 0) {
+    await releaseAsGuest(holds, token);
+    lostSeatIds = await reholdSeats(
+      showtimeId,
+      holds.map((h) => h.seatId),
+    );
+    // The new account's hold list was first read mid-swap: read it again now that it is settled.
+    await queryClient.invalidateQueries({ queryKey: ['holds', showtimeId] });
+  }
 
-  const token = guestToken;
-  await Promise.allSettled(
-    guestHolds.map((h) => rawRequest<void>(`/holds/${h.id}`, { method: 'DELETE', bearer: token })),
-  );
-  const lostSeatIds = await reholdSeats(
-    showtimeId,
-    guestHolds.map((h) => h.seatId),
-  );
-  // The new account's hold list was first read mid-swap: read it again now that it is settled.
-  await queryClient.invalidateQueries({ queryKey: ['holds', showtimeId] });
+  // The guest session has done its job; end it on the server (best effort).
+  if (refresh) {
+    rawRequest<void>('/auth/logout', { method: 'POST', json: { refreshToken: refresh } }).catch(
+      () => {},
+    );
+  }
   return { lostSeatIds };
+}
+
+/** Free the guest's holds with the guest's token; each failure is retried once. A hold that is already gone counts as freed. */
+async function releaseAsGuest(holds: Hold[], token: string): Promise<void> {
+  const release = (h: Hold) =>
+    rawRequest<void>(`/holds/${h.id}`, { method: 'DELETE', bearer: token }).catch((e) => {
+      if (!(e instanceof ApiError && e.status === 404)) throw e;
+    });
+  const first = await Promise.allSettled(holds.map(release));
+  const failed = holds.filter((_, i) => first[i]?.status === 'rejected');
+  // Whatever still fails stays held by the guest, so the re-hold reports it as lost.
+  await Promise.allSettled(failed.map(release));
 }
 
 /** Hold the seats as the current account; a 409 names the taken ones, which are dropped and the rest retried. */
