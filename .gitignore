@@ -14,3 +14,6 @@ backend/uploads/
 *.p12
 *.pem
 *.tsbuildinfo
+
+web-admin/next-env.d.ts
+*.local
