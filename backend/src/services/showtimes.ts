@@ -3,6 +3,7 @@ import type {
   AdminShowtimeBody,
   AdminShowtimeListQuery,
   AdminShowtimePatch,
+  ShowtimeCancelPreview,
   ShowtimeCancelResult,
 } from '@open-cinema/shared';
 import { ubDayRange } from '@open-cinema/shared';
@@ -14,6 +15,7 @@ import {
   branches,
   halls,
   movies,
+  payments,
   seatHolds,
   showtimes,
   tickets,
@@ -224,7 +226,68 @@ export async function listShowtimes(
   return { items, truncated: rows.length > SHOWTIME_LIST_CAP };
 }
 
-type Cancelled = { bookingIds: string[]; seatIds: string[]; ticketCount: number };
+type Cancelled = {
+  bookingIds: string[];
+  seatIds: string[];
+  ticketCount: number;
+  refundAmount: number;
+};
+
+/**
+ * What cancelling a showing touches. The preview and the cancellation both read it from here, so
+ * what the admin is told before confirming is what the cancellation then does. The refund is
+ * what was captured (`payments.amount`), not what today's prices would make of the same seats.
+ */
+async function cancelImpact(
+  q: Db | Tx,
+  showtimeId: string,
+  now: Date,
+): Promise<Omit<ShowtimeCancelPreview, 'id' | 'startsAt'>> {
+  const [b] = await q
+    .select({
+      paid: sql<number>`count(*) filter (where ${bookings.status} = 'paid')::int`,
+      pending: sql<number>`count(*) filter (where ${bookings.status} = 'pending')::int`,
+      refund: sql<number>`coalesce(sum(${payments.amount}) filter (where ${bookings.status} = 'paid' and ${payments.status} = 'paid'), 0)::int`,
+    })
+    .from(bookings)
+    .leftJoin(payments, eq(payments.bookingId, bookings.id))
+    .where(and(eq(bookings.showtimeId, showtimeId), inArray(bookings.status, ['pending', 'paid'])));
+  const [t] = await q
+    .select({ n: sql<number>`count(*)::int` })
+    .from(tickets)
+    .where(and(eq(tickets.showtimeId, showtimeId), eq(tickets.status, 'valid')));
+  const [h] = await q
+    .select({ n: sql<number>`count(*)::int` })
+    .from(seatHolds)
+    .where(and(eq(seatHolds.showtimeId, showtimeId), gt(seatHolds.expiresAt, now)));
+  return {
+    paidBookings: b?.paid ?? 0,
+    pendingBookings: b?.pending ?? 0,
+    refundAmount: b?.refund ?? 0,
+    tickets: t?.n ?? 0,
+    activeHolds: h?.n ?? 0,
+  };
+}
+
+/** Read-only look at a cancellation; refuses exactly what `cancelShowtime` refuses. */
+export async function previewCancel(
+  db: Db,
+  showtimeId: string,
+  now: Date,
+): Promise<ShowtimeCancelPreview> {
+  const [show] = await db
+    .select({ status: showtimes.status, startsAt: showtimes.startsAt })
+    .from(showtimes)
+    .where(eq(showtimes.id, showtimeId));
+  if (!show) throw notFound();
+  if (show.status === 'cancelled') throw conflict('showtime_cancelled');
+  if (show.startsAt <= now) throw conflict('showtime_started');
+  return {
+    id: showtimeId,
+    startsAt: show.startsAt.toISOString(),
+    ...(await cancelImpact(db, showtimeId, now)),
+  };
+}
 
 /**
  * Cancels a showing (spec 8.7). One transaction cancels the showing, its valid tickets and paid
@@ -258,6 +321,7 @@ export async function cancelShowtime(
       )
       .orderBy(asc(bookings.id))
       .for('update');
+    const impact = await cancelImpact(tx, showtimeId, deps.clock());
     const paid = live.filter((b) => b.status === 'paid').map((b) => b.id);
     const pending = live.filter((b) => b.status === 'pending').map((b) => b.id);
 
@@ -280,11 +344,18 @@ export async function cancelShowtime(
       bookingIds: paid,
       seatIds: [...new Set([...cancelledTickets, ...holds].map((r) => r.seatId))],
       ticketCount: cancelledTickets.length,
+      refundAmount: impact.refundAmount,
     };
   });
 
   if (!done)
-    return { id: showtimeId, status: 'cancelled', cancelledBookings: 0, cancelledTickets: 0 };
+    return {
+      id: showtimeId,
+      status: 'cancelled',
+      cancelledBookings: 0,
+      cancelledTickets: 0,
+      refundAmount: 0,
+    };
 
   deps.seatHub.publish(
     showtimeId,
@@ -303,6 +374,7 @@ export async function cancelShowtime(
     status: 'cancelled',
     cancelledBookings: done.bookingIds.length,
     cancelledTickets: done.ticketCount,
+    refundAmount: done.refundAmount,
   };
 }
 
