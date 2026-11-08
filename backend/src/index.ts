@@ -1,6 +1,9 @@
-import { createApp } from './app';
+import { createApp, createDeps } from './app';
 import { env } from './env';
+import { startSweeper } from './jobs/sweeper';
 
-createApp().listen(env.PORT, () => {
+const deps = createDeps();
+createApp(deps).listen(env.PORT, () => {
   console.log(`Open Cinema API listening on :${env.PORT}`);
 });
+startSweeper(deps);
