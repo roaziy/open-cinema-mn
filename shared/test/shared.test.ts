@@ -1,10 +1,14 @@
 import { describe, expect, it } from 'vitest';
 import {
+  AdminMovieBody,
+  avoidOrange,
   formatMnt,
   formatUbTime,
   generateSeats,
   HallGenParams,
   HoldCreateBody,
+  HUES,
+  hueFor,
   normalizeEmail,
   normalizePhone,
   OtpVerifyBody,
@@ -144,5 +148,36 @@ describe('contracts', () => {
         risePerRowM: 0.15,
       }).success,
     ).toBe(true);
+  });
+});
+
+describe('palette', () => {
+  it('hueFor is stable, never red, and always a known hue', () => {
+    expect(hueFor('branch-1')).toBe(hueFor('branch-1'));
+    for (let i = 0; i < 200; i++) {
+      const key = hueFor(`id-${i}`);
+      expect(key in HUES).toBe(true);
+      expect(key).not.toBe('red');
+    }
+  });
+  it('avoidOrange moves orange tones and leaves the rest', () => {
+    expect(avoidOrange('#F28A1E')).not.toBe('#F28A1E');
+    expect(avoidOrange('#2e6bf0')).toBe('#2E6BF0');
+    expect(avoidOrange('#808080')).toBe('#808080');
+  });
+  it('a film tone typed by hand is stored without orange', () => {
+    const base = {
+      title: 'T',
+      synopsis: '',
+      durationMin: 100,
+      ageRating: '12+',
+      genres: [],
+      posterUrl: 'https://x.mn/p.jpg',
+      releaseDate: '2026-11-01',
+      status: 'now',
+    };
+    const parsed = AdminMovieBody.parse({ ...base, tone: '#F28A1E' });
+    expect(parsed.tone).not.toBe('#F28A1E');
+    expect(AdminMovieBody.parse({ ...base, tone: '#2e6bf0' }).tone).toBe('#2E6BF0');
   });
 });

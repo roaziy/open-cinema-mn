@@ -1,6 +1,7 @@
 export * from './hall-generator';
 export * from './money';
 export * from './normalize';
+export * from './palette';
 export * from './schemas/admin';
 export * from './schemas/auth';
 export * from './schemas/booking';

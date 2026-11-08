@@ -1,4 +1,5 @@
 /** Dark-only design tokens. See the "Visual language" section of the UI plan. */
+import { HUES, type HueKey, hueFor as sharedHueFor } from '@open-cinema/shared';
 
 export const colors = {
   canvas: '#0B0B0D',
@@ -44,26 +45,13 @@ export const colors = {
 } as const;
 
 /** Identity hues: category/identity only, never for actions. */
-export const hues = {
-  green: '#30C46B',
-  red: '#FF5A5F',
-  purple: '#8B5CF6',
-  teal: '#14B8A6',
-  yellow: '#F5C542',
-  pink: '#EC4899',
-  indigo: '#5B6CFF',
-  sky: '#38BDF8',
-} as const;
+export const hues = HUES;
 
-export type HueName = keyof typeof hues;
+export type HueName = HueKey;
 
-const HUE_ORDER = Object.keys(hues) as HueName[];
-
-/** Stable hue for any string id (branch, hall, ...). */
+/** Stable hue for any string id (branch, hall, ...); the same color as in the admin app. */
 export function hueFor(key: string): string {
-  let h = 0;
-  for (let i = 0; i < key.length; i++) h = (h * 31 + key.charCodeAt(i)) >>> 0;
-  return hues[HUE_ORDER[h % HUE_ORDER.length] as HueName];
+  return HUES[sharedHueFor(key)];
 }
 
 /** Layered depth: panel -> card -> row, each one step in. Nested radius = outer - padding. */
