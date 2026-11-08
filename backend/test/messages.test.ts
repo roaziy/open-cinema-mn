@@ -172,9 +172,9 @@ describe('env hardening', () => {
     ).not.toThrow();
   });
 
-  it('binds loopback in production and all interfaces otherwise unless HOST is set', () => {
+  it('binds loopback in production and the Node default otherwise unless HOST is set', () => {
     expect(parseEnv(base).HOST).toBe('127.0.0.1');
-    expect(parseEnv({ ...base, NODE_ENV: 'development' }).HOST).toBe('0.0.0.0');
+    expect(parseEnv({ ...base, NODE_ENV: 'development' }).HOST).toBeUndefined();
     expect(parseEnv({ ...base, HOST: '10.0.0.5' }).HOST).toBe('10.0.0.5');
     expect(parseEnv({ ...base, HOST: '' }).HOST).toBe('127.0.0.1');
   });

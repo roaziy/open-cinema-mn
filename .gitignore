@@ -18,3 +18,4 @@ logs/
 web-admin/next-env.d.ts
 *.local
 dist.next/
+dist.old/

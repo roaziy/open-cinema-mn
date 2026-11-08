@@ -186,6 +186,7 @@ export function createCatalogRouter(deps: AppDeps): Router {
       Connection: 'keep-alive',
     });
     res.flushHeaders();
+    cleanupFns.push(seatHub.trackStream(res));
 
     // Subscribe before reading the snapshot so a change in between is queued, not lost.
     let ready = false;

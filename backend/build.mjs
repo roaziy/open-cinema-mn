@@ -36,5 +36,11 @@ await build({
   ],
   logLevel: 'info',
 });
-await rm(dist, { recursive: true, force: true });
+// dist is never missing: move it aside, move the new tree in, then delete the old one.
+const old = path.join(root, 'dist.old');
+await rm(old, { recursive: true, force: true });
+await rename(dist, old).catch((err) => {
+  if (err.code !== 'ENOENT') throw err;
+});
 await rename(next, dist);
+await rm(old, { recursive: true, force: true });
