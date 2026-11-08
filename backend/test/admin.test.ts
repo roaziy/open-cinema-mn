@@ -1168,3 +1168,115 @@ describe('refund claim', () => {
     expect((await paymentOf(booking)).status).toBe('refunded');
   });
 });
+
+describe('strict dates', () => {
+  it.each(['2026-13-01', '2026-02-32', '2026-00-10', '2026-02-30'])(
+    'answers 400, not 500, for %s',
+    async (bad) => {
+      const s = setup();
+      const f = await fixture();
+      const a = await api(s, f);
+      await a('get', `/reports?from=${bad}&to=2026-12-31`).expect(400);
+      await a('get', `/reports?from=2026-01-01&to=${bad}`).expect(400);
+    },
+  );
+});
+
+describe('refund claim ownership and provider timeout', () => {
+  async function cancelledBooking(s: S, f: F) {
+    const show = await addShowtime(f, '2026-11-08T11:00:00Z');
+    const booking = await buy(s, f, show.id, f.alice, 1);
+    await db.update(bookings).set({ status: 'cancelled' }).where(eq(bookings.id, booking));
+    return booking;
+  }
+
+  it('a call that was taken over cannot settle or revert the new owner’s claim', async () => {
+    const quiet = vi.spyOn(console, 'error').mockImplementation(() => {});
+    for (const outcome of ['succeeds', 'fails'] as const) {
+      await resetDb();
+      let release: () => void = () => {};
+      const gate = new Promise<void>((r) => {
+        release = r;
+      });
+      class Gated extends MockPaymentProvider {
+        override async refund(invoiceId: string) {
+          await gate;
+          if (outcome === 'fails') throw new Error('provider down');
+          await super.refund(invoiceId);
+        }
+      }
+      const s = setup((clock) => new Gated(db, clock));
+      const f = await fixture();
+      const booking = await cancelledBooking(s, f);
+      const first = refundOwed(db, booking, s.deps);
+      await new Promise((r) => setTimeout(r, 100));
+      const taken = new Date(s.clock().getTime() + 5);
+      await db
+        .update(payments)
+        .set({ refundClaimedAt: taken })
+        .where(eq(payments.bookingId, booking));
+      release();
+      await first;
+      const pay = await paymentOf(booking);
+      expect(pay.status).toBe('refunding');
+      expect(pay.refundClaimedAt?.getTime()).toBe(taken.getTime());
+    }
+    quiet.mockRestore();
+  });
+
+  it('a provider call that never answers releases the claim and cannot stall the sweeper', async () => {
+    const quiet = vi.spyOn(console, 'error').mockImplementation(() => {});
+    class Hung extends MockPaymentProvider {
+      override refund(invoiceId: string): Promise<void> {
+        if (this.hang.has(invoiceId)) return new Promise<void>(() => {});
+        return super.refund(invoiceId);
+      }
+      hang = new Set<string>();
+    }
+    let hung: Hung | undefined;
+    const s = setup((clock) => {
+      hung = new Hung(db, clock);
+      return hung;
+    });
+    const f = await fixture();
+    const first = await cancelledBooking(s, f);
+    const showB = await addShowtime(f, '2026-11-08T12:00:00Z');
+    const second = await buy(s, f, showB.id, f.bob, 2);
+    await db.update(bookings).set({ status: 'cancelled' }).where(eq(bookings.id, second));
+    hung?.hang.add((await paymentOf(first)).invoiceId);
+
+    await runSweep(db, s.clock(), s.seatHub, {
+      settle: (id) => confirmBooking(db, id, s.deps, 50),
+      refund: (id) => refundOwed(db, id, s.deps, 50),
+    });
+    const stuck = await paymentOf(first);
+    expect(stuck.status).toBe('paid');
+    expect(stuck.refundClaimedAt).toBeNull();
+    expect((await paymentOf(second)).status).toBe('refunded');
+    expect(quiet).toHaveBeenCalled();
+    quiet.mockRestore();
+  });
+
+  it('a checkPayment that never answers rejects instead of hanging', async () => {
+    class Hung extends MockPaymentProvider {
+      override checkPayment(): Promise<'pending' | 'paid' | 'failed'> {
+        return new Promise(() => {});
+      }
+    }
+    const s = setup((clock) => new Hung(db, clock));
+    const f = await fixture();
+    const show = await addShowtime(f, '2026-11-08T11:00:00Z');
+    const held = await createHolds(db, {
+      showtimeId: show.id,
+      seatIds: [f.seatId(1)],
+      userId: f.alice.id,
+      now: s.clock(),
+    });
+    const created = await request(s.app)
+      .post('/v1/bookings')
+      .set('Authorization', await as(s, f.alice))
+      .send({ holdIds: held.holds.map((h) => h.id), idempotencyKey: uuid() })
+      .expect(200);
+    await expect(confirmBooking(db, created.body.id, s.deps, 50)).rejects.toThrow(/timed out/);
+  });
+});

@@ -18,6 +18,7 @@ import {
 import { env } from '../env';
 import { badRequest, conflict, isUniqueViolation, notFound } from '../lib/errors';
 import { signLink, signQr } from '../lib/sign';
+import { withTimeout } from '../lib/timeout';
 import { bookingConfirmedEmail } from '../messages/templates';
 import type { MockRaw } from '../payments/mock';
 import { heldCount, SLOT_COLUMNS, toBranch, toSlot, toSummary } from './catalog-views';
@@ -300,13 +301,22 @@ type Outcome =
  *  - still pending: nothing.
  * Publishing and the email happen after the commit.
  */
-export async function confirmBooking(db: Db, bookingId: string, deps: Deps): Promise<void> {
+export async function confirmBooking(
+  db: Db,
+  bookingId: string,
+  deps: Deps,
+  timeoutMs = PROVIDER_TIMEOUT_MS,
+): Promise<void> {
   const [b] = await db.select().from(bookings).where(eq(bookings.id, bookingId)).limit(1);
   if (!b || !['pending', 'expired'].includes(b.status)) return;
   const [p] = await db.select().from(payments).where(eq(payments.bookingId, bookingId)).limit(1);
   if (p?.status !== 'pending') return;
 
-  const remote = await deps.payments.checkPayment(p.invoiceId);
+  const remote = await withTimeout(
+    deps.payments.checkPayment(p.invoiceId),
+    timeoutMs,
+    'checkPayment',
+  );
   if (remote === 'pending') return;
 
   const outcome = await db.transaction(async (tx): Promise<Outcome> => {
@@ -394,6 +404,12 @@ export async function confirmBooking(db: Db, bookingId: string, deps: Deps): Pro
   }
 }
 
+/**
+ * Longest a provider call may take. Well under the refund claim TTL, so a hung call frees its
+ * claim before anyone may take it over, and one hung call cannot stall the sweeper loop.
+ */
+export const PROVIDER_TIMEOUT_MS = 20_000;
+
 /** A refund claim older than this is assumed dead (the process crashed mid-call). */
 export const REFUND_CLAIM_TTL_MS = 2 * 60_000;
 
@@ -403,7 +419,12 @@ export const REFUND_CLAIM_TTL_MS = 2 * 60_000;
  * and concurrently: the payment row is claimed (`refunding`) before the provider is called, so
  * the cancel loop and the sweeper never both call it.
  */
-export async function refundOwed(db: Db, bookingId: string, deps: Deps): Promise<void> {
+export async function refundOwed(
+  db: Db,
+  bookingId: string,
+  deps: Deps,
+  timeoutMs = PROVIDER_TIMEOUT_MS,
+): Promise<void> {
   const now = deps.clock();
   const stale = new Date(now.getTime() - REFUND_CLAIM_TTL_MS);
   const [owed] = await db
@@ -429,19 +450,27 @@ export async function refundOwed(db: Db, bookingId: string, deps: Deps): Promise
     .returning();
   if (!p) return;
   try {
-    await deps.payments.refund(p.invoiceId);
+    await withTimeout(deps.payments.refund(p.invoiceId), timeoutMs, 'refund');
+    // Only the owner of this claim may settle it; a taken-over call must not touch the new owner's.
     await db
       .update(payments)
       .set({ status: 'refunded', refundedAt: deps.clock() })
-      .where(and(eq(payments.id, p.id), eq(payments.status, 'refunding')));
+      .where(ownClaim(p.id, now));
   } catch (err) {
     console.error('refund failed, will retry', err);
     await db
       .update(payments)
       .set({ status: 'paid', refundClaimedAt: null })
-      .where(and(eq(payments.id, p.id), eq(payments.status, 'refunding')));
+      .where(ownClaim(p.id, now));
   }
 }
+
+const ownClaim = (paymentId: string, claimedAt: Date) =>
+  and(
+    eq(payments.id, paymentId),
+    eq(payments.status, 'refunding'),
+    eq(payments.refundClaimedAt, claimedAt),
+  );
 
 async function releaseBookingHolds(tx: Tx, bookingId: string): Promise<string[]> {
   const gone = await tx

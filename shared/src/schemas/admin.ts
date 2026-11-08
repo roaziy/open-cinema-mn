@@ -25,7 +25,11 @@ const IsoInstant = z.string().datetime({ offset: true });
 const UbDate = z
   .string()
   .regex(/^\d{4}-\d{2}-\d{2}$/)
-  .refine((v) => new Date(`${v}T00:00:00Z`).toISOString().startsWith(v), 'not a real date');
+  .refine((v) => {
+    // Out-of-range parts make Date invalid (toISOString would throw); overflow (02-30) rolls over.
+    const d = new Date(`${v}T00:00:00Z`);
+    return !Number.isNaN(d.getTime()) && d.toISOString().startsWith(v);
+  }, 'not a real date');
 const HttpUrl = z
   .string()
   .max(1000)
