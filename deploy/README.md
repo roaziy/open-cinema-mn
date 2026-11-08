@@ -197,20 +197,40 @@ curl -s http://127.0.0.1:4000/v1/health
 
 What this guarantees:
 
-- **No half-built tree.** The build writes `backend/dist.next/`, then moves `dist` to `dist.old`,
-  `dist.next` to `dist`, and deletes `dist.old`. There is no moment when `dist/` is missing or
-  partial, so a pm2 restart during a build always finds a complete tree.
+- **No half-built tree.** The build writes `backend/dist.next/`, then renames `dist` to `dist.old`
+  and `dist.next` to `dist` (two renames back to back; if the second fails the first is undone),
+  and deletes `dist.old`. A pm2 restart during the slow part of a build always finds the previous
+  complete tree.
 - **No broken `node_modules`.** `npm ci` runs only when `package-lock.json` changed, and only while
   the API is stopped (about a minute of downtime for those releases). `startOrReload` starts it again
   afterwards (and also works when nothing was stopped).
 - Migrations run before the new code starts, so they must be additive (see rollback).
 
-On `pm2 reload` (or stop) the API receives SIGINT and drains: it stops accepting connections,
-ends the live seat streams (clients reconnect and get a full snapshot first), lets requests that are
-already running, and a sweep pass that is mid-run, finish, and only then closes the database pool.
-This is what keeps a payment or refund call from being cut off half way. Connections still open
-after 7 s are destroyed, and the process exits with code 1 after 9 s at the latest, inside pm2's
-10 s `kill_timeout`.
+**Downtime.** The API runs as a single process (the seat feed lives in memory), so every
+`pm2 reload` is really a stop followed by a start: expect a short outage, usually 1 to 2 seconds
+(drain plus boot), and up to the hard exit below when a payment provider call is in flight. Apps
+reconnect their seat feed automatically.
+
+**What the drain does.** On SIGINT/SIGTERM the API stops accepting connections, answers any new seat
+stream with 503 and `Connection: close`, ends the open seat streams, lets running requests and a
+sweep pass that is mid-run finish, and only then closes the database pool. Connections still open
+after 25 s (the 20 s provider timeout plus 5 s) are destroyed and the process exits with code 1 after
+28 s at the latest, inside pm2's `kill_timeout` of 30 s. The limit, honestly: a provider call that
+is still running at the hard exit is killed. A refund in that state is stored as `refunding` and
+re-claimed by the sweeper after its TTL, so it is retried rather than lost; whether that retry can
+double-refund depends on the provider honoring an idempotency key, which must be confirmed when
+real payment credentials are wired in (the mock provider has no such risk).
+
+**pm2 remembers its configuration.** pm2 stores the app settings
+(such as `kill_timeout`) in its process list when the process is first started, and a reload does not always pick up changes, so after the
+ecosystem file changes in a release, recreate the process once:
+
+```bash
+pm2 delete open-cinema-api
+pm2 start backend/ecosystem.config.cjs
+pm2 save
+pm2 describe open-cinema-api | grep -iE "kill|restart"   # check the values you expect
+```
 
 ### 1.7 Roll back
 

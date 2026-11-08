@@ -13,8 +13,8 @@ module.exports = {
       exec_mode: 'fork',
       autorestart: true,
       max_memory_restart: '400M',
-      // The API drains for up to 7 s and hard-exits at 9 s on SIGINT (see src/index.ts).
-      kill_timeout: 10000,
+      // Must exceed the API's hard exit (provider timeout + 8 s = 28 s, see src/index.ts).
+      kill_timeout: 30000,
       env: { NODE_ENV: 'production' },
       out_file: '../logs/api-out.log',
       error_file: '../logs/api-error.log',

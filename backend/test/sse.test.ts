@@ -220,4 +220,53 @@ describe('seat stream', () => {
     );
     expect(res.status).toBe(404);
   });
+
+  it('refuses a late stream during drain and closes fast over a pooled keep-alive socket', async () => {
+    const f = await setup();
+    const hub = new SeatHub();
+    const { createShutdown } = await import('../src/lib/shutdown');
+    const http = await import('node:http');
+    server = makeTestApp({ clock, seatHub: hub }).listen(0, '127.0.0.1');
+    await new Promise((r) => server?.once('listening', r));
+    const port = (server.address() as AddressInfo).port;
+    // One pooled socket, like a reverse proxy's upstream connection.
+    const agent = new http.Agent({ keepAlive: true, maxSockets: 1 });
+    const path = `/v1/showtimes/${f.show.id}/seats/stream`;
+    const connect = () =>
+      new Promise<{ status: number; ended: Promise<void> }>((resolve, reject) => {
+        http
+          .get({ port, host: '127.0.0.1', path, agent }, (res) => {
+            res.resume();
+            resolve({
+              status: res.statusCode ?? 0,
+              ended: new Promise((r) => res.on('end', () => r())),
+            });
+          })
+          .on('error', reject);
+      });
+    const first = await connect();
+    expect(first.status).toBe(200);
+    await vi.waitFor(() => expect(hub.listenerCount(f.show.id)).toBe(1));
+
+    const started = Date.now();
+    const closed = createShutdown({
+      server: server as Server,
+      endStreams: () => hub.endStreams(),
+      stopSweeper: async () => {},
+      closePool: async () => {},
+      exit: () => {},
+      timeoutMs: 9000,
+      forceCloseAfterMs: 6000,
+    })('SIGTERM');
+    await first.ended;
+    // The client reconnects at once on the same socket: it must be refused, not held open.
+    const second = await connect().catch(() => null);
+    if (second) {
+      expect(second.status).toBe(503);
+      await second.ended;
+    }
+    await closed;
+    expect(Date.now() - started).toBeLessThan(2000);
+    agent.destroy();
+  });
 });

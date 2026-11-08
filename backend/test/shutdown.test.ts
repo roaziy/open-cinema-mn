@@ -158,3 +158,16 @@ describe('graceful shutdown', () => {
     await vi.waitFor(() => expect(exit).toHaveBeenCalledWith(1));
   });
 });
+
+describe('shutdown budget', () => {
+  it('outlasts the provider timeout and stays inside the pm2 kill timeout', async () => {
+    const { PROVIDER_TIMEOUT_MS } = await import('../src/services/bookings');
+    const { shutdownBudget } = await import('../src/lib/shutdown');
+    const { createRequire } = await import('node:module');
+    const pm2 = createRequire(import.meta.url)('../ecosystem.config.cjs');
+    const { forceCloseAfterMs, timeoutMs } = shutdownBudget(PROVIDER_TIMEOUT_MS);
+    expect(forceCloseAfterMs).toBeGreaterThan(PROVIDER_TIMEOUT_MS);
+    expect(timeoutMs).toBeGreaterThan(forceCloseAfterMs);
+    expect(pm2.apps[0].kill_timeout).toBeGreaterThan(timeoutMs);
+  });
+});
