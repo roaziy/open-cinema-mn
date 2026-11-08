@@ -15,7 +15,12 @@ import { ErrorState } from '@/components/state-views';
 import { type TKey, useI18n } from '@/i18n';
 import { ApiError } from '@/lib/api';
 import { useAuth } from '@/lib/auth';
-import { getContactEmail } from '@/lib/checkout-store';
+import {
+  attemptSignature,
+  getAttempt,
+  getContactEmail,
+  setAttemptBooking,
+} from '@/lib/checkout-store';
 import { haptic } from '@/lib/haptics';
 import { createBooking, newIdempotencyKey, orderKeys } from '@/lib/orders';
 import {
@@ -57,7 +62,6 @@ export default function CheckoutScreen() {
   // Once the order exists the holds turn into it, so "no holds" is then expected.
   const submitted = useRef(false);
   const leaving = useRef(false);
-  const idempotencyKey = useRef(newIdempotencyKey());
   const [busy, setBusy] = useState(false);
 
   const backToSeats = useCallback(
@@ -70,10 +74,31 @@ export default function CheckoutScreen() {
     [showtimeId],
   );
 
+  // The earliest hold running out ends this order, but later ones may still be live.
   const left = useCountdown(
     earliest,
-    useCallback(() => backToSeats(t('seats.expiredNone')), [backToSeats, t]),
+    useCallback(() => backToSeats(t('checkout.holdExpired')), [backToSeats, t]),
   );
+
+  // Same holds, same attempt: a booking already made for them is replayed, not rebuilt.
+  const signature = useMemo(
+    () =>
+      live.length > 0
+        ? attemptSignature(
+            showtimeId,
+            live.map((h) => h.id),
+          )
+        : null,
+    [live, showtimeId],
+  );
+  const attempt = signature ? getAttempt(signature, newIdempotencyKey) : null;
+  const existingBooking = attempt?.bookingId ?? null;
+  useEffect(() => {
+    if (existingBooking && !submitted.current) {
+      submitted.current = true;
+      router.replace(`/pay/${existingBooking}`);
+    }
+  }, [existingBooking]);
   // Deep link or back-navigation with nothing held: never render an order out of thin air.
   const noSeats = holds.data !== undefined && !holds.isPlaceholderData && live.length === 0;
   useEffect(() => {
@@ -99,16 +124,17 @@ export default function CheckoutScreen() {
   const receipt = isGuest ? guestEmail : user.email;
 
   const pay = async () => {
-    if (busy || lines.length === 0) return;
+    if (busy || lines.length === 0 || !signature || !attempt) return;
     setBusy(true);
     try {
       const contact = isGuest ? normalizeEmail(guestEmail ?? '') : null;
       const booking = await createBooking({
         holdIds: live.map((h) => h.id),
-        idempotencyKey: idempotencyKey.current,
+        idempotencyKey: attempt.key,
         ...(contact ? { contactEmail: contact } : {}),
       });
       submitted.current = true;
+      setAttemptBooking(signature, booking.id);
       qc.setQueryData(orderKeys.booking(booking.id), booking);
       qc.invalidateQueries({ queryKey: ['holds', showtimeId] });
       router.replace(`/pay/${booking.id}`);
@@ -220,7 +246,10 @@ export default function CheckoutScreen() {
               </Text>
             </View>
             {!receipt ? (
-              <Pressable onPress={() => router.push('/(tabs)/profile')} accessibilityRole="link">
+              <Pressable
+                onPress={() => router.navigate('/(tabs)/profile')}
+                accessibilityRole="link"
+              >
                 <Text style={styles.link}>{t('checkout.receiptAdd')}</Text>
               </Pressable>
             ) : null}

@@ -6,7 +6,13 @@ import { fetchTicket } from './orders';
 
 type T = (key: TKey, params?: Record<string, string | number>) => string;
 
-export type ActionResult = { ok: true } | { ok: false; message: string };
+export type ActionResult =
+  | { ok: true }
+  | {
+      ok: false;
+      message: string /** Permission refused: offer the Settings app. */;
+      denied?: boolean;
+    };
 
 /**
  * Open the signed .pkpass link. The link is short-lived, so it is fetched fresh on every
@@ -46,7 +52,7 @@ export async function addToCalendar(ticket: TicketView, t: T): Promise<ActionRes
   try {
     const details = ticketEventDetails(ticket, t);
     const perm = await Calendar.requestCalendarPermissions(true);
-    if (!perm.granted) return { ok: false, message: t('ticket.calendarDenied') };
+    if (!perm.granted) return { ok: false, message: t('ticket.calendarDenied'), denied: true };
 
     if (process.env.EXPO_OS === 'ios') {
       const result = await Calendar.getDefaultCalendarSync().addEventWithForm(details);

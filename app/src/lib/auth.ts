@@ -7,8 +7,8 @@ import {
 } from '@open-cinema/shared';
 import * as SecureStore from 'expo-secure-store';
 import { useSyncExternalStore } from 'react';
-import { ApiError, rawRequest } from './http';
-import { retryTransient } from './retry';
+import { rawRequest } from './http';
+import { runRefresh } from './retry';
 
 // SecureStore keys: alphanumeric, ".", "-", "_" only.
 const KEY_ACCESS = 'oc.access';
@@ -178,33 +178,35 @@ export function refreshSession(): Promise<boolean> {
   return refreshInFlight;
 }
 
+let backingOff = false;
+const backoffSleep = async (ms: number) => {
+  backingOff = true;
+  try {
+    await new Promise<void>((resolve) => setTimeout(resolve, ms));
+  } finally {
+    backingOff = false;
+  }
+};
+
 async function doRefresh(): Promise<boolean> {
   await hydrateAuth();
   const current = state.session;
   if (!current) return false;
   const startedAt = generation;
-  try {
-    const tokens = AuthTokensSchema.parse(
-      // 429 / 5xx are transient: wait and retry with the same token instead of ending the session.
-      await retryTransient(() =>
-        rawRequest('/auth/refresh', {
+  return runRefresh({
+    call: async () =>
+      AuthTokensSchema.parse(
+        await rawRequest('/auth/refresh', {
           method: 'POST',
           json: { refreshToken: current.refreshToken },
         }),
       ),
-    );
     // Logged out or signed in again while waiting: drop the result.
-    if (startedAt !== generation) return false;
-    await applyTokens(tokens);
-    return true;
-  } catch (e) {
-    // 401 invalid_refresh (reuse detected, all sessions revoked) or refresh_expired.
-    if (e instanceof ApiError && e.status === 401) {
-      if (startedAt === generation) await clearSession();
-      return false;
-    }
-    throw e;
-  }
+    isStale: () => startedAt !== generation,
+    apply: applyTokens,
+    clear: clearSession,
+    sleep: backoffSleep,
+  });
 }
 
 export async function requestOtp(channel: OtpChannel, target: string): Promise<void> {
@@ -229,7 +231,8 @@ export async function logout(): Promise<void> {
   await hydrateAuth();
   // Let a refresh that is already on the wire finish so we revoke the newest token,
   // not one the server has just rotated away.
-  if (refreshInFlight) await refreshInFlight.catch(() => {});
+  // A refresh that is waiting out a 429 has sent nothing that rotates the token: do not wait for it.
+  if (refreshInFlight && !backingOff) await refreshInFlight.catch(() => {});
   const refreshToken = state.session?.refreshToken;
   await clearSession();
   if (!refreshToken) return;

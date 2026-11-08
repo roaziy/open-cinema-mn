@@ -1,9 +1,17 @@
 import { Image } from 'expo-image';
 import { router, Stack, useLocalSearchParams } from 'expo-router';
 import { useHeaderHeight } from 'expo-router/react-navigation';
-import { CalendarPlus, Wallet } from 'phosphor-react-native';
-import { useState } from 'react';
-import { ActivityIndicator, ScrollView, StyleSheet, Text, View } from 'react-native';
+import { CalendarPlus } from 'phosphor-react-native';
+import { useRef, useState } from 'react';
+import {
+  ActivityIndicator,
+  Alert,
+  Linking,
+  ScrollView,
+  StyleSheet,
+  Text,
+  View,
+} from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Pressable } from '@/components/pressable';
 import { Skeleton } from '@/components/skeleton';
@@ -65,6 +73,7 @@ function TicketBlock({ id, index, total }: { id: string; index: number | null; t
   const { t } = useI18n();
   const q = useTicket(id);
   const [walletBusy, setWalletBusy] = useState(false);
+  const calendarBusy = useRef(false);
   const ticket = q.data;
 
   if (q.isError && !ticket) return <ErrorState error={q.error} onRetry={() => q.refetch()} />;
@@ -84,8 +93,17 @@ function TicketBlock({ id, index, total }: { id: string; index: number | null; t
   };
 
   const calendar = async () => {
-    const res = await addToCalendar(ticket, t);
-    if (res.ok) {
+    if (calendarBusy.current) return;
+    calendarBusy.current = true;
+    const res = await addToCalendar(ticket, t).finally(() => {
+      calendarBusy.current = false;
+    });
+    if (!res.ok && res.denied) {
+      Alert.alert(t('ticket.calendarDenied'), undefined, [
+        { text: t('common.cancel'), style: 'cancel' },
+        { text: t('ticket.openSettings'), onPress: () => Linking.openSettings() },
+      ]);
+    } else if (res.ok) {
       haptic.success();
       showToast(t('ticket.calendarAdded'));
     } else if (res.message) {
@@ -115,10 +133,7 @@ function TicketBlock({ id, index, total }: { id: string; index: number | null; t
               ) : walletBusy ? (
                 <ActivityIndicator color={colors.ink} />
               ) : (
-                <>
-                  <Wallet size={20} weight="fill" color={colors.ink} />
-                  <Text style={styles.actionText}>{t('ticket.wallet')}</Text>
-                </>
+                <Text style={styles.actionText}>{t('ticket.wallet')}</Text>
               )}
             </Pressable>
           ) : null}

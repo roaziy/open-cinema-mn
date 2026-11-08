@@ -1,36 +1,42 @@
-import { normalizeEmail } from '@open-cinema/shared';
 import { router } from 'expo-router';
 import { Envelope, Globe, Phone, SignOut, UserCircle } from 'phosphor-react-native';
 import { useState } from 'react';
-import { ScrollView, StyleSheet, Text, TextInput, View } from 'react-native';
+import { ActivityIndicator, Alert, ScrollView, StyleSheet, Text, View } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
+import { EmailEditor } from '@/components/email-editor';
 import { IconTile } from '@/components/icon-tile';
 import { Pressable } from '@/components/pressable';
-import { type Locale, type TKey, useI18n } from '@/i18n';
-import { ApiError } from '@/lib/api';
+import { type Locale, useI18n } from '@/i18n';
 import { useAuth } from '@/lib/auth';
-import { haptic } from '@/lib/haptics';
-import { requestEmailCode, verifyEmailCode } from '@/lib/profile';
-import { showToast } from '@/lib/toast';
+import { confirmGuestLogin } from '@/lib/guest-login';
 import { colors, hues, radius, space } from '@/theme/tokens';
-import { fonts, type } from '@/theme/type';
-
-function errorKey(e: unknown): TKey {
-  if (e instanceof ApiError) {
-    if (e.code === 'email_taken') return 'profile.err.email_taken';
-    if (e.code === 'invalid_target') return 'profile.err.invalid_target';
-    if (e.code === 'invalid_code') return 'profile.err.invalid_code';
-    if (e.code === 'too_many_attempts') return 'profile.err.too_many_attempts';
-  }
-  return 'profile.err.generic';
-}
+import { type } from '@/theme/type';
 
 export default function ProfileScreen() {
   const { t, locale, setLocale } = useI18n();
   const insets = useSafeAreaInsets();
   const { user, logout } = useAuth();
+  const [loggingOut, setLoggingOut] = useState(false);
   const signedIn = !!user && user.role !== 'guest';
   const top = process.env.EXPO_OS === 'ios' ? 0 : insets.top;
+
+  const askLogout = () => {
+    Alert.alert(t('profile.logoutConfirm'), undefined, [
+      { text: t('common.cancel'), style: 'cancel' },
+      {
+        text: t('profile.logout'),
+        style: 'destructive',
+        onPress: async () => {
+          setLoggingOut(true);
+          try {
+            await logout();
+          } finally {
+            setLoggingOut(false);
+          }
+        },
+      },
+    ]);
+  };
 
   return (
     <ScrollView
@@ -79,7 +85,9 @@ export default function ProfileScreen() {
           </View>
           <Pressable
             style={styles.primary}
-            onPress={() => router.push('/login')}
+            onPress={async () => {
+              if (await confirmGuestLogin(t)) router.push('/login');
+            }}
             accessibilityRole="button"
           >
             <Text style={styles.primaryText}>{t('login.title')}</Text>
@@ -110,9 +118,21 @@ export default function ProfileScreen() {
       </View>
 
       {signedIn ? (
-        <Pressable style={styles.logout} onPress={() => logout()} accessibilityRole="button">
-          <SignOut size={18} weight="bold" color={colors.danger} />
-          <Text style={styles.logoutText}>{t('profile.logout')}</Text>
+        <Pressable
+          style={[styles.logout, loggingOut && styles.disabled]}
+          disabled={loggingOut}
+          onPress={askLogout}
+          accessibilityRole="button"
+          accessibilityState={{ busy: loggingOut, disabled: loggingOut }}
+        >
+          {loggingOut ? (
+            <ActivityIndicator color={colors.danger} />
+          ) : (
+            <>
+              <SignOut size={18} weight="bold" color={colors.danger} />
+              <Text style={styles.logoutText}>{t('profile.logout')}</Text>
+            </>
+          )}
         </Pressable>
       ) : null}
     </ScrollView>
@@ -144,128 +164,6 @@ function InfoRow({
   );
 }
 
-/** Add or change the email: type it, get a 6-digit code (backend log in dev), type that. */
-function EmailEditor({ hasEmail }: { hasEmail: boolean }) {
-  const { t } = useI18n();
-  const [open, setOpen] = useState(false);
-  const [step, setStep] = useState<'email' | 'code'>('email');
-  const [email, setEmail] = useState('');
-  const [code, setCode] = useState('');
-  const [error, setError] = useState<string | null>(null);
-  const [busy, setBusy] = useState(false);
-  const normalized = normalizeEmail(email);
-
-  if (!open) {
-    return (
-      <Pressable style={styles.linkRow} onPress={() => setOpen(true)} accessibilityRole="button">
-        <Text style={styles.link}>{t(hasEmail ? 'profile.emailChange' : 'profile.emailAdd')}</Text>
-      </Pressable>
-    );
-  }
-
-  const send = async () => {
-    if (!normalized || busy) return;
-    setBusy(true);
-    setError(null);
-    try {
-      await requestEmailCode(normalized);
-      setStep('code');
-      setCode('');
-    } catch (e) {
-      haptic.error();
-      setError(t(errorKey(e)));
-    } finally {
-      setBusy(false);
-    }
-  };
-
-  const verify = async (digits: string) => {
-    if (busy) return;
-    setBusy(true);
-    setError(null);
-    try {
-      await verifyEmailCode(digits);
-      haptic.success();
-      showToast(t('profile.emailSaved'));
-      setOpen(false);
-      setStep('email');
-      setEmail('');
-    } catch (e) {
-      haptic.error();
-      setError(t(errorKey(e)));
-    } finally {
-      setBusy(false);
-    }
-  };
-
-  return (
-    <View style={styles.editor}>
-      {step === 'email' ? (
-        <>
-          <TextInput
-            style={styles.input}
-            value={email}
-            onChangeText={(v) => {
-              setEmail(v);
-              setError(null);
-            }}
-            placeholder={t('profile.emailPlaceholder')}
-            placeholderTextColor={colors.muted}
-            keyboardType="email-address"
-            autoCapitalize="none"
-            autoCorrect={false}
-            textContentType="emailAddress"
-            returnKeyType="send"
-            onSubmitEditing={send}
-            selectionColor={colors.action}
-          />
-          <Pressable
-            style={[styles.primary, (!normalized || busy) && styles.disabled]}
-            disabled={!normalized || busy}
-            onPress={send}
-            accessibilityRole="button"
-            accessibilityState={{ disabled: !normalized || busy }}
-          >
-            <Text style={styles.primaryText}>{t('profile.sendCode')}</Text>
-          </Pressable>
-        </>
-      ) : (
-        <>
-          <Text style={styles.rowLabel}>
-            {t('profile.codeSent', { email: normalized ?? email })}
-          </Text>
-          <TextInput
-            style={[styles.input, styles.codeInput]}
-            value={code}
-            onChangeText={(v) => {
-              const digits = v.replace(/\D/g, '').slice(0, 6);
-              setCode(digits);
-              setError(null);
-              if (digits.length === 6) verify(digits);
-            }}
-            placeholder={t('profile.code')}
-            placeholderTextColor={colors.muted}
-            keyboardType="number-pad"
-            textContentType="oneTimeCode"
-            maxLength={6}
-            autoFocus
-            selectionColor={colors.action}
-          />
-          <Pressable
-            style={[styles.primary, (code.length !== 6 || busy) && styles.disabled]}
-            disabled={code.length !== 6 || busy}
-            onPress={() => verify(code)}
-            accessibilityRole="button"
-          >
-            <Text style={styles.primaryText}>{t('profile.verify')}</Text>
-          </Pressable>
-        </>
-      )}
-      {error ? <Text style={styles.error}>{error}</Text> : null}
-    </View>
-  );
-}
-
 const styles = StyleSheet.create({
   root: { flex: 1, backgroundColor: colors.canvas },
   content: { paddingHorizontal: space.lg, paddingBottom: space.xxxl, gap: space.md },
@@ -286,21 +184,6 @@ const styles = StyleSheet.create({
   rowLabel: { ...type.caption, color: colors.muted },
   rowValue: { ...type.bodyMedium, color: colors.ink },
   note: { ...type.footnote, color: colors.success },
-  linkRow: { paddingVertical: space.xs },
-  link: { ...type.bodyMedium, color: colors.action },
-  editor: { gap: space.md },
-  input: {
-    height: 50,
-    paddingHorizontal: space.lg,
-    borderRadius: radius.inner + 2,
-    backgroundColor: colors.canvas,
-    borderWidth: 1,
-    borderColor: colors.hairline,
-    ...type.bodyMedium,
-    fontFamily: fonts.medium,
-    color: colors.ink,
-  },
-  codeInput: { letterSpacing: 6, fontVariant: ['tabular-nums'] },
   primary: {
     height: 48,
     alignItems: 'center',
@@ -310,7 +193,6 @@ const styles = StyleSheet.create({
   },
   primaryText: { ...type.headline, color: colors.onAction },
   disabled: { opacity: 0.4 },
-  error: { ...type.caption, color: colors.danger },
   langHead: { flexDirection: 'row', alignItems: 'center', gap: space.md },
   segments: {
     flexDirection: 'row',

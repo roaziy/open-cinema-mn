@@ -5,7 +5,7 @@ import {
   TicketViewSchema,
 } from '@open-cinema/shared';
 import { useQuery } from '@tanstack/react-query';
-import { api } from './api';
+import { ApiError, api } from './api';
 import { useAuth } from './auth';
 
 export const orderKeys = {
@@ -43,12 +43,22 @@ export function useBooking(id: string) {
     queryKey: orderKeys.booking(id),
     queryFn: async (): Promise<BookingView> =>
       BookingViewSchema.parse(await api(`/bookings/${id}`)),
-    refetchInterval: (q) => (q.state.data && q.state.data.status !== 'pending' ? false : 2500),
+    enabled: !!id,
+    // Settled, or the booking is not ours / does not exist: nothing more to wait for.
+    refetchInterval: (q) => {
+      if (q.state.data && q.state.data.status !== 'pending') return false;
+      const e = q.state.error;
+      if (e instanceof ApiError && e.status >= 400 && e.status < 500) return false;
+      return 2500;
+    },
     staleTime: 0,
   });
 }
 
 const ticketList = TicketViewSchema.array();
+
+/** The signed pass link is short-lived: it is fetched fresh when Wallet is pressed, never kept. */
+const withoutPassUrl = (t: TicketView): TicketView => ({ ...t, passUrl: null });
 
 export async function fetchTicket(id: string): Promise<TicketView> {
   return TicketViewSchema.parse(await api(`/tickets/${id}`));
@@ -58,6 +68,7 @@ export function useTicket(id: string) {
   return useQuery({
     queryKey: orderKeys.ticket(id),
     queryFn: () => fetchTicket(id),
+    select: withoutPassUrl,
     staleTime: 0,
   });
 }
@@ -68,6 +79,7 @@ export function useTickets(scope: 'upcoming' | 'past') {
     queryKey: orderKeys.tickets(user?.id ?? null, scope),
     queryFn: async (): Promise<TicketView[]> =>
       ticketList.parse(await api(`/me/tickets?scope=${scope}`)),
+    select: (list) => list.map(withoutPassUrl),
     enabled: ready && !!user,
     staleTime: 0,
   });
