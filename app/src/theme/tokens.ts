@@ -15,10 +15,25 @@ export const colors = {
   /** Action blue: primary CTA, selected seat, live/selected states only. */
   action: '#2E6BF0',
   onAction: '#FFFFFF',
+  /** Glyph colour on identity-hue tiles. */
+  tileGlyph: '#FFFFFF',
 
   success: '#34D399',
   danger: '#F87171',
   warning: '#FBBF24',
+
+  /** Translucent chrome over blurred posters (chips, back button). */
+  scrim: 'rgba(11,11,13,0.55)',
+  scrimBorder: 'rgba(255,255,255,0.14)',
+  /** Quiet chip fill and edge (age badge, pager pips). */
+  chipFill: 'rgba(255,255,255,0.12)',
+  chipBorder: 'rgba(255,255,255,0.18)',
+  pip: 'rgba(255,255,255,0.25)',
+  /** Secondary text on the action blue. */
+  onActionMuted: 'rgba(255,255,255,0.85)',
+  warningTint: 'rgba(251,191,36,0.45)',
+  dangerFill: 'rgba(248,113,113,0.16)',
+  dangerEdge: 'rgba(248,113,113,0.4)',
 
   /** The single light surface in the app (ticket stub / QR). */
   paper: '#F2EDE4',

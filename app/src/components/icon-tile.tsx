@@ -1,7 +1,7 @@
 import { SymbolView, type SymbolViewProps } from 'expo-symbols';
 import type { Icon as PhosphorIcon } from 'phosphor-react-native';
 import { StyleSheet, View } from 'react-native';
-import { radius } from '@/theme/tokens';
+import { colors, radius } from '@/theme/tokens';
 
 type Props = {
   /** SF Symbol (iOS), use a `.fill` variant. */
@@ -19,9 +19,9 @@ export function IconTile({ sf, phosphor: Glyph, hue, size = 30 }: Props) {
   return (
     <View style={[styles.tile, { width: size, height: size, backgroundColor: hue }]}>
       {process.env.EXPO_OS === 'ios' ? (
-        <SymbolView name={sf} size={glyph} tintColor="#FFFFFF" />
+        <SymbolView name={sf} size={glyph} tintColor={colors.tileGlyph} />
       ) : (
-        <Glyph size={glyph} color="#FFFFFF" weight="fill" />
+        <Glyph size={glyph} color={colors.tileGlyph} weight="fill" />
       )}
     </View>
   );
