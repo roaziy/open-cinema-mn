@@ -6,6 +6,8 @@ export const HoldSchema = z.object({
   seatId: z.string(),
   showtimeId: z.string(),
   expiresAt: z.string(),
+  /** Set once the hold is inside an order; that order is still unpaid while the hold lives. */
+  bookingId: z.string().nullable(),
 });
 export type Hold = z.infer<typeof HoldSchema>;
 

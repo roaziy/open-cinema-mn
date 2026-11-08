@@ -5,6 +5,7 @@ import helmet from 'helmet';
 import { ZodError } from 'zod';
 import { type Db, db as defaultDb } from './db/client';
 import { env } from './env';
+import { isDraining } from './lib/drain';
 import { AppError } from './lib/errors';
 import { createLimiters } from './lib/rate-limit';
 import { SeatHub } from './lib/seat-hub';
@@ -48,6 +49,11 @@ export function createApp(over: Partial<AppDeps> = {}): Express {
   const app = express();
   app.disable('x-powered-by');
   app.set('trust proxy', env.TRUST_PROXY);
+  // While draining, tell keep-alive clients and proxies not to reuse this connection.
+  app.use((_req, res, next) => {
+    if (isDraining()) res.set('Connection', 'close');
+    next();
+  });
   // Local uploads are loaded cross-origin by the web and mobile apps.
   app.use(
     '/media',

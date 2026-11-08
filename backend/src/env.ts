@@ -11,6 +11,9 @@ const DEFAULT_ADMIN_PASSWORD = 'change-me-admin';
 const EnvSchema = z
   .object({
     NODE_ENV: z.enum(['development', 'test', 'production']).default('development'),
+    // Interface to bind. Unset: loopback in production (the reverse proxy is the only way in, so
+    // `x-forwarded-for` cannot be forged by direct clients); otherwise Node's default (all interfaces).
+    HOST: optional(z.string()),
     PORT: z.coerce.number().int().min(1).max(65535).default(4000),
     DATABASE_URL: z.string().min(1),
     TEST_DATABASE_URL: optional(z.string()),
@@ -62,6 +65,16 @@ const EnvSchema = z
           message: 'must be at least 32 characters in production',
         });
       }
+      const secrets = [e.JWT_SECRET, e.QR_SECRET, e.LINK_SECRET];
+      if (e.BFF_SECRET !== undefined) secrets.push(e.BFF_SECRET);
+      if (new Set(secrets).size !== secrets.length) {
+        ctx.addIssue({
+          code: 'custom',
+          path: ['JWT_SECRET'],
+          message:
+            'JWT_SECRET, QR_SECRET, LINK_SECRET and BFF_SECRET must all differ in production',
+        });
+      }
       if (e.SEED_ADMIN_PASSWORD === DEFAULT_ADMIN_PASSWORD) {
         ctx.addIssue({
           code: 'custom',
@@ -70,7 +83,11 @@ const EnvSchema = z
         });
       }
     }
-  });
+  })
+  .transform((e) => ({
+    ...e,
+    HOST: e.HOST ?? (e.NODE_ENV === 'production' ? '127.0.0.1' : undefined),
+  }));
 
 export type Env = z.infer<typeof EnvSchema>;
 

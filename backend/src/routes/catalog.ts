@@ -22,6 +22,9 @@ const ShowtimesQuery = z.object({
 });
 
 function sseWrite(res: import('express').Response, event: string, data: unknown) {
+  // Shutdown ends a stream before its close cleanup runs; a heartbeat or delta in between would
+  // otherwise write after end, an uncaught error.
+  if (res.writableEnded) return;
   res.write(`event: ${event}\ndata: ${JSON.stringify(data)}\n\n`);
 }
 
@@ -179,13 +182,19 @@ export function createCatalogRouter(deps: AppDeps): Router {
     if (gone()) return;
     if (!exists) throw notFound();
 
+    // Checked right before headers, with no await in between, so no stream can slip in after
+    // shutdown has ended the registered ones.
+    if (seatHub.isClosing) {
+      res.status(503).set('Connection', 'close').json({ error: 'shutting_down' });
+      return;
+    }
     res.writeHead(200, {
       'Content-Type': 'text/event-stream',
       'Cache-Control': 'no-cache, no-transform',
       'X-Accel-Buffering': 'no',
-      Connection: 'keep-alive',
     });
     res.flushHeaders();
+    cleanupFns.push(seatHub.trackStream(res));
 
     // Subscribe before reading the snapshot so a change in between is queued, not lost.
     let ready = false;
