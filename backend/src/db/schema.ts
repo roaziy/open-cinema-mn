@@ -251,7 +251,7 @@ export const payments = pgTable(
   },
   (t) => [
     uniqueIndex('payments_provider_invoice_unique').on(t.provider, t.invoiceId),
-    index('payments_booking_idx').on(t.bookingId),
+    uniqueIndex('payments_booking_unique').on(t.bookingId),
   ],
 );
 

@@ -1,4 +1,4 @@
-import { eq } from 'drizzle-orm';
+import { eq, sql } from 'drizzle-orm';
 import request from 'supertest';
 import { beforeEach, describe, expect, it } from 'vitest';
 import { db } from '../src/db/client';
@@ -20,7 +20,7 @@ import { verifyQr } from '../src/lib/sign';
 import { signAccessToken } from '../src/lib/tokens';
 import type { Messages } from '../src/messages';
 import { MockPaymentProvider } from '../src/payments/mock';
-import { confirmBooking } from '../src/services/bookings';
+import { confirmBooking, refundOwed } from '../src/services/bookings';
 import { createHolds } from '../src/services/holds';
 import { fakeMessages, fixedClock, makeTestApp, one, resetDb } from './helpers';
 
@@ -103,11 +103,11 @@ async function fixture(clock: () => Date) {
 
 type F = Awaited<ReturnType<typeof fixture>>;
 
-function setup(opts: { messages?: Messages } = {}) {
+function setup(opts: { messages?: Messages; spy?: boolean } = {}) {
   const clock = fixedClock('2026-11-08T04:00:00Z');
   const hub = new SeatHub();
   const messages = opts.messages ?? fakeMessages();
-  const payments = new MockPaymentProvider(db, clock);
+  const payments = opts.spy ? new SpyPayments(db, clock) : new MockPaymentProvider(db, clock);
   const deps = { db, clock, seatHub: hub, messages, payments };
   const app = makeTestApp(deps);
   return { clock, hub, messages, payments, deps, app };
@@ -124,6 +124,30 @@ const hold = async (clock: () => Date, f: F, userId: string, ...nums: number[]) 
 };
 
 const key = () => crypto.randomUUID();
+
+const hooksFor = (s: ReturnType<typeof setup>) => ({
+  settle: (id: string) => confirmBooking(db, id, s.deps),
+  refund: (id: string) => refundOwed(db, id, s.deps),
+});
+
+/** Provider whose refund fails on demand and records whether a transaction was open. */
+class SpyPayments extends MockPaymentProvider {
+  failRefunds = 0;
+  refundCalls = 0;
+  openTransactionsDuringRefund: number[] = [];
+  override async refund(invoiceId: string) {
+    this.refundCalls++;
+    const open = await db.execute<{ n: number }>(
+      sql`select count(*)::int as n from pg_stat_activity where datname = current_database() and state like 'idle in transaction%' and pid <> pg_backend_pid()`,
+    );
+    this.openTransactionsDuringRefund.push(Number(open.rows[0]?.n));
+    if (this.failRefunds > 0) {
+      this.failRefunds--;
+      throw new Error('provider down');
+    }
+    return super.refund(invoiceId);
+  }
+}
 
 const book = (
   app: ReturnType<typeof makeTestApp>,
@@ -481,9 +505,160 @@ describe('sweeper', () => {
     const [p] = await db.select().from(payments);
     await s.payments.markPaid(one(p).invoiceId);
     s.clock.advance(11 * MIN);
-    await runSweep(db, s.clock(), s.hub, (id) => confirmBooking(db, id, s.deps));
+    await runSweep(db, s.clock(), s.hub, hooksFor(s));
     const [b] = await db.select().from(bookings).where(eq(bookings.id, created.body.id));
     expect(b?.status).toBe('paid');
     expect(await db.select().from(tickets)).toHaveLength(1);
+  });
+
+  it('retries a refund that failed, from the sweeper, outside any transaction', async () => {
+    const s = setup({ spy: true });
+    const spy = s.payments as SpyPayments;
+    const f = await fixture(s.clock);
+    const holdIds = await hold(s.clock, f, f.alice.id, 1);
+    const created = await book(s.app, f.alice.auth, { holdIds });
+    s.clock.advance(11 * MIN);
+    await hold(s.clock, f, f.bob.id, 1);
+    const [p] = await db.select().from(payments);
+    await s.payments.markPaid(one(p).invoiceId);
+    spy.failRefunds = 1;
+
+    await confirmBooking(db, created.body.id, s.deps);
+    const [b] = await db.select().from(bookings);
+    expect(b?.status).toBe('failed');
+    expect(b?.seatsLost).toBe(true);
+    expect(one((await db.select().from(payments))[0]).status).toBe('paid');
+
+    await runSweep(db, s.clock(), s.hub, hooksFor(s));
+    expect(one((await db.select().from(payments))[0]).status).toBe('refunded');
+    expect(spy.refundCalls).toBe(2);
+    expect(spy.openTransactionsDuringRefund).toEqual([0, 0]);
+    await runSweep(db, s.clock(), s.hub, hooksFor(s));
+    expect(spy.refundCalls).toBe(2);
+  });
+
+  it('refunds a payment that lands after the booking expired, without a customer poll', async () => {
+    const s = setup();
+    const f = await fixture(s.clock);
+    const holdIds = await hold(s.clock, f, f.alice.id, 1);
+    const created = await book(s.app, f.alice.auth, { holdIds });
+    s.clock.advance(11 * MIN);
+    await runSweep(db, s.clock(), s.hub, hooksFor(s));
+    expect(one((await db.select().from(bookings))[0]).status).toBe('expired');
+
+    const [p] = await db.select().from(payments);
+    await s.payments.markPaid(one(p).invoiceId);
+    s.clock.advance(MIN);
+    await runSweep(db, s.clock(), s.hub, hooksFor(s));
+    const [b] = await db.select().from(bookings).where(eq(bookings.id, created.body.id));
+    expect(b?.status).toBe('failed');
+    expect(b?.seatsLost).toBe(true);
+    expect(one((await db.select().from(payments))[0]).status).toBe('refunded');
+    expect(await db.select().from(tickets)).toHaveLength(0);
+  });
+
+  it('stops watching an expired booking after the invoice expiry plus the margin', async () => {
+    const s = setup();
+    const f = await fixture(s.clock);
+    const holdIds = await hold(s.clock, f, f.alice.id, 1);
+    await book(s.app, f.alice.auth, { holdIds });
+    s.clock.advance(11 * MIN);
+    await runSweep(db, s.clock(), s.hub, hooksFor(s));
+    const [p] = await db.select().from(payments);
+    await s.payments.markPaid(one(p).invoiceId);
+    s.clock.advance(3 * MIN);
+    await runSweep(db, s.clock(), s.hub, hooksFor(s));
+    expect(one((await db.select().from(bookings))[0]).status).toBe('expired');
+  });
+
+  it('deletes every hold of a non-pending booking, expired or not', async () => {
+    const s = setup();
+    const f = await fixture(s.clock);
+    const holdIds = await hold(s.clock, f, f.alice.id, 1, 2);
+    const created = await book(s.app, f.alice.auth, { holdIds });
+    await db.update(bookings).set({ status: 'failed' }).where(eq(bookings.id, created.body.id));
+    const seen: unknown[] = [];
+    s.hub.subscribe(f.show.id, (c) => seen.push(c));
+    await runSweep(db, s.clock(), s.hub);
+    expect(await db.select().from(seatHolds)).toHaveLength(0);
+    expect(seen).toHaveLength(1);
+  });
+});
+
+describe('checkout robustness', () => {
+  it('refuses to invoice a hold on a seat that already has a valid ticket', async () => {
+    const s = setup();
+    const f = await fixture(s.clock);
+    const holdIds = await hold(s.clock, f, f.alice.id, 1);
+    const other = await db
+      .insert(bookings)
+      .values({ userId: f.bob.id, showtimeId: f.show.id, total: 1, idempotencyKey: key() })
+      .returning();
+    await db.insert(tickets).values({
+      bookingId: one(other[0]).id,
+      showtimeId: f.show.id,
+      seatId: f.seatId(1),
+      qrToken: 'x',
+    });
+    const res = await book(s.app, f.alice.auth, { holdIds }).expect(409);
+    expect(res.body.error).toBe('seat_taken');
+    expect(await db.select().from(payments)).toHaveLength(0);
+    expect(await db.select().from(bookings).where(eq(bookings.userId, f.alice.id))).toHaveLength(0);
+  });
+
+  it('completes 11 concurrent checkouts from different users', async () => {
+    const s = setup();
+    const f = await fixture(s.clock);
+    const extra = await db
+      .insert(seats)
+      .values(
+        Array.from({ length: 11 }, (_, i) => ({
+          hallId: f.show.hallId,
+          rowLabel: 'Z',
+          number: i + 1,
+          xM: i,
+          yM: 9,
+        })),
+      )
+      .returning();
+    const users = await Promise.all(extra.map((_, i) => f.user({ phone: `+9769910000${i}` })));
+    const holds = await Promise.all(
+      users.map(async (u, i) => {
+        const r = await createHolds(db, {
+          showtimeId: f.show.id,
+          seatIds: [one(extra[i]).id],
+          userId: u.id,
+          now: s.clock(),
+        });
+        return r.holds.map((h) => h.id);
+      }),
+    );
+    const results = await Promise.all(
+      users.map((u, i) => book(s.app, u.auth, { holdIds: holds[i] ?? [] })),
+    );
+    expect(results.map((r) => r.status)).toEqual(Array(11).fill(200));
+    expect(await db.select().from(payments)).toHaveLength(11);
+  }, 30_000);
+
+  it('points the invoice at the real mock-pay route and caps its expiry at the booking', async () => {
+    const s = setup();
+    const f = await fixture(s.clock);
+    const holdIds = await hold(s.clock, f, f.alice.id, 1);
+    s.clock.advance(5 * MIN);
+    const res = await book(s.app, f.alice.auth, { holdIds }).expect(200);
+    expect(res.body.invoice.qrText).toContain(`/v1/bookings/${res.body.id}/mock-pay`);
+    expect(res.body.invoice.expiresAt).toBe(res.body.expiresAt);
+  });
+
+  it('allows one payment row per booking', async () => {
+    const s = setup();
+    const f = await fixture(s.clock);
+    const holdIds = await hold(s.clock, f, f.alice.id, 1);
+    const created = await book(s.app, f.alice.auth, { holdIds });
+    await expect(
+      db
+        .insert(payments)
+        .values({ bookingId: created.body.id, provider: 'mock', invoiceId: 'dup', amount: 1 }),
+    ).rejects.toThrow();
   });
 });
