@@ -15,8 +15,10 @@ let lastUserId: string | null | undefined;
 subscribeAuth(() => {
   const id = getUserId();
   if (lastUserId !== undefined && id !== lastUserId) {
+    // Stop ticket reads that began under the old identity, then drop them and the stored copies.
+    void queryClient.cancelQueries({ queryKey: ['ticket'] });
+    void queryClient.cancelQueries({ queryKey: ['tickets'] });
     queryClient.clear();
-    // Stored tickets belong to one account too.
     void clearTicketCache();
   }
   lastUserId = id;
