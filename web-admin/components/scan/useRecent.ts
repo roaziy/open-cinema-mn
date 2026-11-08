@@ -4,8 +4,9 @@ import { type ScanResult, ScanResultSchema } from '@open-cinema/shared';
 import { useCallback, useEffect, useState } from 'react';
 import { z } from 'zod';
 import { call } from '@/lib/client-api';
+import { mapRecent, type RecentScan } from '@/lib/scan/recent';
 
-export type RecentScan = { result: ScanResult; undone: boolean };
+export type { RecentScan };
 
 const MAX = 10;
 const List = z.array(ScanResultSchema);
@@ -20,8 +21,7 @@ export function useRecent(deviceId: string | null) {
     call('GET', `/staff/scans/recent?deviceId=${deviceId}`)
       .then((raw) => {
         const parsed = List.safeParse(raw);
-        if (!live || !parsed.success) return;
-        setItems(parsed.data.map((result) => ({ result, undone: result.result === 'undone' })));
+        if (live && parsed.success) setItems(mapRecent(parsed.data));
       })
       .catch(() => {
         // The strip is a convenience; scanning works without it.

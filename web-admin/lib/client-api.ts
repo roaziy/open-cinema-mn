@@ -19,6 +19,7 @@ export async function call<T = undefined>(
   method: 'GET' | 'POST' | 'PUT' | 'PATCH' | 'DELETE',
   path: string,
   body?: unknown,
+  opts: { timeoutMs?: number } = {},
 ): Promise<T> {
   let res: Response;
   try {
@@ -26,6 +27,8 @@ export async function call<T = undefined>(
       method,
       headers: body === undefined ? undefined : { 'content-type': 'application/json' },
       body: body === undefined ? undefined : JSON.stringify(body),
+      // A stalled connection is reported like a lost one, so the caller can retry.
+      signal: opts.timeoutMs ? AbortSignal.timeout(opts.timeoutMs) : undefined,
     });
   } catch {
     throw new CallError(0, 'network');

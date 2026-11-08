@@ -1,10 +1,10 @@
 'use client';
 
 import type { ScanResult } from '@open-cinema/shared';
-import { useState } from 'react';
 import { Poster } from '@/components/ui/Poster';
 import { clockUb } from '@/lib/format';
 import { canUndo, cardFor, type Tone, undoSecondsLeft } from '@/lib/scan/card';
+import { avoidOrange } from '@/lib/tone';
 import { useNow } from './useNow';
 
 const SURFACE: Record<Tone, string> = {
@@ -43,14 +43,12 @@ export function ResultCard({
   const info = cardFor(result);
   const t = result.ticket;
   const now = useNow(1000, result.result === 'admitted');
-  const [manager, setManager] = useState(false);
   const left = undoSecondsLeft(result, now);
   const showUndo = canUndo(result, now);
   const reject = info.tone === 'reject';
 
   return (
     <section
-      aria-live="assertive"
       aria-label={info.title}
       className={`animate-rise absolute inset-x-0 bottom-0 z-20 flex flex-col gap-4 rounded-t-rail px-5 pt-5 pb-[max(1.25rem,env(safe-area-inset-bottom))] ${SURFACE[info.tone]}`}
     >
@@ -64,9 +62,7 @@ export function ResultCard({
       </div>
 
       {t && (
-        <p
-          className={`font-semibold leading-[0.85] tracking-[-0.03em] tabular-nums ${manager ? 'text-[168px]' : 'text-[132px]'}`}
-        >
+        <p className="text-[132px] font-semibold leading-[0.85] tracking-[-0.03em] tabular-nums">
           {t.seatCode}
         </p>
       )}
@@ -76,7 +72,7 @@ export function ResultCard({
           <Poster
             src={t.posterUrl}
             title={t.movieTitle}
-            tone={t.tone}
+            tone={avoidOrange(t.tone)}
             className="h-[84px] w-14 rounded-card"
           />
           <div className="min-w-0">
@@ -106,15 +102,6 @@ export function ResultCard({
             <span className="ml-2 text-[15px] tabular-nums opacity-70">
               {Math.floor(left / 60)}:{String(left % 60).padStart(2, '0')}
             </span>
-          </button>
-        ) : reject && result.result === 'already_used' ? (
-          <button
-            type="button"
-            onClick={() => setManager((m) => !m)}
-            aria-pressed={manager}
-            className={`${BTN} shrink-0 ${SECONDARY[info.tone]}`}
-          >
-            Менежер
           </button>
         ) : null}
         <button type="button" onClick={onClose} className={`${BTN} flex-1 ${PRIMARY[info.tone]}`}>

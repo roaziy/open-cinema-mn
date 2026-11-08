@@ -42,6 +42,11 @@ const TONES: Record<SoundKind, Note[]> = {
   ],
 };
 
+/** What Web Audio is doing now; `none` before the first tap. iOS suspends it when the phone locks. */
+export function audioState(): AudioContextState | 'none' {
+  return ctx?.state ?? 'none';
+}
+
 export function signal(kind: SoundKind): void {
   try {
     navigator.vibrate?.(VIBRATION[kind]);

@@ -57,15 +57,15 @@ describe('sendScan', () => {
     expect(out.kind).toBe('done');
     expect(h.bodies).toHaveLength(4);
     expect(new Set(h.bodies.map((b) => b.scanId))).toEqual(new Set([SCAN_ID]));
-    expect(new Set(h.bodies.map((b) => b.token))).toEqual(new Set([TOKEN]));
+    expect(new Set(h.bodies.map((b) => ('token' in b ? b.token : '')))).toEqual(new Set([TOKEN]));
     expect(h.retries).toEqual(['network', 'network', 'network']);
   });
 
   it('never yields an admit while the network is down', async () => {
     const h = harness(() => new Err(0, 'network'));
     const run = sendScan(input, h.deps);
-    // give it a few rounds, then cancel
-    await new Promise((r) => setTimeout(r, 20));
+    // let it fail a few times, however slowly this machine runs, then cancel
+    for (let i = 0; i < 400 && h.bodies.length < 4; i++) await new Promise((r) => setTimeout(r, 5));
     h.cancel();
     const out = await run;
     expect(out.kind).toBe('cancelled');

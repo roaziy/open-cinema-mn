@@ -100,7 +100,7 @@ export default async function GuestTicketPage({
             Сеанс цуцлагдсан. Төлбөр буцаагдана.
           </p>
         )}
-        {wallet && WALLET_NOTE[wallet] && (
+        {wallet && Object.hasOwn(WALLET_NOTE, wallet) && (
           <p
             role="status"
             className="rounded-panel border border-hairline bg-raised p-4 text-[15px] text-body"

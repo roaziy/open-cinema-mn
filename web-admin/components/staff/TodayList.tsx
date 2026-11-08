@@ -1,6 +1,7 @@
 import { Poster } from '@/components/ui/Poster';
 import { clockUb, count } from '@/lib/format';
 import type { TodayShowtime } from '@/lib/schemas';
+import { avoidOrange } from '@/lib/tone';
 
 const MIN = 60_000;
 /** Doors are busy from half an hour before the start until twenty minutes after it. */
@@ -34,7 +35,7 @@ export function TodayList({ rows, now }: { rows: TodayShowtime[]; now: number })
             <Poster
               src={r.posterUrl}
               title={r.movieTitle}
-              tone={r.tone}
+              tone={avoidOrange(r.tone)}
               className="h-[72px] w-12"
             />
             <div className="flex min-w-0 flex-1 flex-col justify-between py-0.5">
