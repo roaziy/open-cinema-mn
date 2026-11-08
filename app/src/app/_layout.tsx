@@ -3,10 +3,12 @@ import { DarkTheme, Stack, ThemeProvider } from 'expo-router';
 import * as SplashScreen from 'expo-splash-screen';
 import { StatusBar } from 'expo-status-bar';
 import { useEffect } from 'react';
-import { hydrateLocale } from '@/i18n';
+import { hydrateLocale, useI18n } from '@/i18n';
 import { ensureGuest, hydrateAuth, useAuth } from '@/lib/auth';
+import { hydrateBranch } from '@/lib/branch';
 import { queryClient } from '@/lib/queries';
 import { colors } from '@/theme/tokens';
+import { fonts } from '@/theme/type';
 
 SplashScreen.preventAutoHideAsync().catch(() => {});
 
@@ -26,9 +28,10 @@ const theme = {
 
 export default function RootLayout() {
   const { ready, user } = useAuth();
+  const { t } = useI18n();
 
   useEffect(() => {
-    Promise.all([hydrateAuth(), hydrateLocale()]).finally(() => {
+    Promise.all([hydrateAuth(), hydrateLocale(), hydrateBranch()]).finally(() => {
       SplashScreen.hideAsync().catch(() => {});
     });
   }, []);
@@ -47,6 +50,29 @@ export default function RootLayout() {
           screenOptions={{ headerShown: false, contentStyle: { backgroundColor: colors.canvas } }}
         >
           <Stack.Screen name="(tabs)" />
+          <Stack.Screen name="movie/[id]" />
+          <Stack.Screen
+            name="movie/[id]/showtimes"
+            options={{
+              headerShown: true,
+              title: t('showtimes.title'),
+              headerBackButtonDisplayMode: 'minimal',
+              headerTintColor: colors.ink,
+              headerTransparent: true,
+              scrollEdgeEffects: { top: 'hidden' },
+              headerTitleStyle: { fontFamily: fonts.semibold, color: colors.ink },
+            }}
+          />
+          <Stack.Screen name="showtime/[id]" />
+          <Stack.Screen
+            name="branches"
+            options={{
+              presentation: 'formSheet',
+              sheetAllowedDetents: 'fitToContents',
+              sheetGrabberVisible: true,
+              contentStyle: { backgroundColor: colors.surface },
+            }}
+          />
         </Stack>
       </ThemeProvider>
     </QueryClientProvider>
