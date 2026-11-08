@@ -10,29 +10,30 @@ import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Pressable } from '@/components/pressable';
 import { Skeleton } from '@/components/skeleton';
 import { ErrorState } from '@/components/state-views';
-import { useI18n } from '@/i18n';
+import { type TKey, useI18n } from '@/i18n';
+import { ApiError } from '@/lib/api';
 import { haptic } from '@/lib/haptics';
 import { mockPay, orderKeys, useBooking } from '@/lib/orders';
 import { formatCountdown, useCountdown } from '@/lib/seats';
 import { showToast } from '@/lib/toast';
-import { colors, hueFor, radius, space } from '@/theme/tokens';
+import { colors, radius, space } from '@/theme/tokens';
 import { type } from '@/theme/type';
 
 /** Static list for the mock screen; a real provider returns its own deep links. */
 const BANKS = [
-  'Хаан банк',
-  'Голомт банк',
-  'Худалдаа хөгжлийн банк',
-  'Төрийн банк',
-  'Капитрон банк',
-  'Хас банк',
-  'М банк',
-  'Ариг банк',
-  'Чингис Хаан банк',
-  'Богд банк',
-  'Транс банк',
-  'Үндэсний хөрөнгө оруулалтын банк',
-] as const;
+  ['khan', 'bank.khan'],
+  ['golomt', 'bank.golomt'],
+  ['tdb', 'bank.tdb'],
+  ['state', 'bank.state'],
+  ['capitron', 'bank.capitron'],
+  ['xac', 'bank.xac'],
+  ['m', 'bank.m'],
+  ['arig', 'bank.arig'],
+  ['chinggis', 'bank.chinggis'],
+  ['bogd', 'bank.bogd'],
+  ['trans', 'bank.trans'],
+  ['nib', 'bank.nib'],
+] as const satisfies readonly (readonly [string, TKey])[];
 
 const initials = (name: string) =>
   name
@@ -69,9 +70,14 @@ export default function PayScreen() {
     setPaying(true);
     try {
       qc.setQueryData(orderKeys.booking(bookingId), await mockPay(bookingId));
-    } catch {
-      haptic.error();
-      showToast(t('pay.error'), 'error');
+    } catch (e) {
+      if (e instanceof ApiError && e.code === 'booking_not_pending') {
+        // Paid or closed in the meantime: show whatever the booking is now.
+        booking.refetch();
+      } else {
+        haptic.error();
+        showToast(t('pay.markFailed'), 'error');
+      }
     } finally {
       setPaying(false);
     }
@@ -101,7 +107,13 @@ export default function PayScreen() {
       ) : dead ? (
         <View style={[styles.center, styles.pad, { paddingTop: headerHeight }]}>
           <Text style={styles.deadTitle}>
-            {data.status === 'failed' ? t('pay.failed') : t('pay.expired')}
+            {t(
+              data.status === 'failed'
+                ? 'pay.failed'
+                : data.status === 'cancelled'
+                  ? 'pay.cancelled'
+                  : 'pay.expired',
+            )}
           </Text>
           {data.seatsLost ? <Text style={styles.sub}>{t('pay.seatsLost')}</Text> : null}
           <Pressable
@@ -127,7 +139,12 @@ export default function PayScreen() {
           <View style={styles.panel}>
             <View style={styles.qrCard}>
               <Text style={styles.qrHint}>{t('pay.scan')}</Text>
-              <View style={styles.qr} accessibilityLabel={t('pay.scan')}>
+              <View
+                style={styles.qr}
+                accessible
+                accessibilityRole="image"
+                accessibilityLabel={t('pay.scan')}
+              >
                 <QRCode
                   value={data.invoice?.qrText ?? data.id}
                   size={200}
@@ -148,15 +165,16 @@ export default function PayScreen() {
             </View>
           </View>
 
-          <Text style={styles.group}>{t('pay.orFrom')}</Text>
+          {/* A plain list of supported banks, not buttons: nothing here is tappable in the mock. */}
+          <Text style={styles.group}>{t('pay.banks')}</Text>
           <View style={styles.grid}>
-            {BANKS.map((name) => (
-              <View key={name} style={styles.bank} accessibilityLabel={name}>
-                <View style={[styles.bankTile, { backgroundColor: hueFor(name) }]}>
-                  <Text style={styles.bankInitials}>{initials(name)}</Text>
+            {BANKS.map(([id, key]) => (
+              <View key={id} style={styles.bank}>
+                <View style={styles.bankTile}>
+                  <Text style={styles.bankInitials}>{initials(t(key))}</Text>
                 </View>
                 <Text style={styles.bankName} numberOfLines={2}>
-                  {name}
+                  {t(key)}
                 </Text>
               </View>
             ))}
@@ -227,14 +245,17 @@ const styles = StyleSheet.create({
   grid: { flexDirection: 'row', flexWrap: 'wrap', rowGap: space.lg },
   bank: { width: '25%', alignItems: 'center', gap: 6, paddingHorizontal: 2 },
   bankTile: {
-    width: 52,
-    height: 52,
+    width: 48,
+    height: 48,
     borderRadius: 14,
     alignItems: 'center',
     justifyContent: 'center',
+    backgroundColor: colors.surface,
+    borderWidth: 1,
+    borderColor: colors.hairline,
   },
-  bankInitials: { ...type.headline, color: colors.tileGlyph },
-  bankName: { ...type.footnote, color: colors.body, textAlign: 'center' },
+  bankInitials: { ...type.bodyMedium, color: colors.muted },
+  bankName: { ...type.footnote, color: colors.muted, textAlign: 'center' },
   deadTitle: { ...type.title, color: colors.ink, textAlign: 'center' },
   sub: { ...type.body, color: colors.muted, textAlign: 'center' },
   secondary: {

@@ -1,7 +1,7 @@
 import { normalizeEmail, normalizePhone, type OtpChannel, type SeatMap } from '@open-cinema/shared';
 import { useQueryClient } from '@tanstack/react-query';
 import { router, useLocalSearchParams } from 'expo-router';
-import { type ComponentRef, useCallback, useEffect, useRef, useState } from 'react';
+import { useState } from 'react';
 import {
   ActivityIndicator,
   KeyboardAvoidingView,
@@ -13,47 +13,23 @@ import {
 } from 'react-native';
 import Animated, { FadeIn } from 'react-native-reanimated';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
+import { OtpEntry } from '@/components/otp-entry';
 import { Pressable } from '@/components/pressable';
-import { type TKey, useI18n } from '@/i18n';
-import { ApiError } from '@/lib/api';
+import { useI18n } from '@/i18n';
 import { requestOtp } from '@/lib/auth';
 import { haptic } from '@/lib/haptics';
 import { loginKeepingHolds } from '@/lib/login-flow';
+import { otpErrorKey } from '@/lib/otp-errors';
 import { seatKeys, seatLabel } from '@/lib/seats';
 import { showToast } from '@/lib/toast';
 import { colors, radius, space } from '@/theme/tokens';
 import { fonts, type } from '@/theme/type';
-
-const RESEND_S = 60;
-const CODE_LEN = 6;
-const CODE_SLOTS = ['d1', 'd2', 'd3', 'd4', 'd5', 'd6'] as const;
 
 type Mode = 'phone' | 'email';
 
 /** "+97699112233" -> "+976 9911 2233" */
 function prettyPhone(e164: string): string {
   return `+976 ${e164.slice(4, 8)} ${e164.slice(8)}`;
-}
-
-/** Every code the auth routes can answer with, and the message for it. */
-const ERROR_KEYS: Record<string, TKey> = {
-  invalid_code: 'login.err.invalid_code', // wrong, expired or already used: the server does not say which
-  too_many_attempts: 'login.err.too_many_attempts',
-  resend_too_soon: 'login.err.resend_too_soon',
-  too_many_requests: 'login.err.too_many_requests',
-  rate_limited: 'login.err.rate_limited',
-  invalid_target: 'login.err.invalid_target',
-  sms_failed: 'login.err.sms_failed',
-  email_failed: 'login.err.email_failed',
-  forbidden: 'login.err.forbidden', // staff by email, admins by code
-};
-
-function errorKey(e: unknown): TKey {
-  if (e instanceof ApiError) {
-    if (e.status === 0) return 'error.network';
-    return ERROR_KEYS[e.code] ?? 'login.err.generic';
-  }
-  return 'login.err.generic';
 }
 
 export default function LoginScreen() {
@@ -66,28 +42,11 @@ export default function LoginScreen() {
   const [value, setValue] = useState('');
   const [step, setStep] = useState<'contact' | 'code'>('contact');
   const [target, setTarget] = useState<string | null>(null);
-  const [code, setCode] = useState('');
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
-  const [resendLeft, setResendLeft] = useState(0);
-  const codeRef = useRef<ComponentRef<typeof TextInput>>(null);
 
   const channel: OtpChannel = mode === 'phone' ? 'sms' : 'email';
   const normalized = mode === 'phone' ? normalizePhone(value) : normalizeEmail(value);
-
-  useEffect(() => {
-    if (resendLeft <= 0) return;
-    const timer = setTimeout(() => setResendLeft((s) => s - 1), 1000);
-    return () => clearTimeout(timer);
-  }, [resendLeft]);
-
-  const fail = useCallback(
-    (e: unknown) => {
-      setError(t(errorKey(e)));
-      haptic.error();
-    },
-    [t],
-  );
 
   const send = async () => {
     if (!normalized || busy) return;
@@ -97,39 +56,20 @@ export default function LoginScreen() {
       await requestOtp(channel, normalized);
       setTarget(normalized);
       setStep('code');
-      setCode('');
-      setResendLeft(RESEND_S);
-      setTimeout(() => codeRef.current?.focus(), 250);
     } catch (e) {
-      fail(e);
+      haptic.error();
+      setError(t(otpErrorKey(e)));
     } finally {
       setBusy(false);
     }
   };
 
-  const resend = async () => {
-    if (!target || busy || resendLeft > 0) return;
-    setBusy(true);
-    setError(null);
-    try {
-      await requestOtp(channel, target);
-      setCode('');
-      setResendLeft(RESEND_S);
-      codeRef.current?.focus();
-    } catch (e) {
-      fail(e);
-    } finally {
-      setBusy(false);
-    }
-  };
-
+  /** Throws on a wrong code; the code step shows it. */
   const verify = async (digits: string) => {
-    if (!target || busy) return;
-    setBusy(true);
-    setError(null);
+    if (!target) return;
     // The login clears cached data for the old identity: keep the seat names for the message.
     const seatMap = showtimeId ? qc.getQueryData<SeatMap>(seatKeys.map(showtimeId)) : undefined;
-    try {
+    {
       const { lostSeatIds, heldCount } = await loginKeepingHolds(
         channel,
         target,
@@ -158,12 +98,6 @@ export default function LoginScreen() {
       } else {
         router.dismiss();
       }
-    } catch (e) {
-      setCode('');
-      fail(e);
-      codeRef.current?.focus();
-    } finally {
-      setBusy(false);
     }
   };
 
@@ -172,13 +106,6 @@ export default function LoginScreen() {
       const seat = map?.seats.find((x) => x.id === sid);
       return seat ? [seatLabel(seat)] : [];
     });
-
-  const onCodeChange = (text: string) => {
-    const digits = text.replace(/\D/g, '').slice(0, CODE_LEN);
-    setCode(digits);
-    setError(null);
-    if (digits.length === CODE_LEN) verify(digits);
-  };
 
   const switchMode = (m: Mode) => {
     if (m === mode) return;
@@ -276,78 +203,22 @@ export default function LoginScreen() {
             </Pressable>
           </Animated.View>
         ) : (
-          <Animated.View entering={FadeIn.duration(160)} style={styles.stack}>
-            <Text style={styles.sub}>
-              {t('login.codeSent', {
-                target: target && mode === 'phone' ? prettyPhone(target) : (target ?? ''),
-              })}
-            </Text>
-
-            <View style={styles.boxes}>
-              {CODE_SLOTS.map((slot, i) => {
-                const active = i === Math.min(code.length, CODE_LEN - 1) && !busy;
-                return (
-                  <View
-                    key={slot}
-                    style={[styles.box, active && styles.boxActive, error ? styles.boxError : null]}
-                  >
-                    <Text style={styles.boxText}>{code[i] ?? ''}</Text>
-                  </View>
-                );
-              })}
-              {/* One real field behind the boxes: typing, paste and the iOS "From Messages" suggestion all land here. */}
-              <TextInput
-                ref={codeRef}
-                style={styles.hidden}
-                value={code}
-                onChangeText={onCodeChange}
-                keyboardType="number-pad"
-                textContentType="oneTimeCode"
-                autoComplete="sms-otp"
-                maxLength={CODE_LEN}
-                caretHidden
-                editable={!busy}
-                accessibilityLabel={t('login.codeTitle')}
-              />
-            </View>
-
-            {error ? <Text style={styles.error}>{error}</Text> : null}
-            {busy ? (
-              <View style={styles.checking}>
-                <ActivityIndicator color={colors.muted} />
-                <Text style={styles.checkingText}>{t('login.verifying')}</Text>
-              </View>
-            ) : null}
-
-            <View style={styles.links}>
-              <Pressable
-                onPress={resend}
-                disabled={resendLeft > 0 || busy}
-                accessibilityRole="button"
-              >
-                <Text style={[styles.link, resendLeft > 0 && styles.linkOff]}>
-                  {resendLeft > 0 ? t('login.resendIn', { s: resendLeft }) : t('login.resend')}
-                </Text>
-              </Pressable>
-              <Pressable
-                onPress={() => {
-                  setStep('contact');
-                  setError(null);
-                  setCode('');
-                }}
-                accessibilityRole="button"
-              >
-                <Text style={styles.link}>{t('login.change')}</Text>
-              </Pressable>
-            </View>
+          <Animated.View entering={FadeIn.duration(160)}>
+            <OtpEntry
+              sentTo={target && mode === 'phone' ? prettyPhone(target) : (target ?? '')}
+              onVerify={verify}
+              onResend={() => requestOtp(channel, target ?? '')}
+              onChange={() => {
+                setStep('contact');
+                setError(null);
+              }}
+            />
           </Animated.View>
         )}
       </View>
     </KeyboardAvoidingView>
   );
 }
-
-const BOX = 48;
 
 const styles = StyleSheet.create({
   root: { flex: 1, backgroundColor: colors.surface },
@@ -401,33 +272,4 @@ const styles = StyleSheet.create({
   },
   primaryText: { ...type.headline, color: colors.onAction },
   disabled: { opacity: 0.4 },
-  sub: { ...type.body, color: colors.body },
-  boxes: { flexDirection: 'row', justifyContent: 'space-between' },
-  box: {
-    width: BOX,
-    height: 58,
-    alignItems: 'center',
-    justifyContent: 'center',
-    borderRadius: radius.card,
-    backgroundColor: colors.raised,
-    borderWidth: 1,
-    borderColor: colors.hairline,
-  },
-  boxActive: { borderColor: colors.action, borderWidth: 1.5 },
-  boxError: { borderColor: colors.dangerEdge },
-  boxText: { ...type.title, color: colors.ink, fontVariant: ['tabular-nums'] },
-  hidden: {
-    position: 'absolute',
-    top: 0,
-    left: 0,
-    right: 0,
-    bottom: 0,
-    opacity: 0.02,
-    color: 'transparent',
-  },
-  checking: { flexDirection: 'row', alignItems: 'center', gap: space.sm },
-  checkingText: { ...type.caption, color: colors.muted },
-  links: { flexDirection: 'row', justifyContent: 'space-between' },
-  link: { ...type.bodyMedium, color: colors.ink },
-  linkOff: { color: colors.muted },
 });

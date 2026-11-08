@@ -6,6 +6,7 @@ import { Poster } from '@/components/poster';
 import { Pressable } from '@/components/pressable';
 import { Skeleton } from '@/components/skeleton';
 import { EmptyState, ErrorState } from '@/components/state-views';
+import { ticketSummary } from '@/components/ticket-stub';
 import { useI18n } from '@/i18n';
 import { formatMonthDay } from '@/lib/format';
 import { useTickets } from '@/lib/orders';
@@ -96,33 +97,38 @@ function Row({ ticket }: { ticket: TicketView }) {
   const cancelled = ticket.status === 'cancelled';
   return (
     <Pressable
-      style={[styles.row, cancelled && styles.rowDim]}
+      style={styles.row}
       onPress={() => router.push(`/ticket/${ticket.id}`)}
       accessibilityRole="button"
-      accessibilityLabel={`${ticket.movie.title}, ${seat}`}
+      accessibilityLabel={ticketSummary(ticket, t, locale)}
     >
-      <Poster uri={ticket.movie.posterUrl} width={54} radius={8} />
-      <View style={styles.rowText}>
-        <Text style={styles.rowTitle} numberOfLines={1}>
-          {ticket.movie.title}
-        </Text>
-        <Text style={styles.meta} numberOfLines={1}>
-          {formatMonthDay(ubDate(ticket.showtime.startsAt), locale)}
-          {'  ·  '}
-          {formatUbTime(ticket.showtime.startsAt)}
-          {'  ·  '}
-          {ticket.showtime.format}
-        </Text>
-        <Text style={styles.meta} numberOfLines={1}>
-          {ticket.branch.name}
-        </Text>
-        {cancelled ? (
-          <View style={styles.badge}>
-            <Text style={styles.badgeText}>{t('ticket.cancelledNote')}</Text>
-          </View>
-        ) : null}
+      {/* Only the film's own content is dimmed; the status badge keeps full contrast. */}
+      <View style={[styles.rowBody, cancelled && styles.rowDim]}>
+        <Poster uri={ticket.movie.posterUrl} width={54} radius={8} />
+        <View style={styles.rowText}>
+          <Text style={styles.rowTitle} numberOfLines={1}>
+            {ticket.movie.title}
+          </Text>
+          <Text style={styles.meta} numberOfLines={1}>
+            {formatMonthDay(ubDate(ticket.showtime.startsAt), locale)}
+            {'  ·  '}
+            {formatUbTime(ticket.showtime.startsAt)}
+            {'  ·  '}
+            {ticket.showtime.format}
+          </Text>
+          <Text style={styles.meta} numberOfLines={1}>
+            {ticket.branch.name}
+            {'  ·  '}
+            {ticket.hallName}
+          </Text>
+        </View>
+        <Text style={styles.seatCode}>{seat}</Text>
       </View>
-      <Text style={styles.seatCode}>{seat}</Text>
+      {cancelled ? (
+        <View style={styles.badge}>
+          <Text style={styles.badgeText}>{t('ticket.cancelledNote')}</Text>
+        </View>
+      ) : null}
     </Pressable>
   );
 }
@@ -152,8 +158,7 @@ const styles = StyleSheet.create({
   segmentTextOn: { color: colors.ink },
   skeletons: { gap: space.md },
   row: {
-    flexDirection: 'row',
-    gap: space.md,
+    gap: space.sm,
     padding: space.md,
     borderRadius: radius.card,
     backgroundColor: colors.raised,
@@ -161,13 +166,13 @@ const styles = StyleSheet.create({
     borderColor: colors.hairline,
     borderTopColor: colors.highlight,
   },
-  rowDim: { opacity: 0.7 },
+  rowBody: { flexDirection: 'row', gap: space.md },
+  rowDim: { opacity: 0.6 },
   rowText: { flex: 1, gap: 2, justifyContent: 'center' },
   rowTitle: { ...type.headline, color: colors.ink },
   meta: { ...type.caption, color: colors.body },
   badge: {
     alignSelf: 'flex-start',
-    marginTop: 4,
     paddingHorizontal: space.sm,
     height: 22,
     justifyContent: 'center',

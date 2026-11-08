@@ -2,12 +2,34 @@ import { formatUbTime, type TicketView, ubDate } from '@open-cinema/shared';
 import { Image } from 'expo-image';
 import { StyleSheet, Text, View } from 'react-native';
 import QRCode from 'react-native-qrcode-svg';
-import { useI18n } from '@/i18n';
+import { type Locale, useI18n } from '@/i18n';
 import { formatMonthDay } from '@/lib/format';
 import { colors, radius, space } from '@/theme/tokens';
 import { fonts, type } from '@/theme/type';
 
 const NOTCH = 22;
+
+type T = ReturnType<typeof useI18n>['t'];
+
+/** Screen-reader summary shared by the stub and the My tickets row: film, date, time, hall, seat, status. */
+export function ticketSummary(ticket: TicketView, t: T, locale: Locale): string {
+  const status =
+    ticket.status === 'cancelled'
+      ? t('ticket.cancelledNote')
+      : ticket.usedAt
+        ? t('ticket.used')
+        : null;
+  return [
+    ticket.movie.title,
+    formatMonthDay(ubDate(ticket.showtime.startsAt), locale),
+    formatUbTime(ticket.showtime.startsAt),
+    ticket.hallName,
+    `${t('ticket.seat')} ${ticket.seat.rowLabel}${ticket.seat.number}`,
+    status,
+  ]
+    .filter(Boolean)
+    .join(', ');
+}
 
 /** Paper ticket: film-tone band, perforation with notches, the seat code very large, entry QR. */
 export function TicketStub({ ticket }: { ticket: TicketView }) {
@@ -18,7 +40,7 @@ export function TicketStub({ ticket }: { ticket: TicketView }) {
   const dim = cancelled || used;
 
   return (
-    <View style={styles.wrap} accessible accessibilityLabel={`${ticket.movie.title}, ${seat}`}>
+    <View style={styles.wrap} accessible accessibilityLabel={ticketSummary(ticket, t, locale)}>
       <View style={styles.band}>
         <Image
           source={ticket.movie.backdropUrl ?? ticket.movie.posterUrl}
@@ -62,21 +84,23 @@ export function TicketStub({ ticket }: { ticket: TicketView }) {
         <View style={[styles.notch, styles.notchR]} />
       </View>
 
-      <View style={[styles.paper, styles.bottom, dim && styles.dim]}>
-        <Text style={styles.seatLabel}>{t('ticket.seat')}</Text>
-        <Text style={styles.seat} adjustsFontSizeToFit numberOfLines={1}>
-          {seat}
-        </Text>
-        <View style={styles.qr} accessibilityLabel={t('ticket.admit')}>
-          <QRCode
-            value={ticket.qrToken}
-            size={176}
-            color={colors.paperInk}
-            backgroundColor={colors.paper}
-            ecl="M"
-          />
+      <View style={[styles.paper, styles.bottom]}>
+        <View style={[styles.codeBlock, dim && styles.dim]}>
+          <Text style={styles.seatLabel}>{t('ticket.seat')}</Text>
+          <Text style={styles.seat} adjustsFontSizeToFit numberOfLines={1}>
+            {seat}
+          </Text>
+          <View style={styles.qr}>
+            <QRCode
+              value={ticket.qrToken}
+              size={176}
+              color={colors.paperInk}
+              backgroundColor={colors.paper}
+              ecl="M"
+            />
+          </View>
+          <Text style={styles.order}>{t('ticket.order', { no: ticket.orderNo })}</Text>
         </View>
-        <Text style={styles.order}>{t('ticket.order', { no: ticket.orderNo })}</Text>
         {cancelled || used ? (
           <View style={styles.badge}>
             <Text style={styles.badgeText}>
@@ -93,7 +117,7 @@ function Fact({ label, value, grow }: { label: string; value: string; grow: numb
   return (
     <View style={[styles.fact, { flexGrow: grow, flexBasis: 0 }]}>
       <Text style={styles.factLabel}>{label}</Text>
-      <Text style={styles.factValue} numberOfLines={1}>
+      <Text style={styles.factValue} numberOfLines={1} adjustsFontSizeToFit minimumFontScale={0.6}>
         {value}
       </Text>
     </View>
@@ -136,6 +160,7 @@ const styles = StyleSheet.create({
   notchL: { left: -NOTCH / 2 },
   notchR: { right: -NOTCH / 2 },
   bottom: { alignItems: 'center', paddingTop: space.md, paddingBottom: space.xl, gap: space.sm },
+  codeBlock: { alignItems: 'center', gap: space.sm },
   dim: { opacity: 0.35 },
   seatLabel: { ...type.footnote, color: colors.paperMuted },
   seat: {

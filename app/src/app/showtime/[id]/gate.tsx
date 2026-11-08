@@ -8,6 +8,7 @@ import { IconTile } from '@/components/icon-tile';
 import { Pressable } from '@/components/pressable';
 import { useI18n } from '@/i18n';
 import { getContactEmail, setContactEmail } from '@/lib/checkout-store';
+import { confirmGuestLogin } from '@/lib/guest-login';
 import { formatCountdown, liveHolds, useCountdown, useMyHolds } from '@/lib/seats';
 import { colors, hues, radius, space } from '@/theme/tokens';
 import { fonts, type } from '@/theme/type';
@@ -75,7 +76,9 @@ export default function GateScreen() {
           style={[styles.loginCard, closed && styles.disabled]}
           disabled={closed}
           accessibilityState={{ disabled: closed }}
-          onPress={() => router.push(`/login?showtimeId=${id}&next=checkout`)}
+          onPress={async () => {
+            if (await confirmGuestLogin(t)) router.push(`/login?showtimeId=${id}&next=checkout`);
+          }}
           accessibilityRole="button"
         >
           <IconTile sf="person.crop.circle.fill" phosphor={SignIn} hue={hues.purple} size={40} />
