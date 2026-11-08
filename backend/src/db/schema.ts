@@ -314,6 +314,8 @@ export const ticketScans = pgTable(
       .notNull()
       .references(() => users.id, { onDelete: 'restrict' }),
     deviceId: text('device_id').notNull(),
+    // What the staff called this door when they scanned; shown on a later "already used" card.
+    deviceLabel: text('device_label'),
     scanId: uuid('scan_id').notNull(),
     result: scanResult('result').notNull(),
     previousScanId: uuid('previous_scan_id'),

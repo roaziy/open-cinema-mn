@@ -1,9 +1,18 @@
-import type { ScanResult, ScanResultCode } from '@open-cinema/shared';
+import type { ScanBody, ScanResult, ScanResultCode } from '@open-cinema/shared';
 import { ubDate, ubDayRange } from '@open-cinema/shared';
 import { and, asc, desc, eq, isNull, sql } from 'drizzle-orm';
 import { z } from 'zod';
 import type { Db } from '../db/client';
-import { halls, movies, seats, showtimes, ticketScans, tickets, users } from '../db/schema';
+import {
+  bookings,
+  halls,
+  movies,
+  seats,
+  showtimes,
+  ticketScans,
+  tickets,
+  users,
+} from '../db/schema';
 import { AppError, conflict, forbidden } from '../lib/errors';
 import { verifyQr } from '../lib/sign';
 import type { AuthUser } from '../middleware/auth';
@@ -71,13 +80,13 @@ async function ticketCard(
 async function previousOf(db: Reader, id: string | null): Promise<ScanResult['previous']> {
   if (!id) return null;
   const [r] = await db
-    .select({ at: ticketScans.createdAt, name: users.name })
+    .select({ at: ticketScans.createdAt, name: users.name, label: ticketScans.deviceLabel })
     .from(ticketScans)
     .innerJoin(users, eq(users.id, ticketScans.staffId))
     .where(eq(ticketScans.id, id));
   if (!r) return null;
   // Never the phone number: this text is shown on a door card in front of guests.
-  return { at: r.at.toISOString(), staffName: r.name ?? STAFF_FALLBACK_NAME, deviceLabel: null };
+  return { at: r.at.toISOString(), staffName: r.name ?? STAFF_FALLBACK_NAME, deviceLabel: r.label };
 }
 
 /**
@@ -106,15 +115,52 @@ async function composeResult(
   };
 }
 
-async function storedScan(
-  db: Reader,
-  body: { scanId: string; token: string },
-  staffId: string,
-): Promise<ScanRow | null> {
+/**
+ * The ticket an order-number-and-seat scan points at. A door only sees its own branch's tickets
+ * for today (UB day); `scope` is null only when matching a replay, which must find the same
+ * ticket the first attempt did. Two matches mean we cannot tell, so none.
+ */
+async function resolveOrder(
+  tx: Reader,
+  body: { orderNo: string; seat: string },
+  scope: { scanner: Scanner; now: Date } | null,
+): Promise<string | null> {
+  const m = /^([A-Za-z]+)(\d+)$/.exec(body.seat);
+  if (!m) return null;
+  const conds = [
+    sql`upper(${bookings.orderNo}) = ${body.orderNo.toUpperCase()}`,
+    sql`upper(${seats.rowLabel}) = ${(m[1] as string).toUpperCase()}`,
+    eq(seats.number, Number(m[2])),
+  ];
+  if (scope) {
+    const { start, end } = ubDayRange(ubDate(scope.now));
+    conds.push(
+      sql`${showtimes.startsAt} >= ${start.toISOString()}::timestamptz and ${showtimes.startsAt} < ${end.toISOString()}::timestamptz`,
+    );
+    // An admin works every branch; staff only their own, and a staff account without one sees none.
+    if (scope.scanner.role !== 'admin') {
+      if (!scope.scanner.branchId) return null;
+      conds.push(eq(halls.branchId, scope.scanner.branchId));
+    }
+  }
+  const rows = await tx
+    .select({ id: tickets.id })
+    .from(tickets)
+    .innerJoin(bookings, eq(bookings.id, tickets.bookingId))
+    .innerJoin(seats, eq(seats.id, tickets.seatId))
+    .innerJoin(showtimes, eq(showtimes.id, tickets.showtimeId))
+    .innerJoin(halls, eq(halls.id, showtimes.hallId))
+    .where(and(...conds))
+    .limit(2);
+  return rows.length === 1 ? (rows[0]?.id ?? null) : null;
+}
+
+async function storedScan(db: Reader, body: ScanBody, staffId: string): Promise<ScanRow | null> {
   const [row] = await db.select().from(ticketScans).where(eq(ticketScans.scanId, body.scanId));
   if (!row) return null;
   // A scan id belongs to one staff member and one ticket.
-  const sentTicket = verifyQr(body.token)?.ticketId;
+  const sentTicket =
+    'token' in body ? verifyQr(body.token)?.ticketId : await resolveOrder(db, body, null);
   if (row.staffId !== staffId || (row.ticketId !== null && sentTicket !== row.ticketId)) {
     throw conflict('scan_id_conflict');
   }
@@ -123,13 +169,14 @@ async function storedScan(
 
 type Verdict = { result: ScanResultCode; ticketId: string | null; previousScanId?: string };
 
-async function decide(
-  tx: Tx,
-  scanner: Scanner,
-  body: { token: string; deviceId: string },
-  now: Date,
-): Promise<Verdict> {
-  const parsed = verifyQr(body.token);
+async function decide(tx: Tx, scanner: Scanner, body: ScanBody, now: Date): Promise<Verdict> {
+  let parsed: { ticketId: string; showtimeId: string | null } | null;
+  if ('token' in body) {
+    parsed = verifyQr(body.token);
+  } else {
+    const id = await resolveOrder(tx, body, { scanner, now });
+    parsed = id ? { ticketId: id, showtimeId: null } : null;
+  }
   if (!parsed || !UUID.safeParse(parsed.ticketId).success) {
     return { result: 'invalid', ticketId: null };
   }
@@ -146,7 +193,9 @@ async function decide(
     .innerJoin(showtimes, eq(showtimes.id, tickets.showtimeId))
     .innerJoin(halls, eq(halls.id, showtimes.hallId))
     .where(eq(tickets.id, parsed.ticketId));
-  if (!t || t.showtimeId !== parsed.showtimeId) return { result: 'invalid', ticketId: null };
+  if (!t || (parsed.showtimeId !== null && t.showtimeId !== parsed.showtimeId)) {
+    return { result: 'invalid', ticketId: null };
+  }
   if (t.status !== 'valid' || t.showStatus === 'cancelled')
     return { result: 'invalid', ticketId: t.id };
   if (scanner.role !== 'admin' && scanner.branchId !== t.branchId) {
@@ -189,7 +238,7 @@ async function decide(
 export async function scanTicket(
   db: Db,
   scanner: Scanner,
-  body: { token: string; scanId: string; deviceId: string },
+  body: ScanBody,
   now: Date,
 ): Promise<ScanResult> {
   return db.transaction(async (tx) => {
@@ -206,6 +255,7 @@ export async function scanTicket(
         ticketId: v.ticketId,
         staffId: scanner.id,
         deviceId: body.deviceId,
+        deviceLabel: body.deviceLabel ?? null,
         scanId: body.scanId,
         result: v.result,
         previousScanId,
@@ -262,6 +312,7 @@ export async function undoScan(
       ticketId: admit.ticketId,
       staffId: scanner.id,
       deviceId: admit.deviceId,
+      deviceLabel: admit.deviceLabel,
       scanId: undoScanId,
       result: 'undone',
       previousScanId: admit.id,
