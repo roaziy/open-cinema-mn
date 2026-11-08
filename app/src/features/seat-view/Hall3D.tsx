@@ -37,11 +37,17 @@ export type Hall3DProps = {
   reduceMotion: boolean;
   /** Dev only: stay on the top-down view. */
   hold: boolean;
+  /** The canvas component has mounted (its code is loaded); starts the first-frame watchdog. */
+  onMount: () => void;
   /** The first frame has been drawn: GL works. */
   onReady: () => void;
 };
 
 export default function Hall3D(props: Hall3DProps) {
+  const { onMount } = props;
+  useEffect(() => {
+    onMount();
+  }, [onMount]);
   return (
     <>
       <Canvas
@@ -116,7 +122,7 @@ function Scene({
       dummy.scale.setScalar(1);
       dummy.updateMatrix();
       mesh.setMatrixAt(i, dummy.matrix);
-      tint.set(s.kind === 'premium' ? '#3B4263' : '#2E2E35');
+      tint.set(s.kind === 'premium' ? '#40404C' : '#2E2E35');
       mesh.setColorAt(i, tint);
     });
     mesh.count = drawable.length;
