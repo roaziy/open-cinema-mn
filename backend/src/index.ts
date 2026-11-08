@@ -21,6 +21,12 @@ if (
   );
 }
 
+if (env.NODE_ENV === 'production' && env.PAYMENT_PROVIDER === 'mock') {
+  console.warn(
+    'WARNING: PAYMENT_PROVIDER=mock in production (ALLOW_MOCK_PAYMENTS=1). Any customer can mark an order paid and receive valid tickets. Demo use only.',
+  );
+}
+
 const deps = createDeps();
 const app = createApp(deps);
 const onListening = () => {
