@@ -2,6 +2,7 @@ import { and, eq, inArray, lte, or, sql } from 'drizzle-orm';
 import type { AppDeps } from '../app';
 import type { Db } from '../db/client';
 import { bookings, payments, seatHolds } from '../db/schema';
+import { isDraining } from '../lib/drain';
 import type { SeatHub } from '../lib/seat-hub';
 import { confirmBooking, refundOwed } from '../services/bookings';
 import { nonFreeSeats } from '../services/seat-state';
@@ -25,6 +26,8 @@ export type SweepHooks = {
  *  3. expired bookings whose invoice is still unpaid are settled until the invoice expiry plus a
  *     margin, so a late payment is refunded without waiting for the customer to poll;
  *  4. refunds that failed earlier are retried.
+ * Once the process drains the pass stops before its next item (never inside one), so it starts no
+ * provider call the drain cannot wait for; the next pass after the restart picks up the rest.
  */
 export async function runSweep(
   db: Db,
@@ -34,6 +37,7 @@ export async function runSweep(
 ): Promise<void> {
   const each = async (ids: string[], fn: (id: string) => Promise<void>) => {
     for (const id of ids) {
+      if (isDraining()) return;
       try {
         await fn(id);
       } catch (err) {
@@ -50,6 +54,8 @@ export async function runSweep(
       due.map((d) => d.id),
       hooks.settle,
     );
+    // Expiring now would skip the last look at the invoices the drain left unchecked.
+    if (isDraining()) return;
   }
   const freed = await db.transaction(async (tx) => {
     await tx
@@ -113,23 +119,30 @@ export async function runSweep(
   );
 }
 
-/** Starts the periodic sweep; the returned function stops it. */
-export function startSweeper(deps: AppDeps): () => void {
-  let running = false;
-  const timer = setInterval(async () => {
-    if (running) return;
-    running = true;
-    try {
-      await runSweep(deps.db, deps.clock(), deps.seatHub, {
-        settle: (id) => confirmBooking(deps.db, id, deps),
-        refund: (id) => refundOwed(deps.db, id, deps),
-      });
-    } catch (err) {
-      console.error('sweep failed', err);
-    } finally {
-      running = false;
-    }
+/**
+ * Starts the periodic sweep. The returned function stops the timer and resolves once a pass that
+ * is currently running has finished (while draining, that is right after its current item).
+ */
+export function startSweeper(deps: AppDeps): () => Promise<void> {
+  let current: Promise<void> | null = null;
+  const timer = setInterval(() => {
+    if (current) return;
+    current = (async () => {
+      try {
+        await runSweep(deps.db, deps.clock(), deps.seatHub, {
+          settle: (id) => confirmBooking(deps.db, id, deps),
+          refund: (id) => refundOwed(deps.db, id, deps),
+        });
+      } catch (err) {
+        console.error('sweep failed', err);
+      } finally {
+        current = null;
+      }
+    })();
   }, SWEEP_INTERVAL_MS);
   timer.unref();
-  return () => clearInterval(timer);
+  return async () => {
+    clearInterval(timer);
+    await current;
+  };
 }

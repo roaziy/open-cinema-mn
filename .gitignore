@@ -18,3 +18,5 @@ logs/
 web-admin/next-env.d.ts
 *.local
 web-admin/public/zxing/
+dist.next/
+dist.old/
