@@ -1,9 +1,9 @@
 import { mkdir, writeFile } from 'node:fs/promises';
 import path from 'node:path';
-import { fileURLToPath } from 'node:url';
+import { BACKEND_ROOT } from '../lib/paths';
 import type { StorageProvider } from './index';
 
-export const UPLOAD_DIR = fileURLToPath(new URL('../../uploads', import.meta.url));
+export const UPLOAD_DIR = path.join(BACKEND_ROOT, 'uploads');
 
 /** Writes files under `dir`; the API serves that directory at `/media/*`. */
 export class LocalStorage implements StorageProvider {

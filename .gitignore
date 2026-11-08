@@ -14,3 +14,4 @@ backend/uploads/
 *.p12
 *.pem
 *.tsbuildinfo
+logs/
