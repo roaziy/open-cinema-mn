@@ -1,4 +1,4 @@
-import type { Request, RequestHandler, Response } from 'express';
+import type { Request, RequestHandler } from 'express';
 import { z } from 'zod';
 import { notFound } from './errors';
 
