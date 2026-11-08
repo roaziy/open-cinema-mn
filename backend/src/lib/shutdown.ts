@@ -1,5 +1,16 @@
 import type { Server } from 'node:http';
 
+/**
+ * Shutdown timers derived from the longest outbound provider call, so a refund or charge that is
+ * waiting on the provider can finish before connections are destroyed and the pool is closed.
+ */
+export function shutdownBudget(providerTimeoutMs: number) {
+  return {
+    forceCloseAfterMs: providerTimeoutMs + 5_000,
+    timeoutMs: providerTimeoutMs + 8_000,
+  };
+}
+
 export type ShutdownParts = {
   server: Pick<Server, 'close' | 'closeAllConnections'>;
   /** Stops the sweeper timer; resolves when a pass that is running has finished. */

@@ -2,7 +2,8 @@ import { createApp, createDeps } from './app';
 import { pool } from './db/client';
 import { env } from './env';
 import { startSweeper } from './jobs/sweeper';
-import { createShutdown } from './lib/shutdown';
+import { createShutdown, shutdownBudget } from './lib/shutdown';
+import { PROVIDER_TIMEOUT_MS } from './services/bookings';
 
 if (env.NODE_ENV === 'production' && env.TRUST_PROXY === 0) {
   console.warn(
@@ -30,16 +31,15 @@ const server = env.HOST
   : app.listen(env.PORT, onListening);
 const stopSweeper = startSweeper(deps);
 
-// pm2 sends SIGINT then SIGKILL after kill_timeout (10 s, ecosystem.config.cjs). Drain for up to
-// 7 s, destroy leftover connections then, and hard-exit at 9 s.
+// pm2 sends SIGINT then SIGKILL after kill_timeout (30 s, ecosystem.config.cjs). The drain outlasts
+// the provider timeout (20 s): leftover connections are destroyed at 25 s, the process exits at 28 s.
 const shutdown = createShutdown({
   server,
   stopSweeper,
   endStreams: () => deps.seatHub.endStreams(),
   closePool: () => pool.end(),
   exit: (code) => process.exit(code),
-  timeoutMs: 9000,
-  forceCloseAfterMs: 7000,
+  ...shutdownBudget(PROVIDER_TIMEOUT_MS),
 });
 process.on('SIGTERM', () => void shutdown('SIGTERM'));
 process.on('SIGINT', () => void shutdown('SIGINT'));

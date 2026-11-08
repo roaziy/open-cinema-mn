@@ -179,11 +179,16 @@ export function createCatalogRouter(deps: AppDeps): Router {
     if (gone()) return;
     if (!exists) throw notFound();
 
+    // Checked right before headers, with no await in between, so no stream can slip in after
+    // shutdown has ended the registered ones.
+    if (seatHub.isClosing) {
+      res.status(503).set('Connection', 'close').json({ error: 'shutting_down' });
+      return;
+    }
     res.writeHead(200, {
       'Content-Type': 'text/event-stream',
       'Cache-Control': 'no-cache, no-transform',
       'X-Accel-Buffering': 'no',
-      Connection: 'keep-alive',
     });
     res.flushHeaders();
     cleanupFns.push(seatHub.trackStream(res));

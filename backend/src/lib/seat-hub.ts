@@ -25,16 +25,28 @@ export class SeatHub {
 
   private streams = new Set<ServerResponse>();
 
+  private closing = false;
+
+  /** True once shutdown started: new streams are refused and responses close their connection. */
+  get isClosing(): boolean {
+    return this.closing;
+  }
+
   /** Registers an open SSE response so shutdown can end it; the returned function unregisters. */
   trackStream(res: ServerResponse): () => void {
+    if (this.closing) {
+      res.end();
+      return () => {};
+    }
     this.streams.add(res);
     return () => {
       this.streams.delete(res);
     };
   }
 
-  /** Ends every tracked SSE response (graceful shutdown). */
+  /** Starts draining: ends every tracked SSE response and refuses later ones. */
   endStreams(): void {
+    this.closing = true;
     for (const res of [...this.streams]) res.end();
     this.streams.clear();
   }

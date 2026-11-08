@@ -36,11 +36,14 @@ await build({
   ],
   logLevel: 'info',
 });
-// dist is never missing: move it aside, move the new tree in, then delete the old one.
+// Swap with two renames: dist is missing only for the instant between them, and restored if the second fails.
 const old = path.join(root, 'dist.old');
 await rm(old, { recursive: true, force: true });
 await rename(dist, old).catch((err) => {
   if (err.code !== 'ENOENT') throw err;
 });
-await rename(next, dist);
+await rename(next, dist).catch(async (err) => {
+  await rename(old, dist).catch(() => {});
+  throw err;
+});
 await rm(old, { recursive: true, force: true });
