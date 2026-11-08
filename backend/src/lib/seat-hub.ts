@@ -1,5 +1,6 @@
 import type { ServerResponse } from 'node:http';
 import type { SeatDelta } from '@open-cinema/shared';
+import { isDraining } from './drain';
 
 export type SeatListener = (changes: SeatDelta[]) => void;
 
@@ -27,14 +28,14 @@ export class SeatHub {
 
   private closing = false;
 
-  /** True once shutdown started: new streams are refused and responses close their connection. */
+  /** True once the process drains (lib/drain) or after endStreams: new streams are refused. */
   get isClosing(): boolean {
-    return this.closing;
+    return this.closing || isDraining();
   }
 
   /** Registers an open SSE response so shutdown can end it; the returned function unregisters. */
   trackStream(res: ServerResponse): () => void {
-    if (this.closing) {
+    if (this.isClosing) {
       res.end();
       return () => {};
     }

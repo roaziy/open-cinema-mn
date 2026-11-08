@@ -11,6 +11,7 @@ let server: Server | undefined;
 const aborts: AbortController[] = [];
 
 afterEach(async () => {
+  vi.restoreAllMocks();
   for (const a of aborts.splice(0)) a.abort();
   await new Promise<void>((r) => (server ? server.close(() => r()) : r()));
   server = undefined;
@@ -221,8 +222,29 @@ describe('seat stream', () => {
     expect(res.status).toBe(404);
   });
 
+  it('drops a delta published after shutdown ended the stream, instead of crashing', async () => {
+    const f = await setup();
+    const hub = new SeatHub();
+    const crashes: unknown[] = [];
+    const onCrash = (err: unknown) => crashes.push(err);
+    process.on('uncaughtException', onCrash);
+    try {
+      const { next } = await open(`/v1/showtimes/${f.show.id}/seats/stream`, hub);
+      expect((await next()).event).toBe('snapshot');
+      hub.endStreams();
+      // Same tick as the end: the route's close cleanup has not run, so its listener still fires.
+      hub.publish(f.show.id, [{ seatId: f.s1.id, state: 'sold' }]);
+      await expect(next()).rejects.toThrow('stream ended');
+      await new Promise((r) => setTimeout(r, 50));
+      expect(crashes).toEqual([]);
+    } finally {
+      process.off('uncaughtException', onCrash);
+    }
+  });
+
   it('refuses a late stream during drain and closes fast over a pooled keep-alive socket', async () => {
     const f = await setup();
+    vi.spyOn(console, 'log').mockImplementation(() => {});
     const hub = new SeatHub();
     const { createShutdown } = await import('../src/lib/shutdown');
     const http = await import('node:http');
@@ -251,6 +273,8 @@ describe('seat stream', () => {
     const started = Date.now();
     const closed = createShutdown({
       server: server as Server,
+      // The hub's own guard is under test; drain.test.ts covers the process-wide flag.
+      startDraining: () => {},
       endStreams: () => hub.endStreams(),
       stopSweeper: async () => {},
       closePool: async () => {},
@@ -261,10 +285,9 @@ describe('seat stream', () => {
     await first.ended;
     // The client reconnects at once on the same socket: it must be refused, not held open.
     const second = await connect().catch(() => null);
-    if (second) {
-      expect(second.status).toBe(503);
-      await second.ended;
-    }
+    expect(second).not.toBeNull();
+    expect(second?.status).toBe(503);
+    await second?.ended;
     await closed;
     expect(Date.now() - started).toBeLessThan(2000);
     agent.destroy();

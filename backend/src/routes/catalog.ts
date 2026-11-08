@@ -22,6 +22,9 @@ const ShowtimesQuery = z.object({
 });
 
 function sseWrite(res: import('express').Response, event: string, data: unknown) {
+  // Shutdown ends a stream before its close cleanup runs; a heartbeat or delta in between would
+  // otherwise write after end, an uncaught error.
+  if (res.writableEnded) return;
   res.write(`event: ${event}\ndata: ${JSON.stringify(data)}\n\n`);
 }
 

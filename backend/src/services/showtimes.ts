@@ -19,6 +19,7 @@ import {
   tickets,
   users,
 } from '../db/schema';
+import { isDraining } from '../lib/drain';
 import { badRequest, conflict, notFound } from '../lib/errors';
 import { showtimeCancelledEmail } from '../messages/templates';
 import { refundOwed } from './bookings';
@@ -292,7 +293,9 @@ export async function cancelShowtime(
   );
   for (const bookingId of done.bookingIds) {
     try {
-      await refundOwed(db, bookingId, deps);
+      // Draining: start no refund; the booking stays owed and the sweeper pays it after restart.
+      if (isDraining()) console.warn(`draining: refund of ${bookingId} left to the sweeper`);
+      else await refundOwed(db, bookingId, deps);
     } catch (err) {
       console.error('cancellation refund failed, will retry', err);
     }
