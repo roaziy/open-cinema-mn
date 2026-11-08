@@ -37,6 +37,10 @@ export const colors = {
 
   /** The single light surface in the app (ticket stub / QR). */
   paper: '#F2EDE4',
+  /** Text and QR ink on paper. */
+  paperInk: '#17140F',
+  paperMuted: '#6B645A',
+  paperRule: 'rgba(23,20,15,0.18)',
 } as const;
 
 /** Identity hues: category/identity only, never for actions. */

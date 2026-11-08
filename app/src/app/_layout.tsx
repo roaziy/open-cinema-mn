@@ -78,6 +78,8 @@ export default function RootLayout() {
               }}
             />
             <Stack.Screen name="checkout/[showtimeId]" />
+            <Stack.Screen name="pay/[bookingId]" />
+            <Stack.Screen name="ticket/[id]" />
             <Stack.Screen
               name="login"
               options={{
