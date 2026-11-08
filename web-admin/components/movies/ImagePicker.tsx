@@ -2,7 +2,8 @@
 
 import { CircleNotch, UploadSimple } from '@phosphor-icons/react/dist/ssr';
 import { useId, useRef, useState } from 'react';
-import { imageProblem, messageOf, uploadImage } from '@/lib/client-api';
+import { CallError, imageProblem, messageOf, uploadImage } from '@/lib/client-api';
+import { prepareImage, TooLargeError } from '@/lib/image-resize';
 
 /**
  * Click-to-pick image slot (one tab stop: the button; the file input is only opened by it). Shows
@@ -46,9 +47,16 @@ export function ImagePicker({
     setBusy(true);
     onBusy(true);
     try {
-      onUploaded(await uploadImage(file), file);
+      const ready = await prepareImage(file);
+      onUploaded(await uploadImage(ready), ready);
     } catch (err) {
-      onError(messageOf(err));
+      onError(
+        err instanceof TooLargeError
+          ? messageOf(new CallError(413, 'file_too_large'))
+          : err instanceof CallError
+            ? messageOf(err)
+            : messageOf(new CallError(0, 'image_unreadable')),
+      );
       setLocal(null);
     } finally {
       setBusy(false);

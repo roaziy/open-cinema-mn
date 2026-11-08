@@ -1,6 +1,7 @@
 'use client';
 
 import { errorMessage } from './errors-mn';
+import { MAX_SOURCE_BYTES } from './image-resize';
 
 export class CallError extends Error {
   constructor(
@@ -72,12 +73,11 @@ export function messageOf(err: unknown): string {
   return err instanceof CallError ? err.message : errorMessage('unknown');
 }
 
-export const MAX_UPLOAD_BYTES = 8 * 1024 * 1024;
 const IMAGE_TYPES = new Set(['image/jpeg', 'image/png', 'image/webp']);
 
-/** Why a picked file will not be accepted (same limits as the API), or null when it will. */
+/** Why a picked file will not even be tried (wrong type, absurdly large), or null. It is shrunk before upload. */
 export function imageProblem(file: { size: number; type: string }): string | null {
   if (!IMAGE_TYPES.has(file.type)) return errorMessage('unsupported_media_type');
-  if (file.size > MAX_UPLOAD_BYTES) return errorMessage('file_too_large');
+  if (file.size > MAX_SOURCE_BYTES) return errorMessage('file_too_large');
   return null;
 }
