@@ -1,5 +1,6 @@
 import { formatMnt, formatUbTime, type ShowtimeSlot } from '@open-cinema/shared';
 import { router, useLocalSearchParams } from 'expo-router';
+import { useHeaderHeight } from 'expo-router/react-navigation';
 import { Buildings } from 'phosphor-react-native';
 import { useMemo, useState } from 'react';
 import { ScrollView, StyleSheet, Text, useWindowDimensions, View } from 'react-native';
@@ -33,8 +34,8 @@ export default function ShowtimesScreen() {
   const shows = useShowtimes(id, date);
   // Previous day's cards linger as placeholder data: never show or open them under a new chip.
   const loading = shows.isPending || shows.isPlaceholderData;
-  // The transparent native header is laid over the backdrop; reserve its height ourselves.
-  const headerHeight = insets.top + (process.env.EXPO_OS === 'ios' ? 44 : 56);
+  // The transparent native header is laid over the backdrop; reserve its measured height.
+  const headerHeight = useHeaderHeight();
 
   // The preferred branch leads; the rest keep the API order.
   const branches = useMemo(() => {
