@@ -26,6 +26,20 @@ if (env.NODE_ENV === 'production' && dbTls.level === 'require') {
     'WARNING: database TLS is encrypted but the server identity is NOT verified (DATABASE_SSL=require). Download the Supabase CA certificate and set DATABASE_SSL=verify and DATABASE_CA_FILE (deploy/README.md 1.2.1).',
   );
 }
+if (env.NODE_ENV === 'production' && dbTls.level === 'off') {
+  const host = (() => {
+    try {
+      return new URL(env.DATABASE_URL).hostname;
+    } catch {
+      return '';
+    }
+  })();
+  if (!['localhost', '127.0.0.1', '[::1]', '::1', ''].includes(host)) {
+    console.warn(
+      'WARNING: database TLS is OFF in production: credentials and data cross the network in plaintext. Set DATABASE_SSL=verify (deploy/README.md 1.2.1).',
+    );
+  }
+}
 if (env.NODE_ENV === 'production' && env.PAYMENT_PROVIDER === 'mock') {
   console.warn(
     'WARNING: PAYMENT_PROVIDER=mock in production (ALLOW_MOCK_PAYMENTS=1). Any customer can mark an order paid and receive valid tickets. Demo use only.',

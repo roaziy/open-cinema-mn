@@ -160,6 +160,9 @@ describe('env hardening', () => {
 
   it('rejects short secrets in production but not in development', () => {
     expect(() => parseEnv({ ...base, JWT_SECRET: 'short-secret' })).toThrow(/JWT_SECRET/);
+    expect(parseEnv({ ...base, APP_NAME: '  ' }).APP_NAME).toBe('Open Cinema');
+    expect(parseEnv({ ...base, APP_NAME: '' }).APP_NAME).toBe('Open Cinema');
+    expect(parseEnv({ ...base, APP_NAME: 'Kino' }).APP_NAME).toBe('Kino');
     expect(() =>
       parseEnv({ ...base, NODE_ENV: 'development', JWT_SECRET: 'short-secret' }),
     ).not.toThrow();

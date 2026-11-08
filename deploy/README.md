@@ -89,6 +89,7 @@ How the settings combine:
 - `verify`: encrypted and the certificate is checked against `DATABASE_CA_FILE` (the system store when
   unset, which does not trust Supabase's own CA).
 - A `sslmode=verify-full` / `verify-ca` (and `sslrootcert=`) in `DATABASE_URL` is honoured as `verify`.
+  `DATABASE_SSL=verify` together with `sslmode=verify-full` is accepted (same strength; both check the host name).
   A `DATABASE_SSL` weaker than the URL's `sslmode` stops the API from starting, with an error naming both.
 
 The API reads `.env` from the repository root (pm2 passes `--env-file-if-exists=../.env` to node).

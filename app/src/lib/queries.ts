@@ -2,6 +2,7 @@ import { type PublicUser, PublicUserSchema } from '@open-cinema/shared';
 import { QueryClient, useQuery } from '@tanstack/react-query';
 import { api } from './api';
 import { getUserId, subscribeAuth } from './auth';
+import { shouldClearCache } from './identity-change';
 import { clearTicketCache } from './ticket-cache';
 
 export const queryClient = new QueryClient({
@@ -14,7 +15,7 @@ export const queryClient = new QueryClient({
 let lastUserId: string | null | undefined;
 subscribeAuth(() => {
   const id = getUserId();
-  if (lastUserId !== undefined && id !== lastUserId) {
+  if (shouldClearCache(lastUserId, id)) {
     // Stop ticket reads that began under the old identity, then drop them and the stored copies.
     void queryClient.cancelQueries({ queryKey: ['ticket'] });
     void queryClient.cancelQueries({ queryKey: ['tickets'] });

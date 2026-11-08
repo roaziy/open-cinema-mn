@@ -81,6 +81,13 @@ describe('resolveDbSsl', () => {
     );
   });
 
+  it('DATABASE_SSL=verify with sslmode=verify-full (the documented pair) starts and verifies the host', () => {
+    const r = resolveDbSsl(cfg(`${base}?sslmode=verify-full`, 'verify', '/ca.pem'), read);
+    expect(r.level).toBe('verify');
+    expect(r.ssl).toEqual({ rejectUnauthorized: true, ca: 'PEM(/ca.pem)' });
+    expect(() => resolveDbSsl(cfg(`${base}?sslmode=verify-ca`, 'verify'))).not.toThrow();
+  });
+
   it('allows a stronger DATABASE_SSL than the URL', () => {
     expect(resolveDbSsl(cfg(`${base}?sslmode=require`, 'verify')).level).toBe('verify');
     expect(resolveDbSsl(cfg(`${base}?sslmode=disable`, 'off')).ssl).toBe(false);

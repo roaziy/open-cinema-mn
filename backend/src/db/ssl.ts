@@ -9,7 +9,8 @@ const RANK: Record<string, number> = {
   off: 0,
   disable: 0,
   require: 1,
-  verify: 2,
+  // node's `verify` checks the host name, so it is as strong as verify-full.
+  verify: 3,
   'verify-ca': 2,
   'verify-full': 3,
 };

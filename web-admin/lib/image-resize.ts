@@ -31,6 +31,12 @@ function encode(canvas: HTMLCanvasElement, type: string): Promise<Blob | null> {
   return new Promise((resolve) => canvas.toBlob(resolve, type, QUALITY));
 }
 
+/** The admin surface token (`--color-surface` in globals.css); the literal is its fallback. */
+function surfaceColor(): string {
+  const v = getComputedStyle(document.documentElement).getPropertyValue('--color-surface').trim();
+  return v || '#151517';
+}
+
 const rename = (name: string, type: string) =>
   `${name.replace(/\.[^.]+$/, '') || 'image'}.${type === 'image/webp' ? 'webp' : 'jpg'}`;
 
@@ -52,7 +58,14 @@ export async function prepareImage(file: File): Promise<File> {
     ctx.drawImage(bitmap, 0, 0, plan.width, plan.height);
     // Browsers that cannot encode WebP silently return a PNG, which is not smaller: ask for JPEG then.
     let blob = await encode(canvas, 'image/webp');
-    if (blob?.type !== 'image/webp') blob = await encode(canvas, 'image/jpeg');
+    if (blob?.type !== 'image/webp') {
+      // JPEG has no alpha: paint the dark surface colour first so transparent areas do not turn black.
+      ctx.globalCompositeOperation = 'destination-over';
+      ctx.fillStyle = surfaceColor();
+      ctx.fillRect(0, 0, plan.width, plan.height);
+      ctx.globalCompositeOperation = 'source-over';
+      blob = await encode(canvas, 'image/jpeg');
+    }
     if (!blob) throw new Error('encode_failed');
     if (!fitsUpload(blob.size)) throw new TooLargeError();
     return new File([blob], rename(file.name, blob.type), { type: blob.type });
