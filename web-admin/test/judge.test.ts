@@ -7,33 +7,31 @@ const me = (status: number | null, role?: string, accessFresh = true) => ({
   accessFresh,
 });
 
-describe('judgeSession (a login page opened with ?error= must not end a healthy session)', () => {
+describe('judgeSession (a login page opened with ?error= must not end a live session)', () => {
   it('ends only on proof the session is dead', () => {
-    expect(judgeSession(me(401), 'admin')).toBe('end');
-    expect(judgeSession(me(401), 'staff')).toBe('end');
+    expect(judgeSession(me(401))).toBe('end');
   });
 
   it('does not end on a 401 for a token that has simply expired', () => {
-    expect(judgeSession(me(401, undefined, false), 'admin')).toBe('stay');
+    expect(judgeSession(me(401, undefined, false))).toBe('stay');
   });
 
-  it('sends a live session that fits its area home', () => {
-    expect(judgeSession(me(200, 'admin'), 'admin')).toBe('home');
-    expect(judgeSession(me(200, 'staff'), 'staff')).toBe('home');
-    expect(judgeSession(me(200, 'admin'), 'staff')).toBe('home');
+  it('sends every live back-office session home, whichever login page was opened', () => {
+    // Staff opening /login?error=... and an admin opening /staff/login?error=... both go home.
+    expect(judgeSession(me(200, 'staff'))).toBe('home');
+    expect(judgeSession(me(200, 'admin'))).toBe('home');
   });
 
-  it('ends a live session that does not fit the area', () => {
-    expect(judgeSession(me(200, 'staff'), 'admin')).toBe('end');
-    expect(judgeSession(me(200, 'customer'), 'staff')).toBe('end');
-    expect(judgeSession(me(200, 'guest'), 'admin')).toBe('end');
-    expect(judgeSession(me(200, undefined), 'admin')).toBe('end');
+  it('ends a live session whose role has no home here', () => {
+    expect(judgeSession(me(200, 'customer'))).toBe('end');
+    expect(judgeSession(me(200, 'guest'))).toBe('end');
+    expect(judgeSession(me(200, undefined))).toBe('end');
   });
 
   it('leaves everything alone when the API cannot answer', () => {
-    expect(judgeSession(me(null), 'admin')).toBe('stay');
-    expect(judgeSession(me(500), 'admin')).toBe('stay');
-    expect(judgeSession(me(503), 'staff')).toBe('stay');
-    expect(judgeSession(me(403), 'admin')).toBe('stay');
+    expect(judgeSession(me(null))).toBe('stay');
+    expect(judgeSession(me(500))).toBe('stay');
+    expect(judgeSession(me(503))).toBe('stay');
+    expect(judgeSession(me(403))).toBe('stay');
   });
 });

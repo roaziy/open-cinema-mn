@@ -18,13 +18,13 @@ export default async function StaffLoginPage({
   // A session is ended only on proof (see judgeSession); a healthy one just goes home.
   let endStale = false;
   if (error === 'expired' || error === 'forbidden') {
-    const verdict = await verdictFor('staff');
-    if (verdict === 'home') redirect('/staff', RedirectType.replace);
+    const { verdict, home } = await verdictFor();
+    if (verdict === 'home' && home) redirect(home, RedirectType.replace);
     endStale = verdict === 'end';
   }
   return (
     <AuthShell>
-      {endStale ? <EndSession area="staff" /> : null}
+      {endStale ? <EndSession /> : null}
       <h1 className="text-[26px] font-semibold tracking-[-0.01em] text-ink">Ажилтан нэвтрэх</h1>
       <p className="mb-6 mt-1.5 text-[15px] text-muted">
         Утасныхаа дугаарыг оруулаад кодоор нэвтэрнэ.

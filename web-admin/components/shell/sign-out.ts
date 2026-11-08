@@ -3,7 +3,6 @@
 import { cookies } from 'next/headers';
 import { RedirectType, redirect } from 'next/navigation';
 import { clearAuthCookies, REFRESH_COOKIE } from '@/lib/auth/cookies';
-import type { Area } from '@/lib/auth/judge';
 import { postJson } from '@/lib/auth/server';
 import { verdictFor } from '@/lib/auth/verdict';
 
@@ -19,15 +18,12 @@ async function terminate(): Promise<void> {
 
 /**
  * Called by a login page opened with `?error=`. It re-checks with the API first: only a session
- * that is dead or does not fit this area is ended; a healthy one goes home instead.
+ * that is dead, or has no home here, is ended; a live back-office session goes to its home.
  */
-export async function endDeadSession(area: Area): Promise<void> {
-  if (area !== 'admin' && area !== 'staff') return;
-  const verdict = await verdictFor(area);
+export async function endDeadSession(): Promise<void> {
+  const { verdict, home } = await verdictFor();
   if (verdict === 'end') return terminate();
-  if (verdict === 'home') {
-    redirect(area === 'admin' ? '/admin' : '/staff', RedirectType.replace);
-  }
+  if (verdict === 'home' && home) redirect(home, RedirectType.replace);
 }
 
 /**
