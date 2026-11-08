@@ -11,6 +11,16 @@ export class CallError extends Error {
   }
 }
 
+async function readJson(res: Response, signal: AbortSignal | undefined, fallback: unknown) {
+  try {
+    return await res.json();
+  } catch {
+    if (signal?.aborted) throw new CallError(0, 'network');
+    if (res.ok) throw new CallError(res.status, 'bad_response');
+    return fallback;
+  }
+}
+
 /**
  * Browser -> BFF -> API. Every admin mutation goes through here (one pattern, one place), so the
  * session cookies stay httpOnly and errors always come back as a Mongolian message.
@@ -19,23 +29,28 @@ export async function call<T = undefined>(
   method: 'GET' | 'POST' | 'PUT' | 'PATCH' | 'DELETE',
   path: string,
   body?: unknown,
+  opts: { timeoutMs?: number } = {},
 ): Promise<T> {
   let res: Response;
+  // A stalled connection is reported like a lost one, so the caller can retry. The timer also
+  // covers reading the body: a response that stops half way is a lost response, not an answer.
+  const signal = opts.timeoutMs ? AbortSignal.timeout(opts.timeoutMs) : undefined;
   try {
     res = await fetch(`/api${path}`, {
       method,
       headers: body === undefined ? undefined : { 'content-type': 'application/json' },
       body: body === undefined ? undefined : JSON.stringify(body),
+      signal,
     });
   } catch {
     throw new CallError(0, 'network');
   }
   if (!res.ok) {
-    const data = (await res.json().catch(() => ({}))) as { error?: string };
-    throw new CallError(res.status, data.error ?? 'unknown');
+    const data = await readJson(res, signal, {});
+    throw new CallError(res.status, (data as { error?: string }).error ?? 'unknown');
   }
   if (res.status === 204) return undefined as T;
-  return (await res.json()) as T;
+  return (await readJson(res, signal, undefined)) as T;
 }
 
 /** Image upload (poster, backdrop). Resolves to the stored file's URL. */

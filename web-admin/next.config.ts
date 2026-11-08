@@ -22,9 +22,20 @@ const config: NextConfig = {
   transpilePackages: ['@open-cinema/shared'],
   poweredByHeader: false,
   agentRules: false,
+  allowedDevOrigins: ['127.0.0.1'],
   async headers() {
     return [
       { source: '/:path*', headers: securityHeaders },
+      {
+        // A guest ticket is private to whoever holds the link: never cached, indexed or leaked
+        // through the Referer header (the token is in the URL).
+        source: '/t/:path*',
+        headers: [
+          { key: 'Cache-Control', value: 'no-store, max-age=0' },
+          { key: 'X-Robots-Tag', value: 'noindex, nofollow, noarchive' },
+          { key: 'Referrer-Policy', value: 'no-referrer' },
+        ],
+      },
       {
         // The worker must always be revalidated so updates reach installed PWAs.
         source: '/sw.js',

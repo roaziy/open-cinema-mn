@@ -150,6 +150,7 @@ export const en: Record<TKey, string> = {
   'pay.back': 'Back to seat map',
   'ticket.title': 'Ticket',
   'ticket.order': 'Order {no}',
+  'ticket.checkCode': 'Code',
   'ticket.seat': 'Seat',
   'ticket.hall': 'Hall',
   'ticket.date': 'Date',
