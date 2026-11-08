@@ -15,7 +15,7 @@ export async function loginKeepingHolds(
   target: string,
   code: string,
   showtimeId?: string,
-): Promise<{ lostSeatIds: string[] }> {
+): Promise<{ lostSeatIds: string[]; heldCount: number }> {
   let guest: { token: string; refresh: string | null; holds: Hold[] } | null = null;
 
   if (getUser()?.role === 'guest') {
@@ -32,7 +32,7 @@ export async function loginKeepingHolds(
 
   // A wrong code throws here and nothing has changed yet.
   await loginWithOtp(channel, target, code);
-  if (!guest) return { lostSeatIds: [] };
+  if (!guest) return { lostSeatIds: [], heldCount: 0 };
   const { token, refresh, holds } = guest;
 
   let lostSeatIds: string[] = [];
@@ -52,7 +52,7 @@ export async function loginKeepingHolds(
       () => {},
     );
   }
-  return { lostSeatIds };
+  return { lostSeatIds, heldCount: holds.length - lostSeatIds.length };
 }
 
 /** Free the guest's holds with the guest's token; each failure is retried once. A hold that is already gone counts as freed. */
