@@ -9,7 +9,7 @@ import { Fade } from './fade';
  */
 export function PosterBackdrop({ uri, tone }: { uri: string; tone: string }) {
   return (
-    <View style={StyleSheet.absoluteFill} pointerEvents="none">
+    <View style={[StyleSheet.absoluteFill, { overflow: 'hidden' }]} pointerEvents="none">
       <Image
         source={uri}
         style={StyleSheet.absoluteFill}
@@ -22,10 +22,20 @@ export function PosterBackdrop({ uri, tone }: { uri: string; tone: string }) {
       <View style={styles.fade}>
         <Fade color={colors.canvas} />
       </View>
+      {/* Seals the last pixel row so the blur never leaks past the fade. */}
+      <View style={styles.seal} />
     </View>
   );
 }
 
 const styles = StyleSheet.create({
+  seal: {
+    position: 'absolute',
+    left: 0,
+    right: 0,
+    bottom: 0,
+    height: 2,
+    backgroundColor: colors.canvas,
+  },
   fade: { position: 'absolute', left: 0, right: 0, bottom: 0, height: '45%' },
 });

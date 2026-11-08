@@ -59,6 +59,7 @@ export default function RootLayout() {
               headerBackButtonDisplayMode: 'minimal',
               headerTintColor: colors.ink,
               headerTransparent: true,
+              scrollEdgeEffects: { top: 'hidden' },
               headerTitleStyle: { fontFamily: fonts.semibold, color: colors.ink },
             }}
           />

@@ -128,18 +128,26 @@ export default function MovieScreen() {
       <View style={[styles.cta, { bottom: insets.bottom + space.sm }]} pointerEvents="box-none">
         <GlassBar>
           <View style={styles.ctaRow}>
-            {fromPrice !== null ? (
-              <Text style={styles.price}>
-                {t('movie.fromPrice', { price: formatMnt(fromPrice) })}
+            {m.status === 'soon' ? (
+              <Text style={styles.soon}>
+                {t('home.opens', { date: formatMonthDay(m.releaseDate, locale) })}
               </Text>
-            ) : null}
-            <Pressable
-              style={styles.button}
-              onPress={() => router.push(`/movie/${id}/showtimes`)}
-              accessibilityRole="button"
-            >
-              <Text style={styles.buttonText}>{t('movie.pickTime')}</Text>
-            </Pressable>
+            ) : (
+              <>
+                {fromPrice !== null ? (
+                  <Text style={styles.price}>
+                    {t('movie.fromPrice', { price: formatMnt(fromPrice) })}
+                  </Text>
+                ) : null}
+                <Pressable
+                  style={styles.button}
+                  onPress={() => router.push(`/movie/${id}/showtimes`)}
+                  accessibilityRole="button"
+                >
+                  <Text style={styles.buttonText}>{t('movie.pickTime')}</Text>
+                </Pressable>
+              </>
+            )}
           </View>
         </GlassBar>
       </View>
@@ -219,6 +227,13 @@ const styles = StyleSheet.create({
   infoValue: { ...type.body, color: colors.muted, maxWidth: '50%' },
   cta: { position: 'absolute', left: space.lg, right: space.lg },
   ctaRow: { flexDirection: 'row', alignItems: 'center', gap: space.md },
+  soon: {
+    ...type.headline,
+    color: colors.ink,
+    flex: 1,
+    textAlign: 'center',
+    paddingVertical: space.md,
+  },
   price: { ...type.number, color: colors.ink, paddingLeft: space.md },
   button: {
     flex: 1,
