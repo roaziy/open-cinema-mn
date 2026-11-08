@@ -1,5 +1,6 @@
 import type { NextFunction, Request, RequestHandler, Response } from 'express';
-import type { z } from 'zod';
+import { z } from 'zod';
+import { notFound } from './errors';
 
 type Source = 'body' | 'query' | 'params';
 
@@ -25,3 +26,12 @@ export const asyncRoute =
   (req, res, next) => {
     fn(req, res, next).catch(next);
   };
+
+const UUID = z.string().uuid();
+
+/** A route param that must be a UUID; anything else cannot exist, so it is a plain 404. */
+export function uuidParam(req: Request, name = 'id'): string {
+  const value = String(req.params[name]);
+  if (!UUID.safeParse(value).success) throw notFound();
+  return value;
+}

@@ -10,6 +10,7 @@ import { createLimiters } from './lib/rate-limit';
 import { SeatHub } from './lib/seat-hub';
 import { createMessages, type Messages } from './messages';
 import { createPayments, type PaymentProvider } from './payments/provider';
+import { createAdminRouter } from './routes/admin';
 import { createAuthRouter } from './routes/auth';
 import { createBookingsRouter } from './routes/bookings';
 import { createCatalogRouter } from './routes/catalog';
@@ -75,6 +76,7 @@ export function createApp(over: Partial<AppDeps> = {}): Express {
   v1.use(createBookingsRouter(deps));
   v1.use(createTicketsRouter(deps, limiters));
   v1.use(createStaffRouter(deps, limiters));
+  v1.use('/admin', createAdminRouter(deps));
   app.use('/v1', v1);
 
   app.use((_req, res) => {

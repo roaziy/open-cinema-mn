@@ -247,6 +247,7 @@ export const payments = pgTable(
     status: paymentStatus('status').notNull().default('pending'),
     amount: integer('amount').notNull(),
     raw: jsonb('raw'),
+    refundedAt: ts('refunded_at'),
     createdAt: createdAt(),
   },
   (t) => [

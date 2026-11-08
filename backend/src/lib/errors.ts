@@ -21,3 +21,9 @@ export function isUniqueViolation(err: unknown): boolean {
   const e = err as { code?: string; cause?: { code?: string } } | null;
   return e?.code === '23505' || e?.cause?.code === '23505';
 }
+
+/** True for a foreign key violation (SQLSTATE 23503), e.g. deleting a row that is still referenced. */
+export function isForeignKeyViolation(err: unknown): boolean {
+  const e = err as { code?: string; cause?: { code?: string } } | null;
+  return e?.code === '23503' || e?.cause?.code === '23503';
+}

@@ -14,7 +14,7 @@ export const LATE_PAYMENT_MARGIN_MS = 2 * 60_000;
 export type SweepHooks = {
   /** Check the invoice and confirm or fail the booking. */
   settle(bookingId: string): Promise<void>;
-  /** Pay back a failed booking whose payment is still `paid`. */
+  /** Pay back a failed or cancelled booking whose payment is still `paid`. */
   refund(bookingId: string): Promise<void>;
 };
 
@@ -101,7 +101,7 @@ export async function runSweep(
     .select({ id: bookings.id })
     .from(bookings)
     .innerJoin(payments, eq(payments.bookingId, bookings.id))
-    .where(and(eq(bookings.status, 'failed'), eq(payments.status, 'paid')));
+    .where(and(inArray(bookings.status, ['failed', 'cancelled']), eq(payments.status, 'paid')));
   await each(
     owed.map((o) => o.id),
     hooks.refund,
