@@ -3,6 +3,7 @@ import { describe, expect, it } from 'vitest';
 import { generateSeats } from '../../../../shared/src/hall-generator';
 import { layoutSeats } from '../../lib/seat-layout';
 import {
+  CLOSE_CAPS,
   type DivePose,
   diveClock,
   divePose,
@@ -16,6 +17,7 @@ import {
   MAX_TURN_DEG_PER_S,
   mapFitOf,
   newDivePose,
+  OPEN_CAPS,
   povFov,
   reversalMs,
   rotationAngleDeg,
@@ -120,7 +122,7 @@ function copy(p: DivePose): DivePose {
 
 function playDive(h: Hall, top: TopDownPose, eye: Vec3, reverse: boolean) {
   const pov = povFov(eye, h.hall, ASPECT);
-  const clock = diveClock(top, eye, h.center, pov, h.o);
+  const clock = diveClock(top, eye, h.center, pov, h.o, reverse ? CLOSE_CAPS : OPEN_CAPS);
   const n = Math.round((clock.ms / 1000) * FPS);
   const out: Sample[] = [];
   for (let i = 0; i <= n; i++) {
@@ -170,9 +172,17 @@ for (const [hallName, h] of HALLS) {
           const { ms, samples } = playDive(h, top, eye, reverse);
           const poses = samples.map((s) => s.pose);
 
-          it('is between 1.6 and 3.2 s and starts and ends where it should', () => {
-            expect(ms).toBeGreaterThanOrEqual(1600);
-            expect(ms).toBeLessThanOrEqual(3200);
+          it('has its own duration and starts and ends where it should', () => {
+            const open = playDive(h, top, eye, false).ms;
+            if (reverse) {
+              // the close is about 30 percent quicker than the matching open
+              expect(ms / open).toBeGreaterThan(0.6);
+              expect(ms / open).toBeLessThan(0.8);
+              expect(ms).toBeGreaterThanOrEqual(CLOSE_CAPS.minMs);
+            } else {
+              expect(ms).toBeGreaterThanOrEqual(1600);
+              expect(ms).toBeLessThanOrEqual(3200);
+            }
             const [a, b] = reverse
               ? [poses[poses.length - 1] as DivePose, poses[0] as DivePose]
               : [poses[0] as DivePose, poses[poses.length - 1] as DivePose];
@@ -197,15 +207,15 @@ for (const [hallName, h] of HALLS) {
             }
           });
 
-          it(`turns at most ${MAX_TURN_DEG_PER_S} degrees a second and zooms at most 3 ln a second`, () => {
+          it(`${reverse ? 'turns at most 125 degrees a second and zooms at most 4 ln' : 'turns at most 90 degrees a second and zooms at most 3 ln'} a second`, () => {
             let peak = 0;
             let zPeak = 0;
             for (let i = 1; i < poses.length; i++) {
               peak = Math.max(peak, angle(poses[i - 1] as DivePose, poses[i] as DivePose) * FPS);
               zPeak = Math.max(zPeak, zoom(poses[i - 1] as DivePose, poses[i] as DivePose));
             }
-            expect(peak).toBeLessThanOrEqual(MAX_TURN_DEG_PER_S * 1.05);
-            expect(zPeak).toBeLessThanOrEqual(3);
+            expect(peak).toBeLessThanOrEqual((reverse ? 125 : MAX_TURN_DEG_PER_S) * 1.05);
+            expect(zPeak).toBeLessThanOrEqual(reverse ? 4.2 : 3);
           });
 
           it('has no jump in speed from frame to frame', () => {
@@ -229,37 +239,54 @@ describe('turning a dive round', () => {
     const top = topFor(h, 'zoomed');
     const eye = pick(h, 0, 2);
     const pov = povFov(eye, h.hall, ASPECT);
-    const clock = diveClock(top, eye, h.center, pov, h.o);
+    const open = diveClock(top, eye, h.center, pov, h.o, OPEN_CAPS);
+    const close = diveClock(top, eye, h.center, pov, h.o, CLOSE_CAPS);
     const poseOf = (k: number, out: DivePose) => divePose(k, top, eye, h.center, pov, out, h.o);
     for (const turnAt of [0.3, 0.5, 0.7]) {
-      it(`${hallName}: from ${turnAt} the return stays under the cap and its angular velocity is continuous`, () => {
+      it(`${hallName}: from ${turnAt} the quicker return stays under 125 degrees a second and is continuous`, () => {
         const dtMs = 1000 / FPS;
-        const D = clock.ms;
-        const vel = 1 / D; // time fraction per ms while opening
+        const D = open.ms;
         const out: DivePose[] = [];
         const frames = Math.round((turnAt * D) / dtMs);
-        const at = (frames * dtMs) / D; // where the last opening frame really is
+        const atOpen = (frames * dtMs) / D;
         for (let i = 0; i <= frames; i++) {
-          out.push(copy(poseOf(clock.at((i * dtMs) / D), newDivePose())));
+          out.push(copy(poseOf(open.at((i * dtMs) / D), newDivePose())));
         }
-        const base = D * Math.max(0.4, at);
-        const Dr = reversalMs(poseOf, clock, at, 0, vel, base);
+        // the rig's hand-over: place and speed carried from the opening clock to the closing one
+        const e = 1e-3;
+        const k0 = open.at(atOpen);
+        const dkdTau = (open.at(atOpen + e) - open.at(atOpen - e)) / (2 * e);
+        const dTaudk = (close.tauOf(k0 + e) - close.tauOf(k0 - e)) / (2 * e);
+        const s0 = close.tauOf(k0);
+        const vel = (1 / D) * dkdTau * dTaudk;
+        const base = close.ms * Math.max(0.4, s0);
+        const Dr = reversalMs(poseOf, close, s0, 0, vel, base, 125);
         const n = Math.round(Dr / dtMs);
         for (let i = 1; i <= n; i++) {
-          out.push(copy(poseOf(clock.at(tauHermite(i / n, at, 0, vel * Dr, 0)), newDivePose())));
+          out.push(copy(poseOf(close.at(tauHermite(i / n, s0, 0, vel * Dr, 0)), newDivePose())));
         }
         const w: number[] = [];
         for (let i = 1; i < out.length; i++) {
           w.push(angle(out[i - 1] as DivePose, out[i] as DivePose) * FPS);
         }
         const peak = Math.max(...w);
-        expect(peak).toBeLessThanOrEqual(MAX_TURN_DEG_PER_S * 1.05);
+        expect(peak).toBeLessThanOrEqual(125 * 1.05);
         for (let i = 1; i < w.length; i++) {
           expect(Math.abs((w[i] as number) - (w[i - 1] as number))).toBeLessThan(0.2 * peak + 3);
         }
       });
     }
   }
+});
+
+describe('the closing clock', () => {
+  it('is the inverse of its own tauOf', () => {
+    const [, h] = HALLS[0] as [string, Hall];
+    const top = topFor(h, 'fit');
+    const eye = pick(h, 3, 3);
+    const c = diveClock(top, eye, h.center, povFov(eye, h.hall, ASPECT), h.o, CLOSE_CAPS);
+    for (const k of [0, 0.2, 0.5, 0.8, 1]) expect(c.at(c.tauOf(k))).toBeCloseTo(k, 3);
+  });
 });
 
 describe('rotationAngleDeg', () => {
