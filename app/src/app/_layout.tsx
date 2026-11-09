@@ -2,7 +2,7 @@ import { QueryClientProvider } from '@tanstack/react-query';
 import { DarkTheme, Stack, ThemeProvider } from 'expo-router';
 import * as SplashScreen from 'expo-splash-screen';
 import { StatusBar } from 'expo-status-bar';
-import { useEffect } from 'react';
+import { useEffect, useState } from 'react';
 import { GestureHandlerRootView } from 'react-native-gesture-handler';
 import { ToastHost } from '@/components/toast-host';
 import { hydrateLocale, useI18n } from '@/i18n';
@@ -12,6 +12,7 @@ import { queryClient } from '@/lib/queries';
 import { sweepTicketCache } from '@/lib/ticket-cache';
 import { colors } from '@/theme/tokens';
 import { fonts } from '@/theme/type';
+import { useBrandFontsReady } from '@/theme/use-brand-fonts';
 
 SplashScreen.preventAutoHideAsync().catch(() => {});
 
@@ -31,14 +32,21 @@ const theme = {
 
 export default function RootLayout() {
   const { t } = useI18n();
+  const fontsReady = useBrandFontsReady();
+  const [booted, setBooted] = useState(false);
 
   useEffect(() => {
     // Auth known: drop stored tickets of any other account (or all of them with no session).
     hydrateAuth().then(() => sweepTicketCache(getUserId()));
-    Promise.all([hydrateAuth(), hydrateLocale(), hydrateBranch()]).finally(() => {
-      SplashScreen.hideAsync().catch(() => {});
-    });
+    Promise.all([hydrateAuth(), hydrateLocale(), hydrateBranch()]).finally(() => setBooted(true));
   }, []);
+
+  useEffect(() => {
+    if (booted && fontsReady) SplashScreen.hideAsync().catch(() => {});
+  }, [booted, fontsReady]);
+
+  // The splash screen stays up meanwhile; mounting text before its font exists would keep the system font.
+  if (!fontsReady) return null;
 
   return (
     <GestureHandlerRootView style={{ flex: 1, backgroundColor: colors.canvas }}>
