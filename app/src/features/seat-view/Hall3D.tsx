@@ -2,17 +2,20 @@
 import './three-shim';
 import type { SeatMap, SeatState } from '@open-cinema/shared';
 import { SCREEN_BOTTOM_M } from '@open-cinema/shared';
-import { Canvas, useThree } from '@react-three/fiber/native';
+import { Canvas, useFrame, useThree } from '@react-three/fiber/native';
 import * as Device from 'expo-device';
-import { useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
-import { type LayoutChangeEvent, PixelRatio, View } from 'react-native';
+import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
+import { type LayoutChangeEvent, PixelRatio, Platform, View } from 'react-native';
+import type { SharedValue } from 'react-native-reanimated';
 import * as THREE from 'three';
 import {
+  FLY_MS,
   hallDepth,
   hallExtents,
   hallHalfWidth,
   rowsOf,
   type ScreenSource,
+  smoothstep,
   stepSpans,
   type TopDownPose,
 } from './camera-math';
@@ -22,6 +25,9 @@ import { useScreenTexture } from './screen-texture';
 import { createSeatGeometry } from './seat-geometry';
 
 const MAX_SELECTED = 10;
+const AMBIENT = 0.55;
+const SPILL = 260;
+const TOP_LIGHT = 30;
 /**
  * Side walls run past the camera (a seat sits beside them). One long quad crossing the near
  * plane rasterises as a dark wedge across the picture on some GPUs, so cut them into short ones.
@@ -40,6 +46,10 @@ export type Hall3DProps = {
   topPose: TopDownPose;
   /** Over the hall (aligned with the 2D map) or at the seat. */
   goal: RigGoal;
+  /** 0 over the map ... 1 at the seat; the scene's lighting and shapes follow it. */
+  dive: SharedValue<number>;
+  /** Px of the canvas's bottom covered by the stats panel. */
+  cover: number;
   /** A flight to `goal` finished. */
   onArrive: (goal: RigGoal) => void;
   /** The canvas component has mounted (its code is loaded); starts the first-frame watchdog. */
@@ -54,7 +64,7 @@ export type Hall3DProps = {
  * The simulator rasterises GL on the CPU: with 4x MSAA at native density a hall frame takes
  * seconds. There, MSAA is off and the canvas renders at 1x and is scaled up. Devices keep both.
  */
-const CHEAP_GL = Device.isDevice === false;
+const CHEAP_GL = Platform.OS === 'ios' && Device.isDevice === false;
 
 export default function Hall3D(props: Hall3DProps) {
   const { onMount } = props;
@@ -120,6 +130,8 @@ function Scene({
   reduceMotion,
   topPose,
   goal,
+  dive,
+  cover,
   onArrive,
   onDrew,
   onFail,
@@ -138,7 +150,11 @@ function Scene({
   const steps = useMemo(() => stepSpans(rowsOf(seats), depth), [seats, depth]);
   const drawable = useMemo(() => seats.filter((s) => s.kind !== 'blocked'), [seats]);
   const seatGeo = useMemo(() => createSeatGeometry(), []);
-  const seatMat = useMemo(() => new THREE.MeshLambertMaterial({ color: 0xffffff }), []);
+  // Not tone mapped: at the top-down start the seats must be the 2D map's colours.
+  const seatMat = useMemo(
+    () => new THREE.MeshLambertMaterial({ color: 0xffffff, toneMapped: false }),
+    [],
+  );
   const pickMat = useMemo(
     () => new THREE.MeshBasicMaterial({ color: palette.chosen, toneMapped: false }),
     [],
@@ -178,23 +194,17 @@ function Scene({
     };
   }, [get, onFail]);
 
-  // Static instance data: written once per seat map, never per frame.
+  // Seat colours are static; matrices follow the dive (footprint, the viewer's own seat).
   useLayoutEffect(() => {
     const mesh = seatsRef.current;
     if (!mesh) return;
     drawable.forEach((s, i) => {
-      dummy.position.set(s.x_m, s.z_m, s.y_m);
-      dummy.scale.setScalar(1);
-      dummy.updateMatrix();
-      mesh.setMatrixAt(i, dummy.matrix);
       tint.set(s.kind === 'premium' ? palette.seatPremium : palette.seat);
       mesh.setColorAt(i, tint);
     });
     mesh.count = drawable.length;
-    mesh.instanceMatrix.needsUpdate = true;
     if (mesh.instanceColor) mesh.instanceColor.needsUpdate = true;
-    invalidate();
-  }, [drawable, invalidate]);
+  }, [drawable]);
 
   useLayoutEffect(() => {
     const mesh = stepsRef.current;
@@ -210,55 +220,129 @@ function Scene({
     invalidate();
   }, [steps, half, invalidate]);
 
-  // Chosen seats glow accent blue; the one you are viewing from is a touch larger.
+  const chosen = useMemo(
+    () => seats.filter((s) => selectedIds.includes(s.id)).slice(0, MAX_SELECTED),
+    [seats, selectedIds],
+  );
+
+  // Seats the camera is at (or just left) are dropped at the seat: no geometry around the lens.
+  const away = useRef<string | null>(null);
+  const awayTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const lastCurrent = useRef(currentId);
+  const lastS = useRef(-1);
+  const ambientRef = useRef<THREE.AmbientLight>(null);
+  const spillRef = useRef<THREE.PointLight>(null);
+  const topRef = useRef<THREE.PointLight>(null);
+  const screenRef = useRef<THREE.Group>(null);
+
+  /** Everything that follows the dive: seat footprint, own seat, lights, the screen's tilt. */
+  const follow = useCallback(
+    (s: number) => {
+      // Rows are drawn closer together on the 2D map: stretch each seat's depth by the same
+      // factor at the start so the footprints read as the map's squares, then settle to real.
+      const g = (1 / Math.max(0.2, topPose.squash)) ** (1 - s);
+      const gone = smoothstep(0.5, 0.85, s);
+      const seatMesh = seatsRef.current;
+      if (seatMesh) {
+        drawable.forEach((seat, i) => {
+          const k = seat.id === currentId || seat.id === away.current ? 1 - gone : 1;
+          dummy.position.set(seat.x_m, seat.z_m, seat.y_m);
+          dummy.scale.set(k, k, k * g);
+          dummy.updateMatrix();
+          seatMesh.setMatrixAt(i, dummy.matrix);
+        });
+        seatMesh.instanceMatrix.needsUpdate = true;
+      }
+      const pickMesh = pickRef.current;
+      if (pickMesh) {
+        chosen.forEach((seat, i) => {
+          const own = seat.id === currentId || seat.id === away.current;
+          const k = (seat.id === currentId ? 1.3 : 1.06) * (own ? 1 - gone : 1);
+          dummy.position.set(seat.x_m, seat.z_m, seat.y_m);
+          dummy.scale.set(k, k, k * g);
+          dummy.updateMatrix();
+          pickMesh.setMatrixAt(i, dummy.matrix);
+        });
+        pickMesh.count = chosen.length;
+        pickMesh.instanceMatrix.needsUpdate = true;
+      }
+      // Flat at the start (ambient alone shows each colour as it is), lit by the film at the seat.
+      if (ambientRef.current) ambientRef.current.intensity = Math.PI + (AMBIENT - Math.PI) * s;
+      if (spillRef.current) spillRef.current.intensity = SPILL * s;
+      if (topRef.current) topRef.current.intensity = TOP_LIGHT * s;
+      // The screen lies flat at the start, where the 2D map draws its arc, and stands up.
+      if (screenRef.current) screenRef.current.rotation.x = -(1 - s) * (Math.PI / 2);
+    },
+    [drawable, chosen, currentId, topPose.squash],
+  );
+
+  // A new viewing seat: keep the previous one out of the way until the camera has left it.
+  useEffect(() => {
+    if (lastCurrent.current === currentId) return;
+    away.current = lastCurrent.current;
+    lastCurrent.current = currentId;
+    if (awayTimer.current) clearTimeout(awayTimer.current);
+    awayTimer.current = setTimeout(() => {
+      away.current = null;
+      follow(dive.get());
+      invalidate();
+    }, FLY_MS + 300);
+  }, [currentId, dive, invalidate, follow]);
+  useEffect(
+    () => () => {
+      if (awayTimer.current) clearTimeout(awayTimer.current);
+    },
+    [],
+  );
+
+  // Instances and lights are written whenever the data changes and while the dive moves.
   useLayoutEffect(() => {
-    const mesh = pickRef.current;
-    if (!mesh) return;
-    const chosen = seats.filter((s) => selectedIds.includes(s.id)).slice(0, MAX_SELECTED);
-    chosen.forEach((s, i) => {
-      dummy.position.set(s.x_m, s.z_m, s.y_m);
-      dummy.scale.setScalar(s.id === currentId ? 1.3 : 1.06);
-      dummy.updateMatrix();
-      mesh.setMatrixAt(i, dummy.matrix);
-    });
-    mesh.count = chosen.length;
-    mesh.instanceMatrix.needsUpdate = true;
+    follow(dive.get());
+    lastS.current = dive.get();
     invalidate();
-  }, [seats, selectedIds, currentId, invalidate]);
+  }, [follow, dive, invalidate]);
+  useFrame(() => {
+    const s = dive.get();
+    if (Math.abs(s - lastS.current) < 0.002) return;
+    lastS.current = s;
+    follow(s);
+  });
 
   const current = useMemo(() => seats.find((s) => s.id === currentId), [seats, currentId]);
 
   return (
     <>
-      <ambientLight intensity={0.55} color={palette.ambient} />
+      <ambientLight ref={ambientRef} color={0xffffff} />
       <pointLight
+        ref={spillRef}
         position={[hall.screen_x_m, screenY + 0.3, 4]}
         color={tone}
-        intensity={260}
         decay={1.7}
       />
-      <pointLight position={[0, wallH - 1, depth / 2]} color="#FFFFFF" intensity={30} decay={1.5} />
+      <pointLight ref={topRef} position={[0, wallH - 1, depth / 2]} color="#FFFFFF" decay={1.5} />
 
-      {/* Screen: film backdrop or flat tone, with a soft halo behind it. */}
-      <mesh position={[hall.screen_x_m, screenY, 0.05]}>
-        <planeGeometry args={[hall.screen_width_m, hall.screen_height_m]} />
-        <meshBasicMaterial
-          key={texture ? 'tex' : 'flat'}
-          map={texture}
-          color={texture ? '#FFFFFF' : tone}
-          toneMapped={false}
-        />
-      </mesh>
-      <mesh position={[hall.screen_x_m, screenY, 0.03]}>
-        <planeGeometry args={[hall.screen_width_m * 1.1, hall.screen_height_m * 1.22]} />
-        <meshBasicMaterial
-          color={tone}
-          transparent
-          opacity={0.28}
-          depthWrite={false}
-          toneMapped={false}
-        />
-      </mesh>
+      {/* Screen: film backdrop or flat tone with a soft halo. It lies flat at the dive's start. */}
+      <group ref={screenRef} position={[hall.screen_x_m, SCREEN_BOTTOM_M, 0.05]}>
+        <mesh position={[0, hall.screen_height_m / 2, 0]}>
+          <planeGeometry args={[hall.screen_width_m, hall.screen_height_m]} />
+          <meshBasicMaterial
+            key={texture ? 'tex' : 'flat'}
+            map={texture}
+            color={texture ? '#FFFFFF' : tone}
+            toneMapped={false}
+          />
+        </mesh>
+        <mesh position={[0, hall.screen_height_m / 2, -0.02]}>
+          <planeGeometry args={[hall.screen_width_m * 1.1, hall.screen_height_m * 1.22]} />
+          <meshBasicMaterial
+            color={tone}
+            transparent
+            opacity={0.28}
+            depthWrite={false}
+            toneMapped={false}
+          />
+        </mesh>
+      </group>
 
       {/* Stepped floor, one instance per row. */}
       <instancedMesh ref={stepsRef} args={[undefined, undefined, Math.max(steps.length, 1)]}>
@@ -266,21 +350,23 @@ function Scene({
         <meshLambertMaterial color={palette.floor} />
       </instancedMesh>
 
-      {/* Side, front and back walls. */}
-      <mesh position={[-half - 0.1, wallH / 2, depth / 2]}>
-        <boxGeometry args={[0.2, wallH, depth + 0.4, 1, 4, WALL_SEGMENTS]} />
+      {/* Walls are one-sided planes facing in: from outside the hall (the dive passes over the
+          back wall) they are invisible instead of a dark slab in the way. Cut into short
+          segments so no quad crosses the near plane. */}
+      <mesh position={[-half, wallH / 2, depth / 2]} rotation={[0, Math.PI / 2, 0]}>
+        <planeGeometry args={[depth, wallH, WALL_SEGMENTS, 4]} />
         <meshLambertMaterial color={palette.wallSide} />
       </mesh>
-      <mesh position={[half + 0.1, wallH / 2, depth / 2]}>
-        <boxGeometry args={[0.2, wallH, depth + 0.4, 1, 4, WALL_SEGMENTS]} />
+      <mesh position={[half, wallH / 2, depth / 2]} rotation={[0, -Math.PI / 2, 0]}>
+        <planeGeometry args={[depth, wallH, WALL_SEGMENTS, 4]} />
         <meshLambertMaterial color={palette.wallSide} />
       </mesh>
-      <mesh position={[0, wallH / 2, -0.1]}>
-        <boxGeometry args={[half * 2 + 0.4, wallH, 0.2]} />
+      <mesh position={[0, wallH / 2, 0]}>
+        <planeGeometry args={[half * 2, wallH]} />
         <meshLambertMaterial color={palette.wallFront} />
       </mesh>
-      <mesh position={[0, wallH / 2, depth + 0.1]}>
-        <boxGeometry args={[half * 2 + 0.4, wallH, 0.2]} />
+      <mesh position={[0, wallH / 2, depth]} rotation={[0, Math.PI, 0]}>
+        <planeGeometry args={[half * 2, wallH]} />
         <meshLambertMaterial color={palette.wallSide} />
       </mesh>
 
@@ -298,6 +384,8 @@ function Scene({
         reduceMotion={reduceMotion}
         topPose={topPose}
         goal={goal}
+        dive={dive}
+        cover={cover}
         onArrive={onArrive}
         onDrew={onDrew}
         onFail={onFail}

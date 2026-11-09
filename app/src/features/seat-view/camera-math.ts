@@ -127,8 +127,18 @@ export type TopDownPose = {
 
 /** Field of view of the near-orthographic start view. */
 export const TOP_FOV_DEG = 14;
-/** Height of the plane the seats sit on for alignment (cushion level). */
-const SEAT_PLANE_M = 0.4;
+/** How high above the seats the near-orthographic start camera stays at least. */
+const TOP_DISTANCE_M = 90;
+/** Seat tops sit this far above a seat's z_m (cushion and backrest, seen from above). */
+export const SEAT_TOP_M = 0.6;
+
+/** Height of the plane the 2D map is matched on: the raked floor's mean height plus the seat tops. */
+export function seatPlaneHeight(seats: readonly { z_m: number }[]): number {
+  if (seats.length === 0) return SEAT_TOP_M;
+  let sum = 0;
+  for (const s of seats) sum += s.z_m;
+  return sum / seats.length + SEAT_TOP_M;
+}
 
 /**
  * Straight-down camera whose picture lines up with the 2D seat map: same px per metre, same
@@ -143,16 +153,25 @@ export function topDownFromMap(args: {
   offsetX: number;
   offsetY: number;
   fovDeg?: number;
+  /** Height of the plane that is matched to the map (see seatPlaneHeight). */
+  planeY: number;
 }): TopDownPose {
   const { fit, view: v, canvasW, canvasH, offsetX, offsetY } = args;
-  const fov = args.fovDeg ?? TOP_FOV_DEG;
   const f = v.scale * fit.ppmX;
+  // Zoomed in, a 14 degree lens would sit close enough for the seats' heights to shift the
+  // picture sideways: narrow it so the camera stays about TOP_DISTANCE_M above the seats.
+  const fov =
+    args.fovDeg ??
+    Math.min(
+      TOP_FOV_DEG,
+      Math.max(1.5, (2 * Math.atan(canvasH / 2 / (f * TOP_DISTANCE_M)) * 180) / Math.PI),
+    );
   const fy = canvasH / 2 / Math.tan((fov * Math.PI) / 360);
   const px0 = offsetX + v.viewW / 2 + v.tx + v.scale * (fit.x0 - v.contentW / 2);
   const py0 = offsetY + v.viewH / 2 + v.ty + v.scale * (fit.y0 - v.contentH / 2);
   const x = (canvasW / 2 - px0) / f;
   const z = (canvasH / 2 - py0) / (v.scale * fit.ppmY);
-  const height = SEAT_PLANE_M + fy / f;
+  const height = args.planeY + fy / f;
   return {
     position: [x, height, z],
     target: [x, 0, z],
@@ -254,4 +273,79 @@ export function stepSpans(rows: readonly Row[], depth: number): StepSpan[] {
 export function textureFits(width: number, height: number, maxTextureSize: number, cap = 4096) {
   const limit = Math.min(maxTextureSize > 0 ? maxTextureSize : cap, cap);
   return width > 0 && height > 0 && Math.max(width, height) <= limit;
+}
+
+const smooth = (a: number, b: number, x: number) => {
+  'worklet';
+  const t = Math.min(1, Math.max(0, (x - a) / (b - a)));
+  return t * t * (3 - 2 * t);
+};
+/** Public so the scene can time its own fades to the same dive. */
+export const smoothstep = smooth;
+
+/** The look target leaves the hall for the screen only in the last part of the dive. */
+const TARGET_FROM = 0.45;
+
+export type DivePose = {
+  position: Vec3;
+  target: Vec3;
+  up: Vec3;
+  /** Vertical field of view, degrees. */
+  fov: number;
+  squash: number;
+};
+
+export function newDivePose(): DivePose {
+  return { position: [0, 0, 0], target: [0, 0, 0], up: [0, 1, 0], fov: 0, squash: 1 };
+}
+
+const TOP_UP: Vec3 = [0, 0, -1];
+
+function norm(v: Vec3): Vec3 {
+  const l = Math.hypot(v[0], v[1], v[2]) || 1;
+  v[0] /= l;
+  v[1] /= l;
+  v[2] /= l;
+  return v;
+}
+
+/**
+ * The dive from the top-down pose (s = 0) to the seat (s = 1), as a camera that looks at a point
+ * from a distance. The log of that distance and the log of tan(fov/2) are interpolated together,
+ * so the hall's apparent size changes steadily instead of shrinking and then jumping. The camera
+ * swings from straight above to the seat's direction; the look target stays in the hall and
+ * moves to the screen centre late. Writes into `out` (no allocation besides two tiny tuples).
+ */
+export function divePose(
+  s: number,
+  top: TopDownPose,
+  eye: Vec3,
+  center: Vec3,
+  povFovDeg: number,
+  out: DivePose,
+): DivePose {
+  const k = Math.min(1, Math.max(0, s));
+  const d0 = Math.max(1e-3, top.position[1] - top.target[1]);
+  const back1 = norm([eye[0] - center[0], eye[1] - center[1], eye[2] - center[2]]);
+  const d1 = Math.max(1e-3, Math.hypot(eye[0] - center[0], eye[1] - center[1], eye[2] - center[2]));
+  const u = smooth(TARGET_FROM, 1, k);
+  const back = norm([back1[0] * k, 1 - k + back1[1] * k, back1[2] * k]);
+  const d = Math.exp(Math.log(d0) + (Math.log(d1) - Math.log(d0)) * k);
+  const t = out.target;
+  t[0] = top.target[0] + (center[0] - top.target[0]) * u;
+  t[1] = top.target[1] + (center[1] - top.target[1]) * u;
+  t[2] = top.target[2] + (center[2] - top.target[2]) * u;
+  out.position[0] = t[0] + back[0] * d;
+  out.position[1] = t[1] + back[1] * d;
+  out.position[2] = t[2] + back[2] * d;
+  const up = norm([TOP_UP[0] * (1 - k), TOP_UP[1] * (1 - k) + k, TOP_UP[2] * (1 - k)]);
+  out.up[0] = up[0];
+  out.up[1] = up[1];
+  out.up[2] = up[2];
+  const tan0 = Math.tan((top.fov * Math.PI) / 360);
+  const tan1 = Math.tan((povFovDeg * Math.PI) / 360);
+  const tan = Math.exp(Math.log(tan0) + (Math.log(tan1) - Math.log(tan0)) * k);
+  out.fov = (2 * Math.atan(tan) * 180) / Math.PI;
+  out.squash = top.squash + (1 - top.squash) * k;
+  return out;
 }
