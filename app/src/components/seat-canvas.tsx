@@ -1,4 +1,4 @@
-import { type RefObject, useEffect, useState } from 'react';
+import { type ReactNode, type RefObject, useEffect, useState } from 'react';
 import { type HostInstance, type LayoutChangeEvent, StyleSheet, Text, View } from 'react-native';
 import {
   GestureDetector,
@@ -11,6 +11,7 @@ import Animated, {
   useAnimatedStyle,
   useSharedValue,
 } from 'react-native-reanimated';
+import { type CamState, type MapFit, projectToPx } from '@/features/seat-view/camera-math';
 import type { SeatLayout } from '@/lib/seat-layout';
 import { colors, space } from '@/theme/tokens';
 import { type } from '@/theme/type';
@@ -211,70 +212,136 @@ const styles = StyleSheet.create({
 type LandmarkProps = {
   layout: SeatLayout;
   transform: SeatTransform;
-  /** The 2D viewport's rectangle, in the coordinates of the layer this is drawn in. */
-  rect: { x: number; y: number; w: number; h: number };
+  /** How the map's content pixels relate to hall metres. */
+  fit: MapFit;
+  /** Height (m) the content plane is matched at (the arc and the row letters sit on it). */
+  planeY: number;
+  /** The live 3D camera. */
+  cam: SharedValue<CamState>;
   tone: string;
   statusOf: (seatId: string) => SeatStatus;
   /** 0..1: how much of the layer shows. */
   opacity: SharedValue<number>;
 };
 
+const projOut: [number, number, number] = [0, 0, 0];
+const projRef: [number, number, number] = [0, 0, 0];
+
+type AnchorProps = {
+  /** The hall point it belongs to (a seat, or the plane at its content position). */
+  world: [number, number, number];
+  w: number;
+  h: number;
+  cam: SharedValue<CamState>;
+  transform: SeatTransform;
+  fit: MapFit;
+  children: ReactNode;
+};
+
+/**
+ * One landmark, placed where the live 3D camera draws its hall point and scaled by how big the
+ * grid is drawn right now relative to the 2D map: it rides on the moving 3D grid and lands on
+ * its 2D position when the camera does.
+ */
+function Anchored({ world, w, h, cam, transform, fit, children }: AnchorProps) {
+  const style = useAnimatedStyle(() => {
+    const c = cam.get();
+    projectToPx(c, world[0], world[1], world[2], projOut);
+    // pixels per content pixel along x, at this point
+    const step = 1 / fit.ppmX;
+    projectToPx(c, world[0] + step, world[1], world[2], projRef);
+    const k = Math.abs(projRef[0] - projOut[0]) / Math.max(1e-6, transform.scale.get());
+    return {
+      opacity: projOut[2] ? 1 : 0,
+      transform: [
+        { translateX: projOut[0] - w / 2 },
+        { translateY: projOut[1] - h / 2 },
+        { scale: k },
+      ],
+    };
+  });
+  return (
+    <Animated.View style={[{ position: 'absolute', left: 0, top: 0, width: w, height: h }, style]}>
+      {children}
+    </Animated.View>
+  );
+}
+
 /**
  * The parts of the map that have no 3D counterpart (screen arc and label, row letters, seat
- * icons), drawn at the same pan and zoom as the canvas, so they can fade in over the 3D picture
- * while the camera settles. Not interactive.
+ * icons). Each is projected through the live 3D camera every frame, so while the camera settles
+ * they ride on the 3D grid and converge exactly to the 2D layout at landing. Not interactive.
  */
-export function SeatLandmarks({ layout, transform, rect, tone, statusOf, opacity }: LandmarkProps) {
-  const { width: cw, height: ch, origin } = seatContentMetrics(layout);
-  const { scale, tx, ty } = transform;
-  const anim = useAnimatedStyle(() => ({
-    opacity: opacity.get(),
-    transform: [{ translateX: tx.get() }, { translateY: ty.get() }, { scale: scale.get() }],
-  }));
+export function SeatLandmarks({
+  layout,
+  transform,
+  fit,
+  planeY,
+  cam,
+  tone,
+  statusOf,
+  opacity,
+}: LandmarkProps) {
+  const { width: cw, origin } = seatContentMetrics(layout);
+  const anim = useAnimatedStyle(() => ({ opacity: opacity.get() }));
+  const onPlane = (cx: number, cy: number): [number, number, number] => [
+    (cx - fit.x0) / fit.ppmX,
+    planeY,
+    (cy - fit.y0) / fit.ppmY,
+  ];
+  const arcH = origin.y - ARC_GAP;
+  const common = { cam, transform, fit };
   return (
-    <View
-      pointerEvents="none"
-      style={{
-        position: 'absolute',
-        left: rect.x,
-        top: rect.y,
-        width: rect.w,
-        height: rect.h,
-        overflow: 'hidden',
-      }}
-    >
-      <Animated.View
-        style={[
-          styles.canvas,
-          { width: cw, height: ch, left: (rect.w - cw) / 2, top: (rect.h - ch) / 2 },
-          anim,
-        ]}
-      >
+    <Animated.View style={[StyleSheet.absoluteFill, anim]} pointerEvents="none">
+      <Anchored {...common} world={onPlane(cw / 2, arcH / 2)} w={cw} h={arcH}>
         <ScreenArc width={cw} tone={tone} />
-        <View style={{ position: 'absolute', left: origin.x, top: origin.y }}>
-          <RowLetters layout={layout} />
-          {layout.slots.map(({ seat, left, top }) => {
-            if (seat.kind === 'blocked') return null;
-            const status = statusOf(seat.id);
-            if (status === 'free' && seat.kind !== 'wheelchair' && seat.kind !== 'premium')
-              return null;
-            return (
-              <SeatCell
-                key={seat.id}
-                id={seat.id}
-                left={left}
-                top={top}
-                size={layout.size}
-                kind={seat.kind}
-                status={status}
-                label=""
-                onPress={noop}
-                glyphsOnly
-              />
-            );
-          })}
-        </View>
-      </Animated.View>
-    </View>
+      </Anchored>
+      {layout.rows.flatMap((r) =>
+        [origin.x - GUTTER / 2, origin.x + layout.width + GUTTER / 2].map((cx) => {
+          const cy = origin.y + r.top + layout.rowStep / 2;
+          return (
+            <Anchored
+              key={`${r.label}${cx}`}
+              {...common}
+              world={onPlane(cx, cy)}
+              w={GUTTER}
+              h={layout.rowStep}
+            >
+              <View style={[styles.letter, { left: 0, top: 0, height: layout.rowStep }]}>
+                <Text style={styles.rowLetter}>{r.label}</Text>
+              </View>
+            </Anchored>
+          );
+        }),
+      )}
+      {layout.slots.map(({ seat, left, top }) => {
+        if (seat.kind === 'blocked') return null;
+        const status = statusOf(seat.id);
+        if (status === 'free' && seat.kind !== 'wheelchair' && seat.kind !== 'premium') return null;
+        const cx = origin.x + left + layout.size / 2;
+        const cy = origin.y + top + layout.size / 2;
+        return (
+          <Anchored
+            key={seat.id}
+            {...common}
+            world={[seat.x_m, seat.z_m + 0.5, seat.y_m]}
+            w={layout.size}
+            h={layout.size}
+          >
+            <SeatCell
+              id={seat.id}
+              left={0}
+              top={0}
+              size={layout.size}
+              kind={seat.kind}
+              status={status}
+              label=""
+              onPress={noop}
+              glyphsOnly
+            />
+          </Anchored>
+        );
+      })}
+    </Animated.View>
   );
 }

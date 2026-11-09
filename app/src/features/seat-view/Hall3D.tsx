@@ -9,6 +9,7 @@ import { type LayoutChangeEvent, PixelRatio, Platform, View } from 'react-native
 import type { SharedValue } from 'react-native-reanimated';
 import * as THREE from 'three';
 import {
+  type CamState,
   hallDepth,
   hallExtents,
   hallHalfWidth,
@@ -55,8 +56,10 @@ export type Hall3DProps = {
   cover: number;
   /** A flight to `goal` finished. */
   onArrive: (goal: RigGoal) => void;
-  /** A closing flight is about to land. */
+  /** A closing flight's drawn grid is aligned with the 2D map. */
   onLead: () => void;
+  /** The camera as numbers, for the landmark layer. */
+  cam: SharedValue<CamState>;
   /** NOT_CLOSING, or the dive progress at which leaving began (the hand-off only runs then). */
   closing: SharedValue<number>;
   /** The canvas component has mounted (its code is loaded); starts the first-frame watchdog. */
@@ -155,6 +158,7 @@ function Scene({
   cover,
   onArrive,
   onLead,
+  cam,
   closing,
   onDrew,
   onFail,
@@ -238,6 +242,8 @@ function Scene({
     [seats, selectedIds],
   );
 
+  const chosenIds = useMemo(() => new Set(chosen.map((s) => s.id)), [chosen]);
+
   // The seat the camera is at (and the one it just left) shrinks away as the camera comes close:
   // no geometry around the lens, no pop, and a seat stays in view as the blue landmark until then.
   const previousId = useRef<string | null>(null);
@@ -261,13 +267,18 @@ function Scene({
       const g = (1 / Math.max(0.2, topPose.squash)) ** (1 - s);
       const cam = get().camera.position;
       /** 1 when far from the camera, 0 when it is at the seat. */
+      const reach = closing.get() >= 0 ? 4.5 : 2.2; // leaving: held seats shrink from further away
       const near = (seat: SeatState) =>
         smoothstep(
           0.5,
-          2.2,
+          reach,
           Math.hypot(cam.x - seat.x_m, cam.y - (seat.z_m + 0.6), cam.z - seat.y_m),
         );
-      const own = (id: string) => id === currentId || id === previousId.current;
+      // The seat the camera is at (and the one it left) shrinks as the camera nears it; leaving,
+      // so do all the held seats the camera rises past.
+      const leaving = closing.get() >= 0;
+      const own = (id: string) =>
+        id === currentId || id === previousId.current || (leaving && chosenIds.has(id));
       const seatMesh = seatsRef.current;
       if (seatMesh) {
         drawable.forEach((seat, i) => {
@@ -316,7 +327,7 @@ function Scene({
         fogRef.current.far = 48 + 2e4 * (1 - t) ** 3;
       }
     },
-    [drawable, chosen, currentId, topPose.squash, seatMat, get, closing],
+    [drawable, chosen, chosenIds, currentId, topPose.squash, seatMat, get, closing],
   );
 
   // A new viewing seat: remember the one the camera is leaving.
@@ -414,6 +425,7 @@ function Scene({
         obstacles={obstacles}
         onArrive={onArrive}
         onLead={onLead}
+        cam={cam}
         onDrew={onDrew}
         onFail={onFail}
       />

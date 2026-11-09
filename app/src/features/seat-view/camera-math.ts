@@ -336,8 +336,6 @@ export const tanLerpDeg = (aDeg: number, bDeg: number, t: number) => {
 
 export type Bounds = { half: number; depth: number };
 
-/** A point on the floor at the foot of the screen, where the look target passes on its way up. */
-const SCREEN_FOOT_Z_M = 1;
 /** Progress at which the look target starts to climb from the floor to the screen centre. */
 export const B_FROM = 0.55;
 
@@ -347,11 +345,13 @@ export const B_FROM = 0.55;
  * the screen centre, arriving only as the camera reaches the eye. It always lies in the hall,
  * so the room stays in view the whole way; heading and elevation come from geometry (no roll).
  */
-function aimAt(k: number, top: TopDownPose, out: DivePose, center: Vec3, end: number) {
+function aimAt(k: number, top: TopDownPose, out: DivePose, center: Vec3, end: number, eye: Vec3) {
   const a = smooth(0, 0.75, k);
   const b = smooth(B_FROM, 1, k);
-  const x0 = top.target[0] + (center[0] - top.target[0]) * a;
-  const z0 = top.target[2] + (SCREEN_FOOT_Z_M - top.target[2]) * a;
+  // The target stays on the seat block (the held seat) until it climbs to the screen: no frame
+  // looks at the empty floor between the screen and the first row.
+  const x0 = top.target[0] + (eye[0] - top.target[0]) * a;
+  const z0 = top.target[2] + (eye[2] - top.target[2]) * a;
   const tx = x0 + (center[0] - x0) * b;
   const ty = center[1] * b;
   const tz = z0 + (center[2] - z0) * b;
@@ -434,7 +434,7 @@ export function divePose(
   out.position[0] = bez(top.position[0], p1[0], p2[0], eye[0], k);
   out.position[1] = bez(top.position[1], p1[1], p2[1], eye[1], k);
   out.position[2] = bez(top.position[2], p1[2], p2[2], eye[2], k);
-  aimAt(k, top, out, center, end.yaw);
+  aimAt(k, top, out, center, end.yaw, eye);
   // The lens and the stretch of the seats move evenly with the curve: no burst of zoom.
   out.fov = tanLerpDeg(top.fov, povFovDeg, k);
   out.squash = top.squash + (1 - top.squash) * k;
@@ -478,4 +478,115 @@ export function povFov(
   const need = Math.max(tanV, tanH / Math.max(aspect, 0.1)) * margin;
   const deg = (2 * Math.atan(need) * 180) / Math.PI;
   return Math.min(max, Math.max(min, deg));
+}
+
+/** A camera as plain numbers (readable from the UI thread): position, heading, elevation, lens, canvas size. */
+export type CamState = {
+  x: number;
+  y: number;
+  z: number;
+  yaw: number;
+  pitch: number;
+  fov: number;
+  squash: number;
+  shift: number;
+  w: number;
+  h: number;
+};
+
+export function newCamState(): CamState {
+  return {
+    x: 0,
+    y: 100,
+    z: 0,
+    yaw: 0,
+    pitch: -Math.PI / 2,
+    fov: 14,
+    squash: 1,
+    shift: 0,
+    w: 1,
+    h: 1,
+  };
+}
+
+/** The camera of a pose in a canvas of `w` x `h` px. */
+export function camOf(p: DivePose, shift: number, w: number, h: number): CamState {
+  return {
+    x: p.position[0],
+    y: p.position[1],
+    z: p.position[2],
+    yaw: p.yaw,
+    pitch: p.pitch,
+    fov: p.fov,
+    squash: p.squash,
+    shift,
+    w,
+    h,
+  };
+}
+
+/**
+ * Where a hall point (x, y up, z away from the screen) lands in canvas pixels, the way the 3D
+ * camera draws it. Returns false in `out[2]` when the point is behind the camera.
+ */
+export function projectToPx(c: CamState, px: number, py: number, pz: number, out: Vec3): Vec3 {
+  'worklet';
+  const cp = Math.cos(c.pitch);
+  const sp = Math.sin(c.pitch);
+  const cy = Math.cos(c.yaw);
+  const sy = Math.sin(c.yaw);
+  const qx = px - c.x;
+  const qy = py - c.y;
+  const qz = pz - c.z;
+  const d = qx * (-sy * cp) + qy * sp + qz * (-cy * cp);
+  const t = Math.tan((c.fov * Math.PI) / 360);
+  const nx = (qx * cy + qz * -sy) / d / (t * (c.w / c.h));
+  const ny = ((qx * (sy * sp) + qy * cp + qz * (cy * sp)) / d / t) * c.squash + c.shift;
+  out[0] = ((nx + 1) / 2) * c.w;
+  out[1] = ((1 - ny) / 2) * c.h;
+  out[2] = d > 0.05 ? 1 : 0;
+  return out;
+}
+
+const sA: Vec3 = [0, 0, 0];
+const sB: Vec3 = [0, 0, 0];
+
+/** The camera of the aligned top-down frame (the end of every close). */
+export function topCam(top: TopDownPose, w: number, h: number): CamState {
+  return {
+    x: top.position[0],
+    y: top.position[1],
+    z: top.position[2],
+    yaw: 0,
+    pitch: -Math.PI / 2,
+    fov: top.fov,
+    squash: top.squash,
+    shift: 0,
+    w,
+    h,
+  };
+}
+
+/**
+ * How far, in px, the grid as drawn by `now` is from the aligned top-down frame: the largest
+ * distance between the two projections of a few points on the seats (near the look point and
+ * 8 m either way across and along it).
+ */
+export function gridAlignmentPx(now: CamState, top: TopDownPose, planeY: number): number {
+  const goal = topCam(top, now.w, now.h);
+  let worst = 0;
+  for (const [dx, dz] of [
+    [0, 0],
+    [8, 0],
+    [0, 8],
+    [-8, -8],
+  ] as const) {
+    const x = top.target[0] + dx;
+    const z = top.target[2] + dz;
+    projectToPx(now, x, planeY, z, sA);
+    projectToPx(goal, x, planeY, z, sB);
+    if (!sA[2]) return Number.POSITIVE_INFINITY;
+    worst = Math.max(worst, Math.hypot(sA[0] - sB[0], sA[1] - sB[1]));
+  }
+  return worst;
 }

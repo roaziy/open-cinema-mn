@@ -1,6 +1,6 @@
 import type { SeatState } from '@open-cinema/shared';
 import { usePreventRemove } from 'expo-router/react-navigation';
-import { useCallback, useEffect, useRef, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import type { HostInstance } from 'react-native';
 import {
   useAnimatedStyle,
@@ -11,7 +11,14 @@ import {
 import { type SeatTransform, seatContentMetrics } from '@/components/seat-canvas';
 import { haptic } from '@/lib/haptics';
 import type { SeatLayout } from '@/lib/seat-layout';
-import { mapFitOf, seatPlaneHeight, type TopDownPose, topDownFromMap } from './camera-math';
+import {
+  type CamState,
+  mapFitOf,
+  newCamState,
+  seatPlaneHeight,
+  type TopDownPose,
+  topDownFromMap,
+} from './camera-math';
 import { chromeOpacity, footerSlide } from './chrome-fade';
 import { handoffLook, NOT_CLOSING } from './handoff';
 import type { OverlayRect } from './SeatViewOverlay';
@@ -48,6 +55,8 @@ export function useSeatView({ layout, transform, mapSeats, selected, isTaken }: 
   const dive = useSharedValue(0);
   /** NOT_CLOSING, or the dive progress at which leaving began. */
   const closingFlag = useSharedValue(NOT_CLOSING);
+  /** The 3D camera as numbers (written by the rig): the landmarks project through it. */
+  const cam = useSharedValue<CamState>(newCamState());
   const still = useReducedMotion();
   // The 2D layers with no 3D counterpart arrive over the canvas while the camera settles, and
   // leave again as the 2D grid itself reaches full opacity (no double drawing).
@@ -106,6 +115,12 @@ export function useSeatView({ layout, transform, mapSeats, selected, isTaken }: 
   useEffect(() => {
     measureRef.current = measure;
   });
+
+  const fit = useMemo(
+    () => mapFitOf(layout.slots, layout.size, layout.ppm, seatContentMetrics(layout).origin),
+    [layout],
+  );
+  const planeY = useMemo(() => seatPlaneHeight(mapSeats ?? []), [mapSeats]);
 
   const open = () => {
     const last = selected[selected.length - 1];
@@ -191,6 +206,9 @@ export function useSeatView({ layout, transform, mapSeats, selected, isTaken }: 
     fade,
     dive,
     closingFlag,
+    cam,
+    fit,
+    planeY,
     landmarks,
     chromeStyle,
     footerStyle,

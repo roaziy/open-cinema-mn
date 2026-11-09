@@ -16,9 +16,12 @@ import {
 } from './camera-clock';
 import { hopDurationMs, hopFrame } from './camera-hop';
 import {
+  type CamState,
+  camOf,
   type DivePose,
   divePose,
   eyePosition,
+  gridAlignmentPx,
   lensRange,
   newDivePose,
   povFov,
@@ -30,6 +33,9 @@ import { clearPosition, type Obstacles } from './room-layout';
 
 /** Dev only: how long the average frame time is sampled after a flight. */
 const MEASURE_MS = 3000;
+
+/** Height (m) of the points the grid alignment is measured on: about the seat tops. */
+const ALIGN_Y = 1;
 
 export type RigGoal = 'top' | 'pov';
 
@@ -105,6 +111,8 @@ type Props = {
   onArrive: (goal: RigGoal) => void;
   /** A closing flight is LEAD_MS from landing over the map: the crossfade can start. */
   onLead: () => void;
+  /** The camera as plain numbers, for the 2D landmarks that ride on the 3D grid. */
+  cam: SharedValue<CamState>;
   /** A render finished and issued draw calls. */
   onDrew: () => void;
   /** Rendering threw. */
@@ -131,6 +139,7 @@ export function CameraRig({
   obstacles,
   onArrive,
   onLead,
+  cam,
   onDrew,
   onFail,
 }: Props) {
@@ -228,7 +237,13 @@ export function CameraRig({
     lens.current = { fov: p.fov, squash: p.squash, shift: (c / height) * k };
     applyLens(camera, lens.current.fov, lens.current.squash, lens.current.shift);
     at.current = tau;
+    cam.set(camOf(p, lens.current.shift, get().size.width, get().size.height));
   });
+
+  /** Hand the current camera to the UI thread (the landmark layer projects through it). */
+  const publishCam = (w: number, h: number) => {
+    cam.set(camOf(pose.current, lens.current.shift, w, h));
+  };
 
   const startFlight = useEffectEvent((want: RigGoal, hop: boolean) => {
     const f = flight.current;
@@ -361,12 +376,6 @@ export function CameraRig({
     if (f.active) {
       const camera = state.camera as THREE.PerspectiveCamera;
       const t = Math.min(1, (now - f.startedAt) / f.durationMs);
-      if (
-        shouldLead(now - f.startedAt, f.durationMs, f.kind === 'dive' && f.s1 === 0, f.leadSent)
-      ) {
-        f.leadSent = true;
-        latest.current.onLead();
-      }
       const linear = latest.current.reduceMotion ? 1 : t;
       const { topPose: top, cover: c, obstacles: ob } = latest.current;
       const height = Math.max(1, state.size.height);
@@ -396,6 +405,16 @@ export function CameraRig({
         lens.current = { fov: p.fov, squash: 1, shift: c / height };
       }
       applyLens(camera, lens.current.fov, lens.current.squash, lens.current.shift);
+      publishCam(state.size.width, state.size.height);
+      if (
+        f.kind === 'dive' &&
+        f.s1 === 0 &&
+        !f.leadSent &&
+        shouldLead(gridAlignmentPx(cam.get(), latest.current.topPose, ALIGN_Y), true, false)
+      ) {
+        f.leadSent = true;
+        latest.current.onLead();
+      }
       if (t >= 1) {
         f.active = false;
         f.vel = 0;

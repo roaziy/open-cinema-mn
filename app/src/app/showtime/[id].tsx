@@ -120,6 +120,9 @@ export default function SeatMapScreen() {
     fade,
     dive,
     closingFlag,
+    cam,
+    fit,
+    planeY,
     landmarks,
     chromeStyle,
     footerStyle,
@@ -250,7 +253,9 @@ export default function SeatMapScreen() {
           <SeatLandmarks
             layout={layout}
             transform={transform}
-            rect={viewing.mapRect}
+            fit={fit}
+            planeY={planeY}
+            cam={cam}
             tone={tone}
             statusOf={statusOf}
             opacity={landmarks}
@@ -268,6 +273,7 @@ export default function SeatMapScreen() {
           dive={dive}
           fade={fade}
           closingFlag={closingFlag}
+          cam={cam}
           closing={viewing.closing}
           onRequestClose={requestClose}
           onClosed={closed}
