@@ -1,43 +1,69 @@
 import * as THREE from 'three';
+import { SEAT_MODEL } from './seat-model';
 
-/**
- * One merged mesh for a cinema seat facing -z (toward the screen): cushion, two armrests, a
- * backrest that leans back with a headrest, and a pedestal. The backrest's top sits just below
- * the eye of someone seated behind, so rows ahead fill the bottom of the frame.
- */
-export function createSeatGeometry(): THREE.BufferGeometry {
-  const cushion = new THREE.BoxGeometry(0.4, 0.14, 0.46).translate(0, 0.42, -0.02);
-  const armL = new THREE.BoxGeometry(0.06, 0.07, 0.4).translate(-0.235, 0.63, 0.0);
-  const armR = new THREE.BoxGeometry(0.06, 0.07, 0.4).translate(0.235, 0.63, 0.0);
-  const armPostL = new THREE.BoxGeometry(0.05, 0.22, 0.05).translate(-0.235, 0.5, 0.1);
-  const armPostR = new THREE.BoxGeometry(0.05, 0.22, 0.05).translate(0.235, 0.5, 0.1);
-  const back = new THREE.BoxGeometry(0.44, 0.52, 0.09).rotateX(-0.12).translate(0, 0.7, 0.22);
-  const head = new THREE.BoxGeometry(0.3, 0.15, 0.09).rotateX(-0.12).translate(0, 1.0, 0.25);
-  const base = new THREE.BoxGeometry(0.1, 0.35, 0.1).translate(0, 0.175, 0.05);
-  // Shade per part (multiplies the instance colour): lighter where light lands, darker in the
-  // joins, so a row reads as seats and not as one grey block.
-  const parts: [THREE.BufferGeometry, number][] = [
-    [cushion, 0.85],
-    [armL, 0.6],
-    [armR, 0.6],
-    [armPostL, 0.4],
-    [armPostR, 0.4],
-    [back, 1],
-    [head, 1.15],
-    [base, 0.3],
-  ];
+const ALPHABET = 'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/';
+const LOOKUP = new Uint8Array(128);
+for (let i = 0; i < ALPHABET.length; i++) LOOKUP[ALPHABET.charCodeAt(i)] = i;
 
+/** Base64 to bytes (no atob needed). */
+export function fromBase64(s: string): Uint8Array {
+  const pad = s.endsWith('==') ? 2 : s.endsWith('=') ? 1 : 0;
+  const out = new Uint8Array((s.length / 4) * 3 - pad);
+  let o = 0;
+  for (let i = 0; i < s.length; i += 4) {
+    const n =
+      ((LOOKUP[s.charCodeAt(i)] as number) << 18) |
+      ((LOOKUP[s.charCodeAt(i + 1)] as number) << 12) |
+      ((LOOKUP[s.charCodeAt(i + 2)] as number) << 6) |
+      (LOOKUP[s.charCodeAt(i + 3)] as number);
+    if (o < out.length) out[o++] = (n >> 16) & 255;
+    if (o < out.length) out[o++] = (n >> 8) & 255;
+    if (o < out.length) out[o++] = n & 255;
+  }
+  return out;
+}
+
+type Part = { readonly position: string; readonly normal: string; readonly index: string };
+
+function partGeometry(p: Part): THREE.BufferGeometry {
+  const g = new THREE.BufferGeometry();
+  g.setAttribute(
+    'position',
+    new THREE.BufferAttribute(new Float32Array(fromBase64(p.position).buffer), 3),
+  );
+  g.setAttribute(
+    'normal',
+    new THREE.BufferAttribute(new Float32Array(fromBase64(p.normal).buffer), 3),
+  );
+  g.setIndex(new THREE.BufferAttribute(new Uint16Array(fromBase64(p.index).buffer), 1));
+  return g;
+}
+
+/** How bright the shell is next to the fabric in the one-colour (held seat) version. */
+const SHELL_SHADE = 0.35;
+
+/** Fabric and shell in one geometry, shaded by a colour attribute (the held seats' accent version). */
+function wholeSeat(
+  fabric: THREE.BufferGeometry,
+  shell: THREE.BufferGeometry,
+): THREE.BufferGeometry {
   const pos: number[] = [];
   const nor: number[] = [];
   const col: number[] = [];
   const idx: number[] = [];
-  for (const [g, shade] of parts) {
+  for (const [g, shade] of [
+    [fabric, 1],
+    [shell, SHELL_SHADE],
+  ] as const) {
     const offset = pos.length / 3;
-    for (let i = 0; i < g.getAttribute('position').count; i++) col.push(shade, shade, shade);
-    for (const v of g.getAttribute('position').array) pos.push(v);
-    for (const v of g.getAttribute('normal').array) nor.push(v);
+    const p = g.getAttribute('position');
+    const n = g.getAttribute('normal');
+    for (let i = 0; i < p.count; i++) {
+      pos.push(p.getX(i), p.getY(i), p.getZ(i));
+      nor.push(n.getX(i), n.getY(i), n.getZ(i));
+      col.push(shade, shade, shade);
+    }
     for (const i of g.getIndex()?.array ?? []) idx.push(i + offset);
-    g.dispose();
   }
   const merged = new THREE.BufferGeometry();
   merged.setAttribute('position', new THREE.Float32BufferAttribute(pos, 3));
@@ -46,3 +72,25 @@ export function createSeatGeometry(): THREE.BufferGeometry {
   merged.setIndex(idx);
   return merged;
 }
+
+export type SeatParts = {
+  /** The seat's upholstery (its colour shows the seat's state). */
+  fabric: THREE.BufferGeometry;
+  /** The seat's back shell and pan. */
+  shell: THREE.BufferGeometry;
+  /** Both, shaded, for the held seats' accent version. */
+  whole: THREE.BufferGeometry;
+  /** The divider between two seats (armrest, leg, foot). */
+  arm: THREE.BufferGeometry;
+};
+
+/** The cinema seat model (see seat-model.ts), facing -z, floor at y = 0. */
+export function createSeatParts(): SeatParts {
+  const fabric = partGeometry(SEAT_MODEL.fabric);
+  const shell = partGeometry(SEAT_MODEL.shell);
+  return { fabric, shell, whole: wholeSeat(fabric, shell), arm: partGeometry(SEAT_MODEL.arm) };
+}
+
+/** Seat spacing the model was made for and its width, metres. */
+export const MODEL_PITCH = SEAT_MODEL.pitch;
+export const MODEL_SEAT_WIDTH = SEAT_MODEL.width;
