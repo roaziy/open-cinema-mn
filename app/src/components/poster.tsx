@@ -1,5 +1,6 @@
 import { Image } from 'expo-image';
 import { StyleSheet, View } from 'react-native';
+import { mediaUrl } from '@/lib/http';
 import { colors } from '@/theme/tokens';
 
 type Props = { uri: string; width: number; radius?: number };
@@ -8,7 +9,12 @@ type Props = { uri: string; width: number; radius?: number };
 export function Poster({ uri, width, radius = 14 }: Props) {
   return (
     <View style={[styles.frame, { width, height: Math.round(width * 1.5), borderRadius: radius }]}>
-      <Image source={uri} style={StyleSheet.absoluteFill} contentFit="cover" transition={150} />
+      <Image
+        source={mediaUrl(uri)}
+        style={StyleSheet.absoluteFill}
+        contentFit="cover"
+        transition={150}
+      />
     </View>
   );
 }

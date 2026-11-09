@@ -29,3 +29,23 @@ export function resolveApiOrigin(
   url.hostname = lan;
   return url.toString().replace(/\/+$/, '');
 }
+
+/**
+ * Media (poster, backdrop) URLs come from the backend as absolute links to its public host,
+ * `http://localhost:4000/...` in development: a phone cannot load those. Same rule as the API
+ * origin, but the path, query and port stay as they are.
+ */
+export function devMediaUrl(url: string, opts: { dev: boolean; hostUri?: string | null }): string {
+  if (!opts.dev) return url;
+  let parsed: URL;
+  try {
+    parsed = new URL(url);
+  } catch {
+    return url;
+  }
+  if (!LOOPBACK.has(parsed.hostname)) return url;
+  const lan = hostFromHostUri(opts.hostUri);
+  if (!lan) return url;
+  parsed.hostname = lan;
+  return parsed.toString();
+}

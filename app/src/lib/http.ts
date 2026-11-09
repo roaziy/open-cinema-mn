@@ -1,5 +1,5 @@
 import Constants from 'expo-constants';
-import { resolveApiOrigin } from './dev-host';
+import { devMediaUrl, resolveApiOrigin } from './dev-host';
 
 /** Where Metro is served from: `expoConfig.hostUri` in dev builds, `debuggerHost` in Expo Go. */
 function devServerHostUri(): string | undefined {
@@ -14,6 +14,11 @@ const API_ORIGIN = resolveApiOrigin(
 );
 
 export const API_BASE = `${API_ORIGIN}/v1`;
+
+/** A media link from the API, reachable from this device (a phone cannot open the dev machine's localhost). */
+export function mediaUrl(url: string): string {
+  return devMediaUrl(url, { dev: __DEV__, hostUri: devServerHostUri() });
+}
 
 /** Non-2xx response (`{ error, message? }`) or a network failure (`status` 0, `code` "network"). */
 export class ApiError extends Error {

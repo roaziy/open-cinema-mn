@@ -1,5 +1,6 @@
 import { Image } from 'expo-image';
 import { StyleSheet, View } from 'react-native';
+import { mediaUrl } from '@/lib/http';
 import { colors } from '@/theme/tokens';
 import { Fade } from './fade';
 
@@ -20,7 +21,7 @@ export function PosterBackdrop({
   return (
     <View style={[StyleSheet.absoluteFill, { overflow: 'hidden' }]} pointerEvents="none">
       <Image
-        source={uri}
+        source={mediaUrl(uri)}
         style={StyleSheet.absoluteFill}
         contentFit="cover"
         blurRadius={process.env.EXPO_OS === 'ios' ? 50 : 25}
