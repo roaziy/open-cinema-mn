@@ -16,10 +16,12 @@ import {
 } from './camera-clock';
 import { hopDurationMs, hopFrame } from './camera-hop';
 import {
+  type AimWaypoint,
   type CamState,
   camOf,
   type DivePose,
   divePose,
+  easedAim,
   eyePosition,
   gridAlignmentPx,
   lensRange,
@@ -41,10 +43,11 @@ function frontEdge(ob: Obstacles): number {
   return Number.isFinite(z) ? Math.max(0.5, z - 0.5) : 1;
 }
 
-/** The close's waypoint z; eased in from the opening aim over 0.4 s when an open was turned round. */
-function frontNow(f: Flight, ob: Obstacles, now: number): number {
-  const w = f.turned ? Math.min(1, (now - f.startedAt) / 400) : 1;
-  return 1 + (frontEdge(ob) - 1) * w;
+/** The close's aim waypoint; eased (x and z together) in from the opening aim over 0.4 s when an open was turned round. */
+const wayNow: AimWaypoint = { x: 0, z: 0 };
+function frontNow(f: Flight, ob: Obstacles, now: number): AimWaypoint | number {
+  if (!f.turned) return frontEdge(ob);
+  return easedAim(f.center, f.eye, frontEdge(ob), now - f.startedAt, wayNow);
 }
 
 /** Height (m) of the points the grid alignment is measured on: about the seat tops. */
