@@ -1,6 +1,8 @@
 import { describe, expect, it } from 'vitest';
 import {
   divePose,
+  easeFlight,
+  eyePosition,
   fovForAspect,
   hallDepth,
   hallExtents,
@@ -16,9 +18,9 @@ import {
   aisleCentres,
   aisleStrips,
   clearPosition,
-  hoverAltitude,
   insideGeometry,
   type Obstacles,
+  seatEnvelope,
   seatHeightM,
   slatLayout,
 } from './room-layout';
@@ -89,7 +91,15 @@ function makeHall() {
 
 describe('the dive never goes through the room', () => {
   const { seats, o } = makeHall();
-  const top: TopDownPose = { position: [0, 95, 8], target: [0, 0, 8], fov: 9, squash: 0.6 };
+  const center = screenCenter(hall);
+  const bounds = { half: o.half, depth: o.depth };
+  const tops: [string, TopDownPose][] = [
+    ['over the hall', { position: [0, 95, 8], target: [0, 0, 8], fov: 9, squash: 0.6 }],
+    [
+      'panned out of the hall',
+      { position: [34, 70, -12], target: [34, 0, -12], fov: 9, squash: 0.6 },
+    ],
+  ];
   const picks = [
     seats.find((s) => s.id === 'A-1.05'),
     seats.find((s) => s.id === 'D1.6'),
@@ -98,62 +108,75 @@ describe('the dive never goes through the room', () => {
     seats.find((s) => s.id === 'E-1.05'),
     seats.find((s) => s.id === 'A3.8'),
   ];
-  for (const seat of picks) {
-    it(`flies to ${seat?.id} and back without a sample inside a seat, step or wall`, () => {
-      if (!seat) throw new Error('seat missing');
-      const eye: [number, number, number] = [seat.x_m, seat.z_m + 1.15, seat.y_m];
-      const out = newDivePose();
-      const p: [number, number, number] = [0, 0, 0];
-      for (let i = 0; i <= 200; i++) {
-        const s = i / 200;
-        divePose(s, top, eye, screenCenter(hall), fovForAspect(0.46), out, hoverAltitude(eye, o));
-        clearPosition(out.position, eye, null, o, p);
-        // The viewer's own seat shrinks away by the end of the dive.
-        const gone = Math.min(1, Math.max(0, (s - 0.5) / 0.35));
-        const bad = insideGeometry(p, o, 0.12, (st) => st.id === seat.id && gone > 0.95);
-        expect(bad, `s=${s} at ${p.map((v) => v.toFixed(2)).join(',')}`).toBe(false);
-        // low enough to be among the seat backs: it must be right over its own seat
-        const maxBack = Math.max(...seats.map((st) => st.z_m)) + seatHeightM + 0.5;
-        if (p[1] < maxBack) {
-          expect(Math.hypot(p[0] - eye[0], p[2] - eye[2]), `s=${s}`).toBeLessThan(0.55);
+  const maxBack = Math.max(...seats.map((st) => st.z_m)) + seatHeightM + 0.5;
+  for (const [where, top] of tops) {
+    for (const seat of picks) {
+      it(`${where}: flies to ${seat?.id} and back, never inside a seat, step or wall`, () => {
+        if (!seat) throw new Error('seat missing');
+        const eye = eyePosition(seat);
+        const out = newDivePose();
+        const p: [number, number, number] = [0, 0, 0];
+        for (let i = 0; i <= 300; i++) {
+          const tau = i / 300;
+          divePose(easeFlight(tau), top, eye, center, fovForAspect(0.46), out, bounds);
+          clearPosition(out.position, eye, null, o, p);
+          // The viewer's own seat shrinks away as the camera comes to it.
+          const near = Math.hypot(p[0] - eye[0], p[1] - eye[1], p[2] - eye[2]) < 1;
+          const bad = insideGeometry(p, o, 0.12, (st) => st.id === seat.id && near);
+          expect(bad, `tau=${tau} at ${p.map((v) => v.toFixed(2)).join(',')}`).toBe(false);
+          // low enough to be among the seat backs: only in the final approach, behind and above its own seat
+          if (p[1] < maxBack) {
+            const back = p[2] - eye[2];
+            expect(back, `tau=${tau}`).toBeGreaterThan(-0.4);
+            expect(back, `tau=${tau}`).toBeLessThan(2.6);
+            expect(Math.abs(p[0] - eye[0]), `tau=${tau}`).toBeLessThan(0.9);
+          }
         }
-      }
-      const end = clearPosition(
-        divePose(1, top, eye, screenCenter(hall), 60, out, hoverAltitude(eye, o)).position,
-        eye,
-        null,
-        o,
-        p,
-      );
-      for (let i = 0; i < 3; i++) expect(end[i]).toBeCloseTo(eye[i] as number, 3);
-    });
+        const end = clearPosition(
+          divePose(1, top, eye, center, 60, out, bounds).position,
+          eye,
+          null,
+          o,
+          p,
+        );
+        for (let i = 0; i < 3; i++) expect(end[i]).toBeCloseTo(eye[i] as number, 3);
+      });
+    }
   }
+
+  it('the curve itself, without the safety net, stays out of the seats for a front seat', () => {
+    const seat = seats.find((s) => s.id === 'A-1.05');
+    if (!seat) throw new Error('seat missing');
+    const eye = eyePosition(seat);
+    const out = newDivePose();
+    for (let i = 0; i <= 300; i++) {
+      divePose(easeFlight(i / 300), tops[0]?.[1] as TopDownPose, eye, center, 60, out, bounds);
+      const near =
+        Math.hypot(out.position[0] - eye[0], out.position[1] - eye[1], out.position[2] - eye[2]) <
+        1;
+      expect(insideGeometry(out.position, o, 0.12, (st) => st.id === seat.id && near)).toBe(false);
+    }
+  });
 
   it('hops between seats in different rows, over the rows, without a sample inside a seat', () => {
     const a = seats.find((s) => s.id === 'A-1.05');
     const b = seats.find((s) => s.id === 'J3.8');
     if (!a || !b) throw new Error('seat missing');
-    const ea: [number, number, number] = [a.x_m, a.z_m + 1.15, a.y_m];
-    const eb: [number, number, number] = [b.x_m, b.z_m + 1.15, b.y_m];
+    const ea = eyePosition(a);
+    const eb = eyePosition(b);
     const out = newDivePose();
-    const eyeNow: [number, number, number] = [0, 0, 0];
-    for (let i = 0; i <= 200; i++) {
-      const p = hopPose(
-        i / 200,
-        top,
-        ea,
-        eb,
-        screenCenter(hall),
-        60,
-        60,
-        (e) => hoverAltitude(e, o),
-        out,
-        eyeNow,
-      );
-      const pos: [number, number, number] = [p.position[0], p.position[1], p.position[2]];
+    for (let i = 0; i <= 300; i++) {
+      const p = hopPose(easeFlight(i / 300), ea, eb, center, 60, 60, seatEnvelope(o), bounds, out);
+      const near = (e: [number, number, number]) =>
+        Math.hypot(p.position[0] - e[0], p.position[1] - e[1], p.position[2] - e[2]) < 1;
       expect(
-        insideGeometry(pos, o, 0.12, (st) => st.id === a.id || st.id === b.id),
-        `t=${i / 200} at ${pos.map((v) => v.toFixed(2)).join(',')}`,
+        insideGeometry(
+          p.position,
+          o,
+          0.12,
+          (st) => (st.id === a.id && near(ea)) || (st.id === b.id && near(eb)),
+        ),
+        `t=${i / 300} at ${p.position.map((v) => v.toFixed(2)).join(',')}`,
       ).toBe(false);
     }
   });

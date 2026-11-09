@@ -3,17 +3,12 @@ import { describe, expect, it } from 'vitest';
 import { layoutSeats } from '../../lib/seat-layout';
 import {
   coverTransform,
-  divePose,
-  easeInOut,
   eyePosition,
-  flightProgress,
   fovForAspect,
   hallDepth,
   hallExtents,
   lensRange,
-  lerp3,
   mapFitOf,
-  newDivePose,
   POV_NEAR_M,
   pickScreenSource,
   povFov,
@@ -23,41 +18,11 @@ import {
   screenCenter,
   seatPlaneHeight,
   stepSpans,
-  type TopDownPose,
-  TRAVEL_SHARE,
   textureFits,
   topDownFromMap,
 } from './camera-math';
 
 const hall = { screen_width_m: 10, screen_height_m: 4.2, screen_x_m: 0 };
-
-describe('easeInOut', () => {
-  it('is 0 at the start, 1 at the end, 0.5 in the middle, and clamps', () => {
-    expect(easeInOut(0)).toBe(0);
-    expect(easeInOut(1)).toBe(1);
-    expect(easeInOut(0.5)).toBeCloseTo(0.5);
-    expect(easeInOut(-3)).toBe(0);
-    expect(easeInOut(7)).toBe(1);
-  });
-  it('is slow at the ends and monotonic', () => {
-    expect(easeInOut(0.1)).toBeLessThan(0.1);
-    expect(easeInOut(0.9)).toBeGreaterThan(0.9);
-    let prev = 0;
-    for (let i = 1; i <= 20; i++) {
-      const v = easeInOut(i / 20);
-      expect(v).toBeGreaterThanOrEqual(prev);
-      prev = v;
-    }
-  });
-});
-
-describe('flightProgress', () => {
-  it('takes 1.5 s by default and finishes at once with Reduce Motion', () => {
-    expect(flightProgress(750, false)).toBeCloseTo(0.5);
-    expect(flightProgress(1500, false)).toBe(1);
-    expect(flightProgress(0, true)).toBe(1);
-  });
-});
 
 describe('eyePosition', () => {
   it('maps y_m to depth, z_m to height and adds the 1.15 m eye height', () => {
@@ -78,14 +43,6 @@ describe('hallExtents', () => {
   ];
   it('reads hall extents', () => {
     expect(hallExtents(seats)).toEqual({ minX: -4, maxX: 4, minY: 4, maxY: 12, maxZ: 2.4 });
-  });
-});
-
-describe('lerp3', () => {
-  it('writes into the output without allocating', () => {
-    const out: [number, number, number] = [0, 0, 0];
-    expect(lerp3(out, [0, 0, 0], [10, 20, 30], 0.5)).toBe(out);
-    expect(out).toEqual([5, 10, 15]);
   });
 });
 
@@ -306,84 +263,6 @@ describe('seatPlaneHeight', () => {
   it('is the mean seat height plus the seat tops', () => {
     expect(seatPlaneHeight([{ z_m: 0 }, { z_m: 2 }])).toBeCloseTo(1 + SEAT_TOP_M);
     expect(seatPlaneHeight([])).toBe(SEAT_TOP_M);
-  });
-});
-
-describe('divePose', () => {
-  const top: TopDownPose = { position: [0, 105, 7], target: [0, 0, 7], fov: 14, squash: 0.62 };
-  const eye: [number, number, number] = [-0.55, 1.15 + 0.9, 11];
-  const center = screenCenter(hall);
-  const pov = 78;
-  const hover = 7;
-  const at = (s: number) => divePose(s, top, eye, center, pov, newDivePose(), hover);
-
-  it('starts exactly at the top-down pose and ends exactly at the seat', () => {
-    const a = at(0);
-    const b = at(1);
-    for (let i = 0; i < 3; i++) expect(a.position[i]).toBeCloseTo(top.position[i] as number, 6);
-    expect(a.fov).toBeCloseTo(14);
-    expect(a.squash).toBeCloseTo(0.62);
-    for (let i = 0; i < 3; i++) expect(b.position[i]).toBeCloseTo(eye[i] as number, 6);
-    const dir = new THREE.Vector3(...b.target).sub(new THREE.Vector3(...b.position)).normalize();
-    const want = new THREE.Vector3(...center).sub(new THREE.Vector3(...eye)).normalize();
-    expect(dir.angleTo(want)).toBeLessThan(1e-6);
-    expect(b.fov).toBeCloseTo(pov);
-    expect(b.squash).toBe(1);
-    expect(b.up[1]).toBeCloseTo(1);
-    expect(Math.abs(b.up[0]) + Math.abs(b.up[2])).toBeCloseTo(0);
-  });
-
-  it('first travels over the seat looking straight down, then drops onto it', () => {
-    const at1 = at(TRAVEL_SHARE);
-    expect(at1.position[0]).toBeCloseTo(eye[0] as number);
-    expect(at1.position[2]).toBeCloseTo(eye[2] as number);
-    expect(at1.position[1]).toBeCloseTo(hover);
-    expect(at1.target[0]).toBeCloseTo(at1.position[0]);
-    expect(at1.target[2]).toBeCloseTo(at1.position[2]);
-    // second part: straight down, no sideways movement at all
-    for (let i = 0; i <= 20; i++) {
-      const p = at(TRAVEL_SHARE + ((1 - TRAVEL_SHARE) * i) / 20);
-      expect(p.position[0]).toBeCloseTo(eye[0] as number);
-      expect(p.position[2]).toBeCloseTo(eye[2] as number);
-    }
-  });
-
-  it('only ever descends and widens the lens', () => {
-    let prevY = Number.POSITIVE_INFINITY;
-    let prevFov = 0;
-    for (let i = 0; i <= 100; i++) {
-      const p = at(i / 100);
-      expect(p.position[1]).toBeLessThanOrEqual(prevY + 1e-9);
-      expect(p.fov).toBeGreaterThanOrEqual(prevFov - 1e-9);
-      prevY = p.position[1];
-      prevFov = p.fov;
-    }
-  });
-
-  it('zooms by a steady ratio while travelling', () => {
-    // altitude and tan(fov/2) move by the same ratio per step: no jump in apparent size
-    let prev = 0;
-    for (let i = 0; i <= 18; i++) {
-      const p = at((TRAVEL_SHARE * i) / 18);
-      const size = 1 / (p.position[1] * Math.tan((p.fov * Math.PI) / 360));
-      if (i > 0) expect(size / prev).toBeLessThan(1.35);
-      prev = size;
-    }
-  });
-
-  it('looks at the floor under it, then pitches up to the screen centre without going past it', () => {
-    for (let i = 0; i <= 100; i++) {
-      const p = at(i / 100);
-      const dir = new THREE.Vector3(...p.target).sub(new THREE.Vector3(...p.position)).normalize();
-      expect(Math.abs(dir.dot(new THREE.Vector3(...p.up).normalize()))).toBeLessThan(0.999);
-      // meets the floor in front of the wall, or lands on the wall itself (floor to a bit above the screen)
-      const floorZ = dir.y < -1e-6 ? p.position[2] + dir.z * (-p.position[1] / dir.y) : Number.NaN;
-      if (!(floorZ >= 0)) {
-        const y = p.position[1] + dir.y * (-p.position[2] / dir.z);
-        expect(y).toBeGreaterThanOrEqual(-0.5);
-        expect(y).toBeLessThanOrEqual(8);
-      }
-    }
   });
 });
 
