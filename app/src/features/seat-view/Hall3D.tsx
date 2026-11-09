@@ -88,7 +88,7 @@ export default function Hall3D(props: Hall3DProps) {
       camera={{ fov: 14, near: 1, far: 400, position: [0, 100, 8] }}
       frameloop="demand"
       gl={{ antialias: !CHEAP_GL }}
-      onCreated={CHEAP_GL ? () => setNudge(1) : undefined}
+      onCreated={CHEAP_GL ? () => setTimeout(() => setNudge(1), 120) : undefined}
     >
       <color attach="background" args={[palette.canvas]} />
       <Scene {...props} />
@@ -102,7 +102,7 @@ export default function Hall3D(props: Hall3DProps) {
             position: 'absolute',
             left: 0,
             top: 0,
-            width: box.w / ratio + nudge * 0.02,
+            width: box.w / ratio + nudge * 0.5,
             height: box.h / ratio,
             transform: [{ scale: ratio }],
             transformOrigin: 'top left',
