@@ -225,6 +225,7 @@ export const mn = {
   'view.sideProfile': 'Хажуугаас',
   'view.topDown': 'Дээрээс',
   'view.switcher': 'Суудал солих',
+  'view.lookAround': 'Утсаа эргүүлж харах',
 
   'lang.mn': 'Монгол',
   'lang.en': 'English',

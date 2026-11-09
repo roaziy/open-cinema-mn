@@ -21,6 +21,7 @@ import {
   type TopDownPose,
   type Vec3,
 } from './camera-math';
+import { type Look, lookPitch, lookWeight, lookYaw, subscribeLook } from './look-around';
 import { clearPosition, type Obstacles } from './room-layout';
 
 /** Dev only: how long the average frame time is sampled after a flight. */
@@ -44,6 +45,16 @@ function applyLens(camera: THREE.PerspectiveCamera, fov: number, squash: number,
   if (shift !== 0) e[9] = -shift;
   if (squash !== 1 || shift !== 0)
     camera.projectionMatrixInverse.copy(camera.projectionMatrix).invert();
+}
+
+/** Never quite straight up or down: the heading stays defined. */
+const PITCH_LIMIT = 1.45;
+
+/** The look-around turn on top of a pose, `w` of it (heading and elevation only). */
+function turnBy(p: DivePose, look: Look, w: number) {
+  if (w <= 0) return;
+  p.yaw += lookYaw(look) * w;
+  p.pitch = Math.min(PITCH_LIMIT, Math.max(-PITCH_LIMIT, p.pitch + lookPitch(look) * w));
 }
 
 /** Position and heading/elevation (no roll: the right vector stays horizontal). */
@@ -108,6 +119,8 @@ type Props = {
   onDrew: () => void;
   /** Rendering threw. */
   onFail: (reason: string) => void;
+  /** Where the view from the seat is turned to by a drag or the phone (applied at the seat). */
+  look: Look;
 };
 
 const NO_SEAT: Vec3 = [0, 1.5, 6];
@@ -133,6 +146,7 @@ export function CameraRig({
   cam,
   onDrew,
   onFail,
+  look,
 }: Props) {
   const get = useThree((s) => s.get);
   const size = useThree((s) => s.size);
@@ -182,6 +196,7 @@ export function CameraRig({
     onLead,
     onDrew,
     onFail,
+    look,
   });
   useEffect(() => {
     latest.current = {
@@ -195,6 +210,7 @@ export function CameraRig({
       onLead,
       onDrew,
       onFail,
+      look,
     };
   });
 
@@ -220,6 +236,7 @@ export function CameraRig({
     p.position[0] = scratch[0];
     p.position[1] = scratch[1];
     p.position[2] = scratch[2];
+    turnBy(p, latest.current.look, lookWeight(tau));
     applyPose(camera, p);
     lens.current = { fov: p.fov, squash: p.squash, shift: 0 };
     applyLens(camera, lens.current.fov, lens.current.squash, lens.current.shift);
@@ -302,6 +319,18 @@ export function CameraRig({
     invalidate();
   }, [size.width, size.height, get, invalidate]);
 
+  // A drag or the phone turned the view: at rest, draw the new view now (in flight the frame
+  // loop picks it up).
+  useEffect(
+    () =>
+      subscribeLook(look, () => {
+        if (!placed.current || flight.current.active) return;
+        placeAt(at.current, eyeOf());
+        invalidate();
+      }),
+    [look, invalidate],
+  );
+
   const seatId = eyeSeat?.id;
   useEffect(() => {
     if (!placed.current) return;
@@ -339,6 +368,8 @@ export function CameraRig({
         p.position[0] = scratch[0];
         p.position[1] = scratch[1];
         p.position[2] = scratch[2];
+        // the look-around turn fades out early in a close: the way back is exactly the dive's
+        turnBy(p, latest.current.look, lookWeight(k));
         applyPose(camera, p);
         lens.current = { fov: p.fov, squash: p.squash, shift: 0 };
         const dtMs = now - f.lastAt;
@@ -350,6 +381,7 @@ export function CameraRig({
       } else {
         // Seat to seat: one curve that rises over the seat backs between the two.
         const p = hopFrame(linear, f.from, f.to, f.center, f.povA, f.povB, ob, pose.current);
+        turnBy(p, latest.current.look, 1);
         applyPose(camera, p);
         lens.current = { fov: p.fov, squash: 1, shift: 0 };
       }

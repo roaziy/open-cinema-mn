@@ -23,6 +23,7 @@ import {
 import { CameraRig, type RigGoal } from './camera-rig';
 import { HallRoom, SCREEN_FACE, SCREEN_HALO, SCREEN_MASK } from './HallRoom';
 import { handoffLook, heldScale } from './handoff';
+import type { Look } from './look-around';
 import { palette } from './palette';
 import type { Obstacles } from './room-layout';
 import { createSeatGeometry } from './seat-geometry';
@@ -68,6 +69,8 @@ export type Hall3DProps = {
   onDrew: () => void;
   /** Context lost, shader error or a throwing render: show the 2D diagram instead. */
   onFail: (reason: string) => void;
+  /** Where the view from the seat is turned to by a drag or the phone. */
+  lookAround: Look;
 };
 
 /**
@@ -161,6 +164,7 @@ function Scene({
   closing,
   onDrew,
   onFail,
+  lookAround,
 }: Hall3DProps) {
   const ext = useMemo(() => hallExtents(seats), [seats]);
   const half = hallHalfWidth(ext, hall);
@@ -411,6 +415,7 @@ function Scene({
         cam={cam}
         onDrew={onDrew}
         onFail={onFail}
+        look={lookAround}
       />
     </>
   );
