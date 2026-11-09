@@ -222,11 +222,9 @@ export const en: Record<TKey, string> = {
   'view.hint.immersive': 'The screen fills your field of view',
   'view.hint.balanced': 'You take in the whole screen at ease',
   'view.a11y': 'Row {row}, {distance} m from the screen, {off}° off centre',
-  'view.loading': 'Setting up the hall',
   'view.fallbackNote': '3D is not available on this device, so here is the diagram instead.',
   'view.sideProfile': 'Side',
   'view.topDown': 'Top',
-  'view.noSeat': 'No seat selected',
   'view.switcher': 'Switch seat',
 
   'lang.mn': 'Монгол',

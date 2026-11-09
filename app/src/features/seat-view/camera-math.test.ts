@@ -1,4 +1,6 @@
+import * as THREE from 'three';
 import { describe, expect, it } from 'vitest';
+import { layoutSeats } from '../../lib/seat-layout';
 import {
   coverTransform,
   easeInOut,
@@ -7,15 +9,17 @@ import {
   fovForAspect,
   hallDepth,
   hallExtents,
+  lensRange,
   lerp3,
+  mapFitOf,
+  POV_NEAR_M,
   pickScreenSource,
   rowsOf,
   safeTone,
   screenCenter,
   stepSpans,
   textureFits,
-  topDownHeight,
-  topDownPosition,
+  topDownFromMap,
 } from './camera-math';
 
 const hall = { screen_width_m: 10, screen_height_m: 4.2, screen_x_m: 0 };
@@ -60,23 +64,13 @@ describe('screenCenter', () => {
   });
 });
 
-describe('top-down pose', () => {
+describe('hallExtents', () => {
   const seats = [
     { x_m: -4, y_m: 4, z_m: 0 },
     { x_m: 4, y_m: 12, z_m: 2.4 },
   ];
   it('reads hall extents', () => {
     expect(hallExtents(seats)).toEqual({ minX: -4, maxX: 4, minY: 4, maxY: 12, maxZ: 2.4 });
-  });
-  it('sits above the hall middle and looks straight down at it', () => {
-    const { position, target } = topDownPosition(hallExtents(seats), hall, 55, 0.5);
-    expect(position[0]).toBe(target[0]);
-    expect(position[2]).toBe(target[2]);
-    expect(position[1]).toBeGreaterThan(10);
-    expect(target[1]).toBe(0);
-  });
-  it('goes higher on a narrower screen', () => {
-    expect(topDownHeight(6, 14, 55, 0.5)).toBeGreaterThan(topDownHeight(6, 14, 55, 1));
   });
 });
 
@@ -159,5 +153,138 @@ describe('textureFits', () => {
     expect(textureFits(5000, 100, 8192)).toBe(false);
     expect(textureFits(3000, 100, 2048)).toBe(false);
     expect(textureFits(100, 100, 0)).toBe(true);
+  });
+});
+
+// A small hall: 4 columns 0.55 m apart with an aisle, 3 rows 1.1 m apart.
+const seatsOf = () => {
+  const out: {
+    id: string;
+    rowLabel: string;
+    kind: 'standard';
+    x_m: number;
+    y_m: number;
+    z_m: number;
+  }[] = [];
+  for (const [r, y] of [4, 5.1, 6.2].entries()) {
+    for (const x of [-1.65, -1.1, 0.55, 1.1]) {
+      out.push({
+        id: `${r}${x}`,
+        rowLabel: 'ABC'[r] as string,
+        kind: 'standard',
+        x_m: x,
+        y_m: y,
+        z_m: r * 0.3,
+      });
+    }
+  }
+  return out;
+};
+const GUTTER = 22;
+const ARC_H = 90;
+
+describe('lensRange', () => {
+  it('keeps the seat-height near plane low and pushes it out when high above the hall', () => {
+    expect(lensRange(2).near).toBe(POV_NEAR_M);
+    expect(lensRange(100).near).toBeGreaterThan(20);
+    expect(lensRange(100).far).toBeGreaterThan(200);
+    expect(lensRange(50).near).toBeLessThan(lensRange(100).near);
+  });
+});
+
+describe('mapFitOf', () => {
+  it('recovers the layout scale and the row pitch', () => {
+    const layout = layoutSeats(seatsOf() as never, 330);
+    const fit = mapFitOf(layout.slots, layout.size, layout.ppm, { x: GUTTER, y: ARC_H });
+    expect(fit.ppmX).toBeCloseTo(layout.ppm);
+    // 3 rows 1.1 m apart are drawn rowStep px apart.
+    expect(fit.ppmY).toBeCloseTo(layout.rowStep / 1.1);
+    const s = layout.slots[5];
+    expect(fit.x0 + fit.ppmX * (s?.seat.x_m ?? 0)).toBeCloseTo(
+      GUTTER + (s?.left ?? 0) + layout.size / 2,
+    );
+    expect(fit.y0 + fit.ppmY * (s?.seat.y_m ?? 0)).toBeCloseTo(
+      ARC_H + (s?.top ?? 0) + layout.size / 2,
+    );
+  });
+  it('survives a hall with a single row', () => {
+    const one = seatsOf().filter((s) => s.rowLabel === 'A');
+    const layout = layoutSeats(one as never, 330);
+    const fit = mapFitOf(layout.slots, layout.size, layout.ppm, { x: GUTTER, y: ARC_H });
+    expect(fit.ppmY).toBeCloseTo(layout.ppm);
+  });
+});
+
+describe('topDownFromMap', () => {
+  // Project a hall point through the returned camera with real three.js and compare with where
+  // the 2D map draws that seat after the given pan/zoom.
+  function check(
+    view: { scale: number; tx: number; ty: number },
+    offset: { x: number; y: number },
+  ) {
+    const seats = seatsOf();
+    const layout = layoutSeats(seats as never, 330);
+    const contentW = layout.width + GUTTER * 2;
+    const contentH = ARC_H + layout.height + 24;
+    const fit = mapFitOf(layout.slots, layout.size, layout.ppm, { x: GUTTER, y: ARC_H });
+    const viewW = 390;
+    const viewH = 520;
+    const canvasW = 390;
+    const canvasH = 640;
+    const pose = topDownFromMap({
+      fit,
+      view: { ...view, viewW, viewH, contentW, contentH },
+      canvasW,
+      canvasH,
+      offsetX: offset.x,
+      offsetY: offset.y,
+    });
+    const cam = new THREE.PerspectiveCamera(pose.fov, canvasW / canvasH, 0.5, 600);
+    cam.position.set(...pose.position);
+    cam.up.set(0, 0, -1);
+    cam.lookAt(...pose.target);
+    cam.updateMatrixWorld();
+    cam.projectionMatrix.elements[5] = (cam.projectionMatrix.elements[5] ?? 0) * pose.squash;
+    cam.projectionMatrixInverse.copy(cam.projectionMatrix).invert();
+    for (const slot of layout.slots) {
+      const p = new THREE.Vector3(slot.seat.x_m, 0.4, slot.seat.y_m).project(cam);
+      const gotX = ((p.x + 1) / 2) * canvasW;
+      const gotY = ((1 - p.y) / 2) * canvasH;
+      const wantX =
+        offset.x +
+        viewW / 2 +
+        view.tx +
+        view.scale * (GUTTER + slot.left + layout.size / 2 - contentW / 2);
+      const wantY =
+        offset.y +
+        viewH / 2 +
+        view.ty +
+        view.scale * (ARC_H + slot.top + layout.size / 2 - contentH / 2);
+      expect(gotX).toBeCloseTo(wantX, 0);
+      // Rows are fitted, not exact; the fit error stays under half a pixel here.
+      expect(Math.abs(gotY - wantY)).toBeLessThan(view.scale * 1.5);
+    }
+  }
+  it('lines seats up with the 2D map at the fitted zoom', () => {
+    check({ scale: 1, tx: 0, ty: 0 }, { x: 0, y: 60 });
+  });
+  it('follows pan and zoom, and a canvas offset from the viewport', () => {
+    check({ scale: 2.4, tx: -35, ty: 48 }, { x: 0, y: 112 });
+  });
+  it('looks straight down with the screen at the top and a narrow lens', () => {
+    const pose = topDownFromMap({
+      fit: { x0: 0, ppmX: 20, y0: 0, ppmY: 20 },
+      view: { scale: 1, tx: 0, ty: 0, viewW: 300, viewH: 500, contentW: 300, contentH: 500 },
+      canvasW: 300,
+      canvasH: 500,
+      offsetX: 0,
+      offsetY: 0,
+    });
+    expect(pose.fov).toBeLessThan(20);
+    expect(pose.target[1]).toBe(0);
+    expect(pose.position[0]).toBeCloseTo(pose.target[0]);
+    expect(pose.position[2]).toBeCloseTo(pose.target[2]);
+    expect(pose.position[1]).toBeGreaterThan(20);
+    expect(pose.squash).toBe(1);
   });
 });

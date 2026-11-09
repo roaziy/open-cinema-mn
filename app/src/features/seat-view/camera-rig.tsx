@@ -7,16 +7,14 @@ import {
   eyePosition,
   flightProgress,
   fovForAspect,
-  type hallExtents,
+  lensRange,
   lerp3,
   screenCenter,
-  topDownPosition,
+  type TopDownPose,
   type Vec3,
 } from './camera-math';
 
-/** Pause on the top-down view before the camera dives to the seat. */
-const START_DELAY_MS = 600;
-/** Dev only: how long the average frame time is sampled after the fly-in. */
+/** Dev only: how long the average frame time is sampled after a flight. */
 const MEASURE_MS = 3000;
 
 // Scratch objects: nothing is allocated per frame.
@@ -33,14 +31,34 @@ function lookQuat(out: THREE.Quaternion, eye: Vec3, target: Vec3, upVec: THREE.V
   return out.setFromRotationMatrix(mA);
 }
 
+/** Lens: vertical fov, a vertical squash on the projection, and a near/far that follow altitude. */
+function applyLens(camera: THREE.PerspectiveCamera, fov: number, squash: number) {
+  const range = lensRange(camera.position.y);
+  camera.fov = fov;
+  camera.near = range.near;
+  camera.far = range.far;
+  camera.updateProjectionMatrix();
+  if (squash !== 1) {
+    camera.projectionMatrix.elements[5] = (camera.projectionMatrix.elements[5] ?? 1) * squash;
+    camera.projectionMatrixInverse.copy(camera.projectionMatrix).invert();
+  }
+}
+
+export type RigGoal = 'top' | 'pov';
+
 type Flight = {
   active: boolean;
+  goal: RigGoal;
   startedAt: number;
   from: Vec3;
   to: Vec3;
   cur: Vec3;
   fromQ: THREE.Quaternion;
   toQ: THREE.Quaternion;
+  fromFov: number;
+  toFov: number;
+  fromSquash: number;
+  toSquash: number;
   /** Dev only: performance.now() at which the frame-time window closes (0 = not sampling). */
   measureUntil: number;
   frames: number;
@@ -48,12 +66,15 @@ type Flight = {
 };
 
 type Props = {
-  ext: ReturnType<typeof hallExtents>;
   hall: SeatMap['hall'];
   eyeSeat: SeatState | undefined;
   reduceMotion: boolean;
-  /** Dev only: stay on the top-down view. */
-  hold: boolean;
+  /** Where the 2D map is looking from, in 3D: the start and end of every dive. */
+  topPose: TopDownPose;
+  /** Where the camera should be: over the hall (matching the 2D map) or at the seat. */
+  goal: RigGoal;
+  /** A flight to `goal` finished. */
+  onArrive: (goal: RigGoal) => void;
   /** A render finished and issued draw calls. */
   onDrew: () => void;
   /** Rendering threw. */
@@ -61,100 +82,146 @@ type Props = {
 };
 
 /**
- * Owns the camera (top-down start, ease-in-out dive to the seat, re-flight on seat change) and
- * the render itself: r3f runs useFrame callbacks and then gl.render with no try/catch, so the
- * render is taken over here (priority 1) where a throw can route to the 2D fallback.
+ * Owns the camera (top-down pose matching the 2D map, ease-in-out flights to the seat and back,
+ * re-flight on seat change) and the render itself: r3f runs useFrame callbacks and then
+ * gl.render with no try/catch, so the render is taken over here (priority 1) where a throw can
+ * route to the 2D fallback.
  */
-export function CameraRig({ ext, hall, eyeSeat, reduceMotion, hold, onDrew, onFail }: Props) {
+export function CameraRig({
+  hall,
+  eyeSeat,
+  reduceMotion,
+  topPose,
+  goal,
+  onArrive,
+  onDrew,
+  onFail,
+}: Props) {
   const get = useThree((s) => s.get);
   const size = useThree((s) => s.size);
   const setFrameloop = useThree((s) => s.setFrameloop);
   const invalidate = useThree((s) => s.invalidate);
   const placed = useRef(false);
-  const started = useRef(false);
+  const settled = useRef<string | null>(null);
   const reported = useRef(false);
   const failed = useRef(false);
+  const lens = useRef({ fov: topPose.fov, squash: topPose.squash });
   const flight = useRef<Flight>({
     active: false,
+    goal: 'top',
     startedAt: 0,
     from: [0, 0, 0],
     to: [0, 0, 0],
     cur: [0, 0, 0],
     fromQ: new THREE.Quaternion(),
     toQ: new THREE.Quaternion(),
+    fromFov: 0,
+    toFov: 0,
+    fromSquash: 1,
+    toSquash: 1,
     measureUntil: 0,
     frames: 0,
     sumDelta: 0,
   });
   // Latest props for the frame loop and timers, which must not capture stale values.
-  const latest = useRef({ reduceMotion, eyeSeat, hall, onDrew, onFail });
+  const latest = useRef({ reduceMotion, eyeSeat, hall, topPose, goal, onArrive, onDrew, onFail });
   useEffect(() => {
-    latest.current = { reduceMotion, eyeSeat, hall, onDrew, onFail };
+    latest.current = { reduceMotion, eyeSeat, hall, topPose, goal, onArrive, onDrew, onFail };
   });
 
-  const startFlight = useEffectEvent(() => {
-    const { eyeSeat: seat, hall: h } = latest.current;
+  /** The pose (position, orientation, lens) for a goal, written into `out`. */
+  const targetPose = useEffectEvent(
+    (
+      want: RigGoal,
+      aspect: number,
+      out: { pos: Vec3; q: THREE.Quaternion },
+    ): { fov: number; squash: number } | null => {
+      const { eyeSeat: seat, hall: h, topPose: top } = latest.current;
+      if (want === 'top') {
+        out.pos[0] = top.position[0];
+        out.pos[1] = top.position[1];
+        out.pos[2] = top.position[2];
+        lookQuat(out.q, top.position, top.target, downUp);
+        return { fov: top.fov, squash: top.squash };
+      }
+      if (!seat) return null;
+      const eye = eyePosition(seat);
+      out.pos[0] = eye[0];
+      out.pos[1] = eye[1];
+      out.pos[2] = eye[2];
+      lookQuat(out.q, eye, screenCenter(h), up);
+      return { fov: fovForAspect(aspect), squash: 1 };
+    },
+  );
+
+  const startFlight = useEffectEvent((want: RigGoal) => {
     const f = flight.current;
-    const camera = get().camera;
-    if (!seat) return;
+    const camera = get().camera as THREE.PerspectiveCamera;
+    const aspect = camera.aspect;
+    const end = targetPose(want, aspect, { pos: f.to, q: f.toQ });
+    if (!end) return;
     f.from[0] = camera.position.x;
     f.from[1] = camera.position.y;
     f.from[2] = camera.position.z;
     f.fromQ.copy(camera.quaternion);
-    const eye = eyePosition(seat);
-    f.to[0] = eye[0];
-    f.to[1] = eye[1];
-    f.to[2] = eye[2];
-    lookQuat(f.toQ, eye, screenCenter(h), up);
+    f.fromFov = lens.current.fov;
+    f.fromSquash = lens.current.squash;
+    f.toFov = end.fov;
+    f.toSquash = end.squash;
+    f.goal = want;
     f.startedAt = performance.now();
     f.active = true;
     f.measureUntil = 0;
     setFrameloop('always');
   });
 
-  // Lens and top-down placement; the first time, then wait a beat and dive.
+  // Lens and placement. The first time the camera is put straight at the goal (the top-down pose
+  // that matches the 2D map, or the seat with Reduce Motion); later resizes only refit the lens.
   useLayoutEffect(() => {
     if (size.width === 0 || size.height === 0) return;
     const camera = get().camera as THREE.PerspectiveCamera;
     const aspect = size.width / size.height;
-    camera.fov = fovForAspect(aspect);
     camera.aspect = aspect;
-    camera.updateProjectionMatrix();
-    if (placed.current) return;
-    placed.current = true;
-    const pose = topDownPosition(ext, hall, camera.fov, aspect);
-    camera.position.set(pose.position[0], pose.position[1], pose.position[2]);
-    camera.quaternion.copy(lookQuat(flight.current.fromQ, pose.position, pose.target, downUp));
+    if (!placed.current) {
+      const want: RigGoal = latest.current.reduceMotion ? latest.current.goal : 'top';
+      const f = flight.current;
+      const end = targetPose(want, aspect, { pos: f.cur, q: camera.quaternion });
+      if (!end) return;
+      placed.current = true;
+      settled.current = `${want}:${latest.current.eyeSeat?.id}`;
+      camera.position.set(f.cur[0], f.cur[1], f.cur[2]);
+      lens.current = end;
+    } else if (!flight.current.active) {
+      const f = flight.current;
+      const want = settled.current?.startsWith('pov') ? 'pov' : 'top';
+      lens.current = targetPose(want, aspect, { pos: f.cur, q: f.toQ }) ?? lens.current;
+    }
+    applyLens(camera, lens.current.fov, lens.current.squash);
     invalidate();
-  }, [size.width, size.height, get, ext, hall, invalidate]);
+  }, [size.width, size.height, get, invalidate]);
 
   const seatId = eyeSeat?.id;
   useEffect(() => {
-    if (hold || !seatId) return;
-    if (!started.current) {
-      const timer = setTimeout(
-        () => {
-          started.current = true;
-          startFlight();
-        },
-        reduceMotion ? 0 : START_DELAY_MS,
-      );
-      return () => clearTimeout(timer);
-    }
-    // A different seat: fly from wherever the camera is now.
-    startFlight();
-  }, [seatId, hold, reduceMotion]);
+    if (!placed.current) return;
+    const key = `${goal}:${seatId}`;
+    if (settled.current === key) return;
+    settled.current = key;
+    startFlight(goal);
+  }, [goal, seatId]);
 
   useFrame((state, delta) => {
     if (failed.current) return;
     const f = flight.current;
     const now = performance.now();
     if (f.active) {
-      const camera = state.camera;
+      const camera = state.camera as THREE.PerspectiveCamera;
       const p = flightProgress(now - f.startedAt, latest.current.reduceMotion);
       lerp3(f.cur, f.from, f.to, p);
       camera.position.set(f.cur[0], f.cur[1], f.cur[2]);
       camera.quaternion.slerpQuaternions(f.fromQ, f.toQ, p);
+      lens.current.fov = f.fromFov + (f.toFov - f.fromFov) * p;
+      lens.current.squash = f.fromSquash + (f.toSquash - f.fromSquash) * p;
+      applyLens(camera, lens.current.fov, lens.current.squash);
       if (p >= 1) {
         f.active = false;
         if (__DEV__) {
@@ -166,6 +233,7 @@ export function CameraRig({ ext, hall, eyeSeat, reduceMotion, hold, onDrew, onFa
           setFrameloop('demand');
           invalidate();
         }
+        latest.current.onArrive(f.goal);
       }
     } else if (__DEV__ && f.measureUntil > 0) {
       f.frames++;
@@ -175,7 +243,7 @@ export function CameraRig({ ext, hall, eyeSeat, reduceMotion, hold, onDrew, onFa
         if (f.frames > 0) {
           const avg = (f.sumDelta / f.frames) * 1000;
           console.log(
-            `[seat-view] avg frame ${avg.toFixed(1)} ms (${(1000 / avg).toFixed(0)} fps) over ${f.frames} frames, 3 s after fly-in`,
+            `[seat-view] avg frame ${avg.toFixed(1)} ms (${(1000 / avg).toFixed(0)} fps) over ${f.frames} frames, 3 s after flight`,
           );
         }
         setFrameloop('demand');
@@ -209,6 +277,8 @@ export function CameraRig({ ext, hall, eyeSeat, reduceMotion, hold, onDrew, onFa
       if (!reported.current && gl.info.render.calls > 0) {
         reported.current = true;
         latest.current.onDrew();
+        // Nothing moves until the dive starts: draw only when something changes.
+        if (!flight.current.active && flight.current.measureUntil === 0) setFrameloop('demand');
       }
     } catch (e) {
       failed.current = true;

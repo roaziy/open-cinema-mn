@@ -2,18 +2,27 @@ import type { Hold } from '@open-cinema/shared';
 import { formatUbTime } from '@open-cinema/shared';
 import { useQueryClient } from '@tanstack/react-query';
 import { router, Stack, useLocalSearchParams } from 'expo-router';
-import { useHeaderHeight } from 'expo-router/react-navigation';
-import { useCallback, useMemo } from 'react';
-import { StyleSheet, Text, useWindowDimensions, View } from 'react-native';
+import { useHeaderHeight, usePreventRemove } from 'expo-router/react-navigation';
+import { useCallback, useMemo, useRef, useState } from 'react';
+import { type HostInstance, StyleSheet, Text, useWindowDimensions, View } from 'react-native';
+import Animated, { useAnimatedStyle, useSharedValue } from 'react-native-reanimated';
 import { PosterBackdrop } from '@/components/poster-backdrop';
-import { SeatCanvas, seatAreaWidth } from '@/components/seat-canvas';
+import {
+  SeatCanvas,
+  seatAreaWidth,
+  seatContentMetrics,
+  useSeatTransform,
+} from '@/components/seat-canvas';
 import type { SeatStatus } from '@/components/seat-cell';
 import { SeatFooter } from '@/components/seat-footer';
 import { SeatLegend } from '@/components/seat-legend';
 import { Skeleton } from '@/components/skeleton';
 import { ErrorState } from '@/components/state-views';
+import { mapFitOf, type TopDownPose, topDownFromMap } from '@/features/seat-view/camera-math';
+import { type OverlayRect, SeatViewOverlay } from '@/features/seat-view/SeatViewOverlay';
 import { useI18n } from '@/i18n';
 import { useAuth } from '@/lib/auth';
+import { haptic } from '@/lib/haptics';
 import { layoutSeats } from '@/lib/seat-layout';
 import { liveHolds, seatLabel, useMyHolds, useSeatActions, useSeatMap } from '@/lib/seats';
 import { useSeatStream } from '@/lib/sse';
@@ -23,7 +32,8 @@ import { type } from '@/theme/type';
 
 export default function SeatMapScreen() {
   const { t } = useI18n();
-  const { id } = useLocalSearchParams<{ id: string }>();
+  // `mode=2d` forces the 3D fallback and `hold=1` stays on the top-down start; both dev only.
+  const { id, mode, hold } = useLocalSearchParams<{ id: string; mode?: string; hold?: string }>();
   const { width } = useWindowDimensions();
   const headerHeight = useHeaderHeight();
   const { user } = useAuth();
@@ -98,6 +108,62 @@ export default function SeatMapScreen() {
     qc.invalidateQueries({ queryKey: ['holds', id] });
   }, [qc, id, t, patch, bySeat]);
 
+  // In-place 3D view: the map fades out under it, the canvas starts from the map's own pose.
+  const transform = useSeatTransform();
+  const rootRef = useRef<HostInstance>(null);
+  const viewportRef = useRef<HostInstance>(null);
+  const fade = useSharedValue(0);
+  const mapStyle = useAnimatedStyle(() => ({ opacity: 1 - fade.get() }));
+  const [viewing, setViewing] = useState<{
+    seatId: string;
+    rect: OverlayRect;
+    topPose: TopDownPose;
+    closing: boolean;
+  } | null>(null);
+  const requestClose = useCallback(
+    () => setViewing((v) => (v && !v.closing ? { ...v, closing: true } : v)),
+    [],
+  );
+  const closed = useCallback(() => setViewing(null), []);
+  // Back button, swipe-back and the Android back key leave the 3D view first, not the screen.
+  usePreventRemove(viewing !== null, requestClose);
+
+  const openView = () => {
+    const last = selected[selected.length - 1];
+    const root = rootRef.current;
+    const viewport = viewportRef.current;
+    if (!last || !root || !viewport) return;
+    haptic.tap();
+    root.measureInWindow((rx, ry) => {
+      viewport.measureInWindow((vx, vy, vw, vh) => {
+        const content = seatContentMetrics(layout);
+        const topPose = topDownFromMap({
+          fit: mapFitOf(layout.slots, layout.size, layout.ppm, content.origin),
+          view: {
+            scale: transform.scale.get(),
+            tx: transform.tx.get(),
+            ty: transform.ty.get(),
+            viewW: vw,
+            viewH: vh,
+            contentW: content.width,
+            contentH: content.height,
+          },
+          canvasW: vw,
+          canvasH: vh,
+          offsetX: 0,
+          offsetY: 0,
+        });
+        fade.set(0);
+        setViewing({
+          seatId: last.id,
+          rect: { x: vx - rx, y: vy - ry, w: vw, h: vh },
+          topPose,
+          closing: false,
+        });
+      });
+    });
+  };
+
   const show = map.data?.showtime;
   const tone = show?.movie.tone ?? colors.canvas;
 
@@ -107,80 +173,96 @@ export default function SeatMapScreen() {
   };
 
   return (
-    <View style={styles.root}>
-      <Stack.Screen
-        options={{
-          headerShown: true,
-          title: '',
-          headerTransparent: true,
-          headerBackButtonDisplayMode: 'minimal',
-          headerTintColor: colors.ink,
-        }}
-      />
-      {show ? (
-        <View style={[styles.head, { paddingTop: headerHeight + space.xs }]}>
-          <PosterBackdrop
-            uri={show.movie.backdropUrl ?? show.movie.posterUrl}
-            tone={tone}
-            fadeHeight={90}
-          />
-          <View style={styles.headRow}>
-            <View style={styles.headText}>
-              <Text style={styles.title} numberOfLines={1}>
-                {show.movie.title}
-              </Text>
-              <Text style={styles.meta} numberOfLines={1}>
-                {[
-                  show.branch.name,
-                  show.hallName,
-                  `${formatUbTime(show.startsAt)}`,
-                  show.format,
-                ].join('  ·  ')}
-              </Text>
-            </View>
-            <LiveBadge status={stream.status} />
-          </View>
-        </View>
-      ) : (
-        <View style={{ height: headerHeight + 56 }} />
-      )}
-
-      <View style={styles.legend}>
-        <SeatLegend />
-      </View>
-
-      {map.isError && !map.data ? (
-        <View style={styles.center}>
-          <ErrorState error={map.error} onRetry={() => map.refetch()} />
-        </View>
-      ) : !map.data ? (
-        <View style={styles.skeleton}>
-          <Skeleton height={64} radius={radius.card} />
-          <Skeleton height={220} radius={radius.card} />
-        </View>
-      ) : (
-        <SeatCanvas
-          layout={layout}
-          tone={tone}
-          onSeat={toggle}
-          statusOf={statusOf}
-          labelOf={labelOf}
-        />
-      )}
-
-      {show ? (
-        <SeatFooter
-          selected={selected}
-          priceStandard={show.priceStandard}
-          pricePremium={show.pricePremium}
-          expiresAt={earliest}
-          onExpire={onExpire}
-          onRelease={toggle}
-          onViewFromSeat={() => {
-            const last = selected[selected.length - 1];
-            if (last) router.push(`/showtime/${id}/view?seat=${last.id}`);
+    <View ref={rootRef} style={styles.root} collapsable={false}>
+      <Animated.View style={[styles.root, mapStyle]}>
+        <Stack.Screen
+          options={{
+            headerShown: true,
+            title: '',
+            headerTransparent: true,
+            headerBackButtonDisplayMode: 'minimal',
+            headerTintColor: colors.ink,
           }}
-          onContinue={onContinue}
+        />
+        {show ? (
+          <View style={[styles.head, { paddingTop: headerHeight + space.xs }]}>
+            <PosterBackdrop
+              uri={show.movie.backdropUrl ?? show.movie.posterUrl}
+              tone={tone}
+              fadeHeight={90}
+            />
+            <View style={styles.headRow}>
+              <View style={styles.headText}>
+                <Text style={styles.title} numberOfLines={1}>
+                  {show.movie.title}
+                </Text>
+                <Text style={styles.meta} numberOfLines={1}>
+                  {[
+                    show.branch.name,
+                    show.hallName,
+                    `${formatUbTime(show.startsAt)}`,
+                    show.format,
+                  ].join('  ·  ')}
+                </Text>
+              </View>
+              <LiveBadge status={stream.status} />
+            </View>
+          </View>
+        ) : (
+          <View style={{ height: headerHeight + 56 }} />
+        )}
+
+        <View style={styles.legend}>
+          <SeatLegend />
+        </View>
+
+        {map.isError && !map.data ? (
+          <View style={styles.center}>
+            <ErrorState error={map.error} onRetry={() => map.refetch()} />
+          </View>
+        ) : !map.data ? (
+          <View style={styles.skeleton}>
+            <Skeleton height={64} radius={radius.card} />
+            <Skeleton height={220} radius={radius.card} />
+          </View>
+        ) : (
+          <SeatCanvas
+            layout={layout}
+            transform={transform}
+            viewportRef={viewportRef}
+            tone={tone}
+            onSeat={toggle}
+            statusOf={statusOf}
+            labelOf={labelOf}
+          />
+        )}
+
+        {show ? (
+          <SeatFooter
+            selected={selected}
+            priceStandard={show.priceStandard}
+            pricePremium={show.pricePremium}
+            expiresAt={earliest}
+            onExpire={onExpire}
+            onRelease={toggle}
+            onViewFromSeat={openView}
+            onContinue={onContinue}
+          />
+        ) : null}
+      </Animated.View>
+      {viewing && map.data ? (
+        <SeatViewOverlay
+          map={map.data}
+          selected={selected}
+          initialSeatId={viewing.seatId}
+          rect={viewing.rect}
+          topPose={viewing.topPose}
+          fade={fade}
+          closing={viewing.closing}
+          onRequestClose={requestClose}
+          onClosed={closed}
+          forceFallback={__DEV__ && mode === '2d'}
+          holdTop={__DEV__ && hold === '1'}
         />
       ) : null}
     </View>

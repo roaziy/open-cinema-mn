@@ -63,7 +63,6 @@ export default function RootLayout() {
               }}
             />
             <Stack.Screen name="showtime/[id]" />
-            <Stack.Screen name="showtime/[id]/view" />
             <Stack.Screen
               name="showtime/[id]/gate"
               options={{
