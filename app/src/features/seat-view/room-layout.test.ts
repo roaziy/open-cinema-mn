@@ -11,6 +11,7 @@ import {
   newDivePose,
   rowsOf,
   screenCenter,
+  seatView,
   stepSpans,
   type TopDownPose,
 } from './camera-math';
@@ -113,32 +114,33 @@ describe('the dive never goes through the room', () => {
       it(`${where}: flies to ${seat?.id} and back, never inside a seat, step or wall`, () => {
         if (!seat) throw new Error('seat missing');
         const eye = eyePosition(seat);
+        const view = seatView(eye, center, bounds, [0, 0, 0]);
         const out = newDivePose();
         const p: [number, number, number] = [0, 0, 0];
         for (let i = 0; i <= 300; i++) {
           const tau = i / 300;
-          divePose(easeFlight(tau), top, eye, center, fovForAspect(0.46), out, bounds);
-          clearPosition(out.position, eye, null, o, p);
-          // The viewer's own seat shrinks away as the camera comes to it.
-          const near = Math.hypot(p[0] - eye[0], p[1] - eye[1], p[2] - eye[2]) < 1;
-          const bad = insideGeometry(p, o, 0.12, (st) => st.id === seat.id && near);
-          expect(bad, `tau=${tau} at ${p.map((v) => v.toFixed(2)).join(',')}`).toBe(false);
-          // low enough to be among the seat backs: only in the final approach, behind and above its own seat
+          divePose(tau, top, eye, center, fovForAspect(0.46), out, bounds);
+          clearPosition(out.position, view, null, o, p);
+          // low enough to be among the seat backs: only near the end, behind and above its own seat
           if (p[1] < maxBack) {
             const back = p[2] - eye[2];
             expect(back, `tau=${tau}`).toBeGreaterThan(-0.4);
             expect(back, `tau=${tau}`).toBeLessThan(2.6);
             expect(Math.abs(p[0] - eye[0]), `tau=${tau}`).toBeLessThan(0.9);
           }
+          // The viewer's own seat shrinks away as the camera comes to it.
+          const near = Math.hypot(p[0] - eye[0], p[1] - eye[1], p[2] - eye[2]) < 1;
+          const bad = insideGeometry(p, o, 0.12, (st) => st.id === seat.id && near);
+          expect(bad, `tau=${tau} at ${p.map((v) => v.toFixed(2)).join(',')}`).toBe(false);
         }
         const end = clearPosition(
           divePose(1, top, eye, center, 60, out, bounds).position,
-          eye,
+          view,
           null,
           o,
           p,
         );
-        for (let i = 0; i < 3; i++) expect(end[i]).toBeCloseTo(eye[i] as number, 3);
+        for (let i = 0; i < 3; i++) expect(end[i]).toBeCloseTo(view[i] as number, 3);
       });
     }
   }
@@ -149,7 +151,7 @@ describe('the dive never goes through the room', () => {
     const eye = eyePosition(seat);
     const out = newDivePose();
     for (let i = 0; i <= 300; i++) {
-      divePose(easeFlight(i / 300), tops[0]?.[1] as TopDownPose, eye, center, 60, out, bounds);
+      divePose(i / 300, tops[0]?.[1] as TopDownPose, eye, center, 60, out, bounds);
       const near =
         Math.hypot(out.position[0] - eye[0], out.position[1] - eye[1], out.position[2] - eye[2]) <
         1;

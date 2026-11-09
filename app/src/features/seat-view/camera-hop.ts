@@ -4,9 +4,9 @@ import {
   bez,
   type DivePose,
   easeFlight,
+  povLook,
   tanLerpDeg,
   type Vec3,
-  viewAngles,
 } from './camera-math';
 
 const sQ1: Vec3 = [0, 0, 0];
@@ -37,7 +37,7 @@ export function hopFrame(
 
 /**
  * Seat to seat without leaving 3D: one Bezier from eye A to eye B that rises just above the seat
- * backs, looking at the screen centre the whole way (so the heading and elevation follow).
+ * backs, turning evenly from seat A's view to seat B's (heading and elevation, no roll).
  */
 export function hopPose(
   p: number,
@@ -50,8 +50,8 @@ export function hopPose(
   out: DivePose,
 ): DivePose {
   const k = Math.min(1, Math.max(0, p));
-  const va = viewAngles(a, center);
-  const vb = viewAngles(b, center);
+  const va = povLook(a, center, povFovA);
+  const vb = povLook(b, center, povFovB);
   // Rise only just above the seat backs on the way: the move reads as travelling between seats.
   const dy = Math.abs(a[1] - b[1]);
   const up = HOP_RISE_M + dy;
@@ -61,9 +61,8 @@ export function hopPose(
   out.position[0] = bez(a[0], q1[0], q2[0], b[0], k);
   out.position[1] = bez(a[1], q1[1], q2[1], b[1], k);
   out.position[2] = bez(a[2], q1[2], q2[2], b[2], k);
-  const v = viewAngles(out.position, center);
-  out.yaw = v.yaw;
-  out.pitch = v.pitch;
+  out.yaw = va.yaw + (vb.yaw - va.yaw) * k;
+  out.pitch = va.pitch + (vb.pitch - va.pitch) * k;
   out.fov = tanLerpDeg(povFovA, povFovB, k);
   out.squash = 1;
   return out;
