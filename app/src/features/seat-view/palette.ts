@@ -30,13 +30,6 @@ function mix(a: string, b: string, amount: number): string {
 export const palette = {
   canvas: colors.canvas,
   floor: '#2B2B32',
-  wallSide: colors.fill,
-  wallFront: colors.surface,
-  ceiling: '#0F0F13',
-  /** Acoustic wall slats (two shades) and the small lights along the steps. */
-  slatDark: '#1B1B21',
-  slatLight: '#2A2A32',
-  stepLight: '#5C6896',
   seat: colors.fill,
   /** Premium seats lean indigo (the 2D map's stripe colour); taken ones are the map's near-black. */
   seatPremium: mix(colors.fill, hues.indigo, 0.4),
