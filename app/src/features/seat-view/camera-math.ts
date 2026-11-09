@@ -338,6 +338,8 @@ export type Bounds = { half: number; depth: number };
 
 /** Progress at which the look target starts to climb from the floor to the screen centre. */
 export const B_FROM = 0.55;
+/** The foot of the screen, where the opening look target passes on its way up. */
+const SCREEN_FOOT_Z_M = 1;
 
 /**
  * Orientation from where the camera is looking: the look target starts where the top-down
@@ -345,13 +347,24 @@ export const B_FROM = 0.55;
  * the screen centre, arriving only as the camera reaches the eye. It always lies in the hall,
  * so the room stays in view the whole way; heading and elevation come from geometry (no roll).
  */
-function aimAt(k: number, top: TopDownPose, out: DivePose, center: Vec3, end: number, eye: Vec3) {
+function aimAt(
+  k: number,
+  top: TopDownPose,
+  out: DivePose,
+  center: Vec3,
+  end: number,
+  eye: Vec3,
+  held: number,
+) {
   const a = smooth(0, 0.75, k);
   const b = smooth(B_FROM, 1, k);
   // The target stays on the seat block (the held seat) until it climbs to the screen: no frame
   // looks at the empty floor between the screen and the first row.
-  const x0 = top.target[0] + (eye[0] - top.target[0]) * a;
-  const z0 = top.target[2] + (eye[2] - top.target[2]) * a;
+  // Opening keeps the approved aim (toward the foot of the screen); closing keeps the held seat.
+  const gx = center[0] + (eye[0] - center[0]) * held;
+  const gz = SCREEN_FOOT_Z_M + (eye[2] - SCREEN_FOOT_Z_M) * held;
+  const x0 = top.target[0] + (gx - top.target[0]) * a;
+  const z0 = top.target[2] + (gz - top.target[2]) * a;
   const tx = x0 + (center[0] - x0) * b;
   const ty = center[1] * b;
   const tz = z0 + (center[2] - z0) * b;
@@ -423,6 +436,8 @@ export function divePose(
   povFovDeg: number,
   out: DivePose,
   bounds: Bounds,
+  /** 0 opening (the approved aim); 1 leaving: the look stays on the held seat (seats stay in frame). */
+  held = 0,
 ): DivePose {
   const k = Math.min(1, Math.max(0, p));
   const end = viewAngles(eye, center);
@@ -434,7 +449,7 @@ export function divePose(
   out.position[0] = bez(top.position[0], p1[0], p2[0], eye[0], k);
   out.position[1] = bez(top.position[1], p1[1], p2[1], eye[1], k);
   out.position[2] = bez(top.position[2], p1[2], p2[2], eye[2], k);
-  aimAt(k, top, out, center, end.yaw, eye);
+  aimAt(k, top, out, center, end.yaw, eye, held);
   // The lens and the stretch of the seats move evenly with the curve: no burst of zoom.
   out.fov = tanLerpDeg(top.fov, povFovDeg, k);
   out.squash = top.squash + (1 - top.squash) * k;

@@ -34,6 +34,13 @@ import { clearPosition, type Obstacles } from './room-layout';
 /** Dev only: how long the average frame time is sampled after a flight. */
 const MEASURE_MS = 3000;
 
+/** How much the look is on the held seat: 1 when leaving, ramped in over 0.4 s after a move is turned round. */
+function heldWeight(f: Flight, now: number): number {
+  if (f.s1 !== 0) return 0;
+  if (!f.turned) return 1;
+  return Math.min(1, (now - f.startedAt) / 400);
+}
+
 /** Height (m) of the points the grid alignment is measured on: about the seat tops. */
 const ALIGN_Y = 1;
 
@@ -78,6 +85,8 @@ type Flight = {
   lastTau: number;
   lastAt: number;
   eye: Vec3;
+  /** The move was turned round in flight (the aim eases onto the held seat). */
+  turned: boolean;
   /** The lead-out signal of a closing flight has been sent. */
   leadSent: boolean;
   /** Per flight, not per frame: the screen's centre and the seat lenses. */
@@ -169,6 +178,7 @@ export function CameraRig({
     lastAt: 0,
     eye: [0, 0, 0],
     leadSent: false,
+    turned: false,
     center: [0, 0, 0],
     povA: 50,
     povB: 50,
@@ -280,6 +290,7 @@ export function CameraRig({
       f.povB = povFov(eye, h, camera.aspect);
       const closing = want === 'top';
       const turnedRound = f.active;
+      f.turned = turnedRound && closing;
       const prev = f.clock;
       f.clock = diveClock(
         latest.current.topPose,
@@ -307,7 +318,7 @@ export function CameraRig({
         const clock = f.clock;
         const tp = latest.current.topPose;
         f.durationMs = reversalMs(
-          (k, out) => divePose(k, tp, eye, c, f.povB, out, ob),
+          (k, out) => divePose(k, tp, eye, c, f.povB, out, ob, closing ? 1 : 0),
           clock,
           f.s0,
           f.s1,
@@ -385,7 +396,7 @@ export function CameraRig({
             ? tauHermite(linear, f.s0, f.s1, f.v0, 0)
             : f.s0 + (f.s1 - f.s0) * linear;
         const k = (f.clock as MoveClock).at(tau);
-        const p = divePose(k, top, f.eye, f.center, f.povB, pose.current, ob);
+        const p = divePose(k, top, f.eye, f.center, f.povB, pose.current, ob, heldWeight(f, now));
         clearPosition(p.position, f.eye, null, ob, scratch);
         p.position[0] = scratch[0];
         p.position[1] = scratch[1];
