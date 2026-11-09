@@ -5,8 +5,11 @@ export const HANDOFF_FROM = 0.3;
 /** The grid crossfade lasts this long; it starts once the drawn grid is aligned with the 2D map. */
 export const CROSSFADE_MS = 450;
 
-/** 2D tile width over the 3D seat's width (0.55 m pitch * 0.86 over cushion + armrests 0.52 m). */
-export const TILE_WIDTH_RATIO = (0.55 * 0.86) / 0.52;
+/**
+ * 2D tile width over the 3D seat's width: the tile is 0.86 of the seat spacing, the seat model
+ * is 0.524 m wide at its 0.57 m spacing (both scale with the hall's spacing).
+ */
+export const TILE_WIDTH_RATIO = (0.86 * 0.57) / 0.524;
 
 /** The closing flag when the view is not being left; otherwise the dive progress at which leaving began. */
 export const NOT_CLOSING = -1;

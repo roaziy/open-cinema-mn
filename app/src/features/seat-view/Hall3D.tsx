@@ -26,7 +26,8 @@ import { handoffLook, heldScale } from './handoff';
 import type { Look } from './look-around';
 import { palette } from './palette';
 import type { Obstacles } from './room-layout';
-import { createSeatGeometry } from './seat-geometry';
+import { armsOf } from './seat-arms';
+import { createSeatParts, MODEL_PITCH } from './seat-geometry';
 
 const MAX_SELECTED = 10;
 const AMBIENT = 1.5;
@@ -176,10 +177,17 @@ function Scene({
 
   const steps = useMemo(() => stepSpans(rowsOf(seats), depth), [seats, depth]);
   const drawable = useMemo(() => seats.filter((s) => s.kind !== 'blocked'), [seats]);
-  const seatGeo = useMemo(() => createSeatGeometry(), []);
+  // The seat model (see seat-model.ts), sized to the hall's seat spacing, and its dividers.
+  const parts = useMemo(() => createSeatParts(), []);
+  const { arms, pitch } = useMemo(() => armsOf(drawable), [drawable]);
+  const widthScale = Math.min(1.2, Math.max(0.75, pitch / MODEL_PITCH));
   // Not tone mapped: at the top-down start the seats must be the 2D map's colours.
-  const seatMat = useMemo(
-    () => new THREE.MeshLambertMaterial({ color: 0xffffff, toneMapped: false, vertexColors: true }),
+  const fabricMat = useMemo(
+    () => new THREE.MeshLambertMaterial({ color: 0xffffff, toneMapped: false }),
+    [],
+  );
+  const shellMat = useMemo(
+    () => new THREE.MeshLambertMaterial({ color: palette.seatShell, toneMapped: false }),
     [],
   );
   const pickMat = useMemo(
@@ -191,14 +199,17 @@ function Scene({
   // The overlay mounts the canvas on every open: free what it created when it goes away.
   useEffect(
     () => () => {
-      seatGeo.dispose();
-      seatMat.dispose();
+      for (const g of Object.values(parts)) g.dispose();
+      fabricMat.dispose();
+      shellMat.dispose();
       pickMat.dispose();
     },
-    [seatGeo, seatMat, pickMat],
+    [parts, fabricMat, shellMat, pickMat],
   );
 
-  const seatsRef = useRef<THREE.InstancedMesh>(null);
+  const fabricRef = useRef<THREE.InstancedMesh>(null);
+  const shellRef = useRef<THREE.InstancedMesh>(null);
+  const armsRef = useRef<THREE.InstancedMesh>(null);
   const pickRef = useRef<THREE.InstancedMesh>(null);
 
   // A bad shader or a lost context means no usable 3D: report it so the screen shows 2D.
@@ -221,24 +232,30 @@ function Scene({
     };
   }, [get, onFail]);
 
-  // Seat colours are static; matrices follow the dive (footprint, the viewer's own seat).
-  useLayoutEffect(() => {
-    const mesh = seatsRef.current;
-    if (!mesh) return;
+  // Each seat's fabric: the 2D map's tile colour from above, its upholstery at the seat.
+  const fabricColours = useMemo(() => {
     const taken = new Set(takenIds);
-    drawable.forEach((s, i) => {
-      tint.set(
-        taken.has(s.id)
-          ? palette.seatTaken
-          : s.kind === 'premium'
-            ? palette.seatPremium
-            : palette.seat,
-      );
-      mesh.setColorAt(i, tint);
+    return drawable.map((s) => {
+      const state = taken.has(s.id) ? 'taken' : s.kind === 'premium' ? 'premium' : 'free';
+      return {
+        map: new THREE.Color(
+          state === 'taken'
+            ? palette.seatTaken
+            : state === 'premium'
+              ? palette.seatPremium
+              : palette.seat,
+        ),
+        near: new THREE.Color(
+          state === 'taken'
+            ? palette.seatFabricTaken
+            : state === 'premium'
+              ? palette.seatFabricPremium
+              : palette.seatFabric,
+        ),
+      };
     });
-    mesh.count = drawable.length;
-    if (mesh.instanceColor) mesh.instanceColor.needsUpdate = true;
   }, [drawable, takenIds]);
+  const shellBase = useMemo(() => new THREE.Color(palette.seatShell), []);
 
   const chosen = useMemo(
     () => seats.filter((s) => selectedIds.includes(s.id)).slice(0, MAX_SELECTED),
@@ -274,15 +291,38 @@ function Scene({
           2.2,
           Math.hypot(pos.x - seat.x_m, pos.y - (seat.z_m + 0.6), pos.z - seat.y_m),
         );
-      const seatMesh = seatsRef.current;
-      if (seatMesh) {
+      const fabricMesh = fabricRef.current;
+      const shellMesh = shellRef.current;
+      if (fabricMesh && shellMesh) {
+        // the map's tile colours from above, the upholstery as the camera comes down
+        const near = smoothstep(0.3, 0.85, s);
         drawable.forEach((seat, i) => {
           dummy.position.set(seat.x_m, seat.z_m, seat.y_m);
-          dummy.scale.set(look.footprintX, 1, g);
+          dummy.scale.set(widthScale * look.footprintX, 1, g);
           dummy.updateMatrix();
-          seatMesh.setMatrixAt(i, dummy.matrix);
+          fabricMesh.setMatrixAt(i, dummy.matrix);
+          shellMesh.setMatrixAt(i, dummy.matrix);
+          const c = fabricColours[i];
+          if (c) fabricMesh.setColorAt(i, tint.copy(c.map).lerp(c.near, near));
         });
-        seatMesh.instanceMatrix.needsUpdate = true;
+        fabricMesh.count = drawable.length;
+        shellMesh.count = drawable.length;
+        fabricMesh.instanceMatrix.needsUpdate = true;
+        shellMesh.instanceMatrix.needsUpdate = true;
+        if (fabricMesh.instanceColor) fabricMesh.instanceColor.needsUpdate = true;
+      }
+      // The dividers fold away as the seats become the map's tiles.
+      const armMesh = armsRef.current;
+      if (armMesh) {
+        const a = 1 - look.morph;
+        arms.forEach((arm, i) => {
+          dummy.position.set(arm.x, arm.y, arm.z);
+          dummy.scale.set(widthScale * a, a, g * a);
+          dummy.updateMatrix();
+          armMesh.setMatrixAt(i, dummy.matrix);
+        });
+        armMesh.count = arms.length;
+        armMesh.instanceMatrix.needsUpdate = true;
       }
       const pickMesh = pickRef.current;
       if (pickMesh) {
@@ -292,7 +332,7 @@ function Scene({
           const held = heldScale(look.morph, seat.id === currentId);
           const k = seat.id === currentId ? HELD_NEAR + (held - HELD_NEAR) * near(seat) : held;
           dummy.position.set(seat.x_m, seat.z_m, seat.y_m);
-          dummy.scale.set(k * look.footprintX, k, k * g);
+          dummy.scale.set(k * widthScale * look.footprintX, k, k * g);
           dummy.updateMatrix();
           pickMesh.setMatrixAt(i, dummy.matrix);
         });
@@ -306,7 +346,10 @@ function Scene({
       if (topRef.current) topRef.current.intensity = TOP_LIGHT * s * look.light;
       if (fillRef.current) fillRef.current.intensity = FILL * s * look.light;
       if (floorSpillRef.current) floorSpillRef.current.intensity = FLOOR_SPILL * s * look.light;
-      seatMat.color.setScalar(1 + SEAT_LIFT * s * look.light);
+      const lift = 1 + SEAT_LIFT * s * look.light;
+      fabricMat.color.setScalar(lift);
+      // black plastic stays dark: half the fabric's lift
+      shellMat.color.copy(shellBase).multiplyScalar(1 + (lift - 1) * 0.5);
       const screenGroup = screenRef.current;
       if (screenGroup) {
         const fadeMat = (name: string, base: number) => {
@@ -324,7 +367,19 @@ function Scene({
         fogRef.current.far = 48 + 2e4 * (1 - t) ** 3;
       }
     },
-    [drawable, chosen, currentId, seatMat, get, closing],
+    [
+      drawable,
+      chosen,
+      currentId,
+      fabricMat,
+      shellMat,
+      shellBase,
+      fabricColours,
+      arms,
+      widthScale,
+      get,
+      closing,
+    ],
   );
 
   // Instances and lights are written whenever the data changes and while the dive moves.
@@ -394,13 +449,27 @@ function Scene({
         wallH={wallH}
       />
 
-      {/* All seats in one draw call, chosen ones in a second. */}
+      {/* Seat fabric, seat shells and dividers: a draw call each; chosen seats in a fourth. */}
       <instancedMesh
-        ref={seatsRef}
-        args={[seatGeo, seatMat, Math.max(drawable.length, 1)]}
+        ref={fabricRef}
+        args={[parts.fabric, fabricMat, Math.max(drawable.length, 1)]}
         frustumCulled={false}
       />
-      <instancedMesh ref={pickRef} args={[seatGeo, pickMat, MAX_SELECTED]} frustumCulled={false} />
+      <instancedMesh
+        ref={shellRef}
+        args={[parts.shell, shellMat, Math.max(drawable.length, 1)]}
+        frustumCulled={false}
+      />
+      <instancedMesh
+        ref={armsRef}
+        args={[parts.arm, shellMat, Math.max(arms.length, 1)]}
+        frustumCulled={false}
+      />
+      <instancedMesh
+        ref={pickRef}
+        args={[parts.whole, pickMat, MAX_SELECTED]}
+        frustumCulled={false}
+      />
 
       <CameraRig
         hall={hall}

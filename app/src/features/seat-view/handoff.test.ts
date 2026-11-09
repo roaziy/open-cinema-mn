@@ -28,7 +28,7 @@ describe('handoffLook', () => {
     expect(look.morph).toBe(1);
     expect(look.light).toBe(0);
     expect(look.screen).toBe(0);
-    expect(look.footprintX).toBeCloseTo((0.55 * 0.86) / 0.52);
+    expect(look.footprintX).toBeCloseTo((0.86 * 0.57) / 0.524);
     expect(heldScale(look.morph, true)).toBeCloseTo(1);
     expect(heldScale(look.morph, false)).toBeCloseTo(1);
   });

@@ -41,6 +41,11 @@ export const palette = {
   /** Premium seats lean indigo (the 2D map's stripe colour); taken ones are the map's near-black. */
   seatPremium: mix(colors.fill, hues.indigo, 0.4),
   seatTaken: '#101012',
+  /** The seat model up close: red velvet, indigo for premium, worn dark for taken; dark shells. */
+  seatFabric: '#56121A',
+  seatFabricPremium: '#26285E',
+  seatFabricTaken: '#1E1214',
+  seatShell: '#17171C',
   chosen: colors.action,
   ambient: colors.muted,
   fill: colors.fill,
