@@ -34,11 +34,17 @@ import { clearPosition, type Obstacles } from './room-layout';
 /** Dev only: how long the average frame time is sampled after a flight. */
 const MEASURE_MS = 3000;
 
-/** How much the look is on the held seat: 1 when leaving, ramped in over 0.4 s after a move is turned round. */
-function heldWeight(f: Flight, now: number): number {
-  if (f.s1 !== 0) return 0;
-  if (!f.turned) return 1;
-  return Math.min(1, (now - f.startedAt) / 400);
+/** z of the front edge of the seat block, a little toward the screen: the close's aim waypoint. */
+function frontEdge(ob: Obstacles): number {
+  let z = Number.POSITIVE_INFINITY;
+  for (const s of ob.seats) z = Math.min(z, s.y_m);
+  return Number.isFinite(z) ? Math.max(0.5, z - 0.5) : 1;
+}
+
+/** The close's waypoint z; eased in from the opening aim over 0.4 s when an open was turned round. */
+function frontNow(f: Flight, ob: Obstacles, now: number): number {
+  const w = f.turned ? Math.min(1, (now - f.startedAt) / 400) : 1;
+  return 1 + (frontEdge(ob) - 1) * w;
 }
 
 /** Height (m) of the points the grid alignment is measured on: about the seat tops. */
@@ -85,7 +91,7 @@ type Flight = {
   lastTau: number;
   lastAt: number;
   eye: Vec3;
-  /** The move was turned round in flight (the aim eases onto the held seat). */
+  /** The move was turned round in flight (the close's aim eases in). */
   turned: boolean;
   /** The lead-out signal of a closing flight has been sent. */
   leadSent: boolean;
@@ -299,6 +305,7 @@ export function CameraRig({
         f.povB,
         ob,
         closing ? CLOSE_CAPS : OPEN_CAPS,
+        closing ? frontEdge(ob) : null,
       );
       f.s0 = at.current;
       f.s1 = closing ? 0 : 1;
@@ -318,7 +325,7 @@ export function CameraRig({
         const clock = f.clock;
         const tp = latest.current.topPose;
         f.durationMs = reversalMs(
-          (k, out) => divePose(k, tp, eye, c, f.povB, out, ob, closing ? 1 : 0),
+          (k, out) => divePose(k, tp, eye, c, f.povB, out, ob, closing ? frontEdge(ob) : null),
           clock,
           f.s0,
           f.s1,
@@ -396,7 +403,16 @@ export function CameraRig({
             ? tauHermite(linear, f.s0, f.s1, f.v0, 0)
             : f.s0 + (f.s1 - f.s0) * linear;
         const k = (f.clock as MoveClock).at(tau);
-        const p = divePose(k, top, f.eye, f.center, f.povB, pose.current, ob, heldWeight(f, now));
+        const p = divePose(
+          k,
+          top,
+          f.eye,
+          f.center,
+          f.povB,
+          pose.current,
+          ob,
+          f.s1 === 0 ? frontNow(f, ob, now) : null,
+        );
         clearPosition(p.position, f.eye, null, ob, scratch);
         p.position[0] = scratch[0];
         p.position[1] = scratch[1];

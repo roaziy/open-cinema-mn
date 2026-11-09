@@ -38,8 +38,6 @@ export type ClockCaps = {
   zoomLnPerS: number;
   minMs: number;
   maxMs: number;
-  /** Half-width, in clock steps, of the moving average of each step's time (0 = none); the total is kept. */
-  smooth: number;
 };
 
 /** Opening: 90 degrees and 3 ln a second, 1.6 to 3.2 s. */
@@ -48,15 +46,13 @@ export const OPEN_CAPS: ClockCaps = {
   zoomLnPerS: MAX_ZOOM_LN_PER_S,
   minMs: 1600,
   maxMs: 3200,
-  smooth: 0,
 };
 /** Closing is about 30 percent quicker: 125 degrees and 4 ln a second. */
 export const CLOSE_CAPS: ClockCaps = {
-  turnDegPerS: 135,
-  zoomLnPerS: 4.5,
+  turnDegPerS: 125,
+  zoomLnPerS: 4,
   minMs: 1100,
   maxMs: 2300,
-  smooth: 14,
 };
 
 function buildClock(pose: (k: number, out: DivePose) => DivePose, caps: ClockCaps): MoveClock {
@@ -77,27 +73,6 @@ function buildClock(pose: (k: number, out: DivePose) => DivePose, caps: ClockCap
     py = prev.yaw;
     pp = prev.pitch;
     pf = tf;
-  }
-  // Smooth each step's time with a plain moving average and keep the total exactly as it was:
-  // the speed and zoom rate stay continuous where the turn cap hands over to the zoom cap, and
-  // the move takes no longer than the caps alone would make it (peaks may pass a cap slightly).
-  const r = caps.smooth;
-  if (r > 0) {
-    let raw = 0;
-    for (let i = 1; i <= n; i++) raw += needs[i] as number;
-    const avg = new Float64Array(n + 1);
-    let sum = 0;
-    for (let i = 1; i <= n; i++) {
-      let s = 0;
-      let cnt = 0;
-      for (let j = Math.max(1, i - r); j <= Math.min(n, i + r); j++) {
-        s += needs[j] as number;
-        cnt++;
-      }
-      avg[i] = s / cnt;
-      sum += avg[i] as number;
-    }
-    for (let i = 1; i <= n; i++) needs[i] = ((avg[i] as number) * raw) / sum;
   }
   for (let i = 1; i <= n; i++) cum[i] = (cum[i - 1] as number) + (needs[i] as number);
   const total = cum[n] as number;
@@ -139,9 +114,10 @@ export function diveClock(
   povFovDeg: number,
   bounds: Bounds,
   caps: ClockCaps = OPEN_CAPS,
+  /** When leaving: z of the front edge of the seat block (the aim's floor waypoint). */
+  front: number | null = null,
 ): MoveClock {
-  const held = caps === CLOSE_CAPS ? 1 : 0;
-  return buildClock((k, out) => divePose(k, top, eye, center, povFovDeg, out, bounds, held), caps);
+  return buildClock((k, out) => divePose(k, top, eye, center, povFovDeg, out, bounds, front), caps);
 }
 
 /**

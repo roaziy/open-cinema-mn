@@ -42,6 +42,11 @@ import { insideGeometry, type Obstacles } from './room-layout';
 const FPS = 60;
 const ASPECT = 402 / 874;
 
+/** z of the front edge of the seat block, minus a margin: the close's aim waypoint. */
+function frontOf(h: { seats: { y_m: number }[] }): number {
+  return Math.min(...h.seats.map((s) => s.y_m)) - 0.5;
+}
+
 function makeHall(rows: number, per: number, aisle: number, screenW: number) {
   const seats = generateSeats({
     rows,
@@ -129,14 +134,24 @@ function copy(p: DivePose): DivePose {
 
 function playDive(h: Hall, top: TopDownPose, eye: Vec3, reverse: boolean) {
   const pov = povFov(eye, h.hall, ASPECT);
-  const clock = diveClock(top, eye, h.center, pov, h.o, reverse ? CLOSE_CAPS : OPEN_CAPS);
+  const clock = diveClock(
+    top,
+    eye,
+    h.center,
+    pov,
+    h.o,
+    reverse ? CLOSE_CAPS : OPEN_CAPS,
+    reverse ? frontOf(h) : null,
+  );
   const n = Math.round((clock.ms / 1000) * FPS);
   const out: Sample[] = [];
   for (let i = 0; i <= n; i++) {
     const tau = reverse ? 1 - i / n : i / n;
     const k = clock.at(tau);
     out.push({
-      pose: copy(divePose(k, top, eye, h.center, pov, newDivePose(), h.o, reverse ? 1 : 0)),
+      pose: copy(
+        divePose(k, top, eye, h.center, pov, newDivePose(), h.o, reverse ? frontOf(h) : null),
+      ),
       k,
     });
   }
@@ -185,9 +200,9 @@ for (const [hallName, h] of HALLS) {
           it('has its own duration and starts and ends where it should', () => {
             const open = playDive(h, top, eye, false).ms;
             if (reverse) {
-              // the close is clearly quicker than the matching open (0.6 to 0.85 of it)
+              // the close is clearly quicker than the matching open (0.6 to 0.8 of it)
               expect(ms / open).toBeGreaterThan(0.6);
-              expect(ms / open).toBeLessThan(0.85);
+              expect(ms / open).toBeLessThan(0.8);
               expect(ms).toBeGreaterThanOrEqual(CLOSE_CAPS.minMs);
             } else {
               expect(ms).toBeGreaterThanOrEqual(1600);
@@ -254,7 +269,7 @@ describe('turning a dive round', () => {
     const eye = pick(h, 0, 2);
     const pov = povFov(eye, h.hall, ASPECT);
     const open = diveClock(top, eye, h.center, pov, h.o, OPEN_CAPS);
-    const close = diveClock(top, eye, h.center, pov, h.o, CLOSE_CAPS);
+    const close = diveClock(top, eye, h.center, pov, h.o, CLOSE_CAPS, frontOf(h));
     const poseOf = (k: number, out: DivePose) => divePose(k, top, eye, h.center, pov, out, h.o);
     for (const turnAt of [0.3, 0.5, 0.7]) {
       it(`${hallName}: from ${turnAt} the quicker return stays under 125 degrees a second and is continuous`, () => {
@@ -295,7 +310,15 @@ describe('the closing clock', () => {
     const [, h] = HALLS[0] as [string, Hall];
     const top = topFor(h, 'fit');
     const eye = pick(h, 3, 3);
-    const c = diveClock(top, eye, h.center, povFov(eye, h.hall, ASPECT), h.o, CLOSE_CAPS);
+    const c = diveClock(
+      top,
+      eye,
+      h.center,
+      povFov(eye, h.hall, ASPECT),
+      h.o,
+      CLOSE_CAPS,
+      frontOf(h),
+    );
     for (const k of [0, 0.2, 0.5, 0.8, 1]) expect(c.at(c.tauOf(k))).toBeCloseTo(k, 3);
   });
 });
@@ -444,7 +467,7 @@ describe('the close lands exactly on the aligned top-down frame', () => {
         const top = topFor(h, zoomName);
         const eye = pick(h, 4, 4);
         const pov = povFov(eye, h.hall, ASPECT);
-        const clock = diveClock(top, eye, h.center, pov, h.o, CLOSE_CAPS);
+        const clock = diveClock(top, eye, h.center, pov, h.o, CLOSE_CAPS, frontOf(h));
         const last = divePose(clock.at(0), top, eye, h.center, pov, newDivePose(), h.o);
         for (let i = 0; i < 3; i++)
           expect(last.position[i]).toBeCloseTo(top.position[i] as number, 9);
@@ -491,7 +514,7 @@ describe('handOver', () => {
     const eye = pick(h, 3, 3);
     const pov = povFov(eye, h.hall, ASPECT);
     const open = diveClock(top, eye, h.center, pov, h.o, OPEN_CAPS);
-    const close = diveClock(top, eye, h.center, pov, h.o, CLOSE_CAPS);
+    const close = diveClock(top, eye, h.center, pov, h.o, CLOSE_CAPS, frontOf(h));
     for (const tau of [0.2, 0.5, 0.8]) {
       const ho = handOver(open, close, tau, 0);
       expect(close.at(ho.s0)).toBeCloseTo(open.at(tau), 3);
@@ -559,7 +582,7 @@ describe('the landmarks ride on the 3D grid', () => {
   it('tracks the 3D seat centres through the last 30 percent of the close (the anchors are the seats)', () => {
     const eye = pick(h, 5, 5);
     const pov = povFov(eye, h.hall, ASPECT);
-    const clock = diveClock(top, eye, h.center, pov, h.o, CLOSE_CAPS);
+    const clock = diveClock(top, eye, h.center, pov, h.o, CLOSE_CAPS, frontOf(h));
     const seat = h.seats[40] as (typeof h.seats)[number];
     for (let i = 0; i <= 30; i++) {
       const k = 0.3 * (1 - i / 30);
@@ -617,7 +640,7 @@ describe('the look stays on the seat block', () => {
           for (let i = 0; i <= n; i++) {
             const k = clock.at(i / n);
             if (k > 0.75) continue; // the last stretch is the seat's own approach (a front seat sees few seats)
-            const p = divePose(k, top, eye, h.center, pov, newDivePose(), h.o, 1);
+            const p = divePose(k, top, eye, h.center, pov, newDivePose(), h.o, frontOf(h));
             const cam = camOf(p, 0, 402, 874);
             let inView = 0;
             for (const s of h.seats) {
@@ -644,7 +667,7 @@ describe('the approved open is unchanged', () => {
     for (const tau of [0.1, 0.4, 0.6, 0.9]) expect(clock.at(tau)).toBe(ref.at(tau));
     // the aim still heads for the foot of the screen when opening: at k = 0.4 it looks well past the held seat's row
     const open = divePose(0.4, top, eye, h.center, pov, newDivePose(), h.o);
-    const held = divePose(0.4, top, eye, h.center, pov, newDivePose(), h.o, 1);
+    const held = divePose(0.4, top, eye, h.center, pov, newDivePose(), h.o, frontOf(h));
     expect(open.pitch).not.toBeCloseTo(held.pitch, 3);
   });
 
@@ -653,12 +676,12 @@ describe('the approved open is unchanged', () => {
     const top = topFor(h, 'fit');
     for (const [reverse, bound] of [
       [false, 0.1],
-      [true, 0.2],
+      [true, 0.16],
     ] as const) {
       const eye = pick(h, 8, 4);
       const pov = povFov(eye, h.hall, ASPECT);
       const caps = reverse ? CLOSE_CAPS : OPEN_CAPS;
-      const clock = diveClock(top, eye, h.center, pov, h.o, caps);
+      const clock = diveClock(top, eye, h.center, pov, h.o, caps, reverse ? frontOf(h) : null);
       const worst = (fps: number) => {
         const n = Math.round((clock.ms / 1000) * fps);
         const ps: DivePose[] = [];
@@ -666,7 +689,16 @@ describe('the approved open is unchanged', () => {
           const tau = reverse ? 1 - i / n : i / n;
           ps.push(
             copy(
-              divePose(clock.at(tau), top, eye, h.center, pov, newDivePose(), h.o, reverse ? 1 : 0),
+              divePose(
+                clock.at(tau),
+                top,
+                eye,
+                h.center,
+                pov,
+                newDivePose(),
+                h.o,
+                reverse ? frontOf(h) : null,
+              ),
             ),
           );
         }
