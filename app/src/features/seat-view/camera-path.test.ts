@@ -17,6 +17,8 @@ import {
   mapFitOf,
   newDivePose,
   povFov,
+  reversalMs,
+  rotationAngleDeg,
   rowsOf,
   screenCenter,
   seatPlaneHeight,
@@ -129,11 +131,9 @@ function playDive(h: Hall, top: TopDownPose, eye: Vec3, reverse: boolean) {
   return { ms: clock.ms, samples: out };
 }
 
+/** The full rotation between two frames, picture spin included. */
 function angle(a: DivePose, b: DivePose) {
-  const fa = forwardOf(a.yaw, a.pitch, [0, 0, 0]);
-  const fb = forwardOf(b.yaw, b.pitch, [0, 0, 0]);
-  const dot = Math.min(1, Math.max(-1, fa[0] * fb[0] + fa[1] * fb[1] + fa[2] * fb[2]));
-  return (Math.acos(dot) * 180) / Math.PI;
+  return rotationAngleDeg(a.yaw, a.pitch, b.yaw, b.pitch);
 }
 
 const speed = (a: DivePose, b: DivePose) =>
@@ -224,37 +224,59 @@ for (const [hallName, h] of HALLS) {
   }
 }
 
-describe('turning a dive round half way', () => {
-  const [, h] = HALLS[0] as [string, Hall];
-  const top = topFor(h, 'fit');
-  const eye = pick(h, 2, 3);
-  const pov = povFov(eye, h.hall, ASPECT);
-  const clock = diveClock(top, eye, h.center, pov, h.o);
-  it('keeps the angular velocity continuous at the turn', () => {
-    const dtMs = 1000 / FPS;
-    const D = clock.ms;
-    const s0 = 0.5;
-    const v0 = 1 / D; // tau per ms while opening
-    const out: DivePose[] = [];
-    // opening up to tau = 0.5
-    for (let i = 0; i <= Math.round((s0 * D) / dtMs); i++) {
-      const tau = (i * dtMs) / D;
-      out.push(copy(divePose(clock.at(tau), top, eye, h.center, pov, newDivePose(), h.o)));
+describe('turning a dive round', () => {
+  for (const [hallName, h] of HALLS) {
+    const top = topFor(h, 'zoomed');
+    const eye = pick(h, 0, 2);
+    const pov = povFov(eye, h.hall, ASPECT);
+    const clock = diveClock(top, eye, h.center, pov, h.o);
+    const poseOf = (k: number, out: DivePose) => divePose(k, top, eye, h.center, pov, out, h.o);
+    for (const turnAt of [0.3, 0.5, 0.7]) {
+      it(`${hallName}: from ${turnAt} the return stays under the cap and its angular velocity is continuous`, () => {
+        const dtMs = 1000 / FPS;
+        const D = clock.ms;
+        const vel = 1 / D; // time fraction per ms while opening
+        const out: DivePose[] = [];
+        const frames = Math.round((turnAt * D) / dtMs);
+        const at = (frames * dtMs) / D; // where the last opening frame really is
+        for (let i = 0; i <= frames; i++) {
+          out.push(copy(poseOf(clock.at((i * dtMs) / D), newDivePose())));
+        }
+        const base = D * Math.max(0.4, at);
+        const Dr = reversalMs(poseOf, clock, at, 0, vel, base);
+        const n = Math.round(Dr / dtMs);
+        for (let i = 1; i <= n; i++) {
+          out.push(copy(poseOf(clock.at(tauHermite(i / n, at, 0, vel * Dr, 0)), newDivePose())));
+        }
+        const w: number[] = [];
+        for (let i = 1; i < out.length; i++) {
+          w.push(angle(out[i - 1] as DivePose, out[i] as DivePose) * FPS);
+        }
+        const peak = Math.max(...w);
+        expect(peak).toBeLessThanOrEqual(MAX_TURN_DEG_PER_S * 1.05);
+        for (let i = 1; i < w.length; i++) {
+          expect(Math.abs((w[i] as number) - (w[i - 1] as number))).toBeLessThan(0.2 * peak + 3);
+        }
+      });
     }
-    // then turn round with the Hermite carrying the velocity
-    const Dr = D * 0.5;
-    const n = Math.round(Dr / dtMs);
-    for (let i = 1; i <= n; i++) {
-      const tau = tauHermite(i / n, s0, 0, v0 * Dr, 0);
-      out.push(copy(divePose(clock.at(tau), top, eye, h.center, pov, newDivePose(), h.o)));
-    }
-    const w: number[] = [];
-    for (let i = 1; i < out.length; i++) {
-      w.push(angle(out[i - 1] as DivePose, out[i] as DivePose) * FPS);
-    }
-    const peak = Math.max(...w);
-    for (let i = 1; i < w.length; i++) {
-      expect(Math.abs((w[i] as number) - (w[i - 1] as number))).toBeLessThan(0.15 * peak);
+  }
+});
+
+describe('rotationAngleDeg', () => {
+  it('matches the angle between two camera quaternions, spin included', () => {
+    const mk = (yaw: number, pitch: number) => {
+      const c = new THREE.PerspectiveCamera();
+      c.rotation.order = 'YXZ';
+      c.rotation.set(pitch, yaw, 0);
+      return c.quaternion.clone();
+    };
+    for (const [y1, p1, y2, p2] of [
+      [0, -1.5, 0.7, -1.5],
+      [0.3, -0.4, -0.5, 0.6],
+      [0, -Math.PI / 2, 1, -Math.PI / 2],
+    ] as [number, number, number, number][]) {
+      const want = (mk(y1, p1).angleTo(mk(y2, p2)) * 180) / Math.PI;
+      expect(rotationAngleDeg(y1, p1, y2, p2)).toBeCloseTo(want, 4);
     }
   });
 });

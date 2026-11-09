@@ -301,6 +301,26 @@ export function forwardOf(yaw: number, pitch: number, out: Vec3): Vec3 {
   return out;
 }
 
+/**
+ * The full angle between two orientations (heading and elevation, no roll), degrees. Unlike the
+ * angle between view directions it counts the picture spinning while looking straight down.
+ */
+export function rotationAngleDeg(y1: number, p1: number, y2: number, p2: number): number {
+  const cx = Math.cos(p1);
+  const sx = Math.sin(p1);
+  const dy = y2 - y1;
+  const cd = Math.cos(dy);
+  const cp = Math.cos(p2);
+  const sp = Math.sin(p2);
+  // trace of Rx(-p1) * Ry(dy) * Rx(p2), with Rx(-p1) = [[1,0,0],[0,cx,sx],[0,-sx,cx]]
+  // and Ry(dy) * Rx(p2) = [[cd, sd*sp, sd*cp], [0, cp, -sp], [-sd, cd*sp, cd*cp]]
+  const t0 = cd;
+  const t1 = cx * cp + sx * cd * sp;
+  const t2 = -sx * -sp + cx * cd * cp;
+  const c = (t0 + t1 + t2 - 1) / 2;
+  return (Math.acos(Math.min(1, Math.max(-1, c))) * 180) / Math.PI;
+}
+
 /** One ease-in-out over the whole move (zero speed at both ends, no seams). */
 export function easeFlight(t: number): number {
   return smooth(0, 1, t);
@@ -329,7 +349,7 @@ export const B_FROM = 0.55;
  * the screen centre, arriving only as the camera reaches the eye. It always lies in the hall,
  * so the room stays in view the whole way; heading and elevation come from geometry (no roll).
  */
-function aimAt(k: number, top: TopDownPose, out: DivePose, center: Vec3) {
+function aimAt(k: number, top: TopDownPose, out: DivePose, center: Vec3, end: number) {
   const a = smooth(0, 0.75, k);
   const b = smooth(B_FROM, 1, k);
   const x0 = top.target[0] + (center[0] - top.target[0]) * a;
@@ -342,9 +362,10 @@ function aimAt(k: number, top: TopDownPose, out: DivePose, center: Vec3) {
   const len = Math.hypot(dx, dy, tz - out.position[2]) || 1;
   const dz = tz - out.position[2] - HEADING_BIAS * (1 - k) * (1 - k) * len;
   const pitch = Math.asin(dy / (Math.hypot(dx, dy, dz) || 1));
-  // Looking almost straight down, the heading is the image's rotation: hold it at 0 (screen
-  // at the top) and let it come in only as the view levels out.
-  out.yaw = Math.atan2(-dx, -dz) * smooth(0, 0.4, Math.cos(pitch));
+  // Looking almost straight down the heading is the picture spinning, and the geometric heading
+  // there can even point backwards (the target is behind a front seat): turn evenly from the
+  // start to the seat's final heading instead, finishing a little before the end.
+  out.yaw = end * smooth(0, 0.9, k);
   out.pitch = pitch;
 }
 
@@ -416,7 +437,7 @@ export function divePose(
   out.position[0] = bez(top.position[0], p1[0], p2[0], eye[0], k);
   out.position[1] = bez(top.position[1], p1[1], p2[1], eye[1], k);
   out.position[2] = bez(top.position[2], p1[2], p2[2], eye[2], k);
-  aimAt(k, top, out, center);
+  aimAt(k, top, out, center, end.yaw);
   // The lens and the stretch of the seats move evenly with the curve: no burst of zoom.
   out.fov = tanLerpDeg(top.fov, povFovDeg, k);
   out.squash = top.squash + (1 - top.squash) * k;
@@ -499,8 +520,6 @@ export function povFov(
   return Math.min(max, Math.max(min, deg));
 }
 
-const sTurnA: Vec3 = [0, 0, 0];
-const sTurnB: Vec3 = [0, 0, 0];
 const sTurnPose = newDivePose();
 
 /** Longest and shortest a move takes. */
@@ -529,13 +548,7 @@ function buildClock(pose: (k: number, out: DivePose) => DivePose, minMs: number)
   let pf = Math.tan((prev.fov * Math.PI) / 360);
   for (let i = 1; i <= n; i++) {
     prev = pose(i / n, sTurnPose);
-    forwardOf(py, pp, sTurnA);
-    forwardOf(prev.yaw, prev.pitch, sTurnB);
-    const dot = Math.min(
-      1,
-      Math.max(-1, sTurnA[0] * sTurnB[0] + sTurnA[1] * sTurnB[1] + sTurnA[2] * sTurnB[2]),
-    );
-    const turn = (Math.acos(dot) * 180) / Math.PI;
+    const turn = rotationAngleDeg(py, pp, prev.yaw, prev.pitch);
     const tf = Math.tan((prev.fov * Math.PI) / 360);
     const lens = Math.abs(Math.log(tf / pf));
     // seconds this step needs at the caps, with a little for the camera simply travelling
@@ -604,4 +617,36 @@ export function tauHermite(s: number, from: number, to: number, v0: number, v1: 
   return (
     (2 * t3 - 3 * t2 + 1) * from + (t3 - 2 * t2 + t) * v0 + (-2 * t3 + 3 * t2) * to + (t3 - t2) * v1
   );
+}
+
+/**
+ * How long to take turning a move round in flight so that the camera's fastest full rotation
+ * stays under the cap: the move first carries on at the speed it has (`vel`, time fraction per
+ * ms), then comes back. Longer is tried until the cap holds.
+ */
+export function reversalMs(
+  pose: (k: number, out: DivePose) => DivePose,
+  clock: MoveClock,
+  from: number,
+  to: number,
+  vel: number,
+  baseMs: number,
+): number {
+  const n = 90;
+  const out = newDivePose();
+  for (const m of [1, 1.3, 1.7, 2.2, 2.8, 3.5]) {
+    const ms = baseMs * m;
+    let prev = pose(clock.at(from), out);
+    let py = prev.yaw;
+    let pp = prev.pitch;
+    let peak = 0;
+    for (let i = 1; i <= n; i++) {
+      prev = pose(clock.at(tauHermite(i / n, from, to, vel * ms, 0)), out);
+      peak = Math.max(peak, (rotationAngleDeg(py, pp, prev.yaw, prev.pitch) * n) / (ms / 1000));
+      py = prev.yaw;
+      pp = prev.pitch;
+    }
+    if (peak <= MAX_TURN_DEG_PER_S) return ms;
+  }
+  return baseMs * 3.5;
 }
