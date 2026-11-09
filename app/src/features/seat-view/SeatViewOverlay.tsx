@@ -51,8 +51,6 @@ const Hall3D = lazy(() => import('./Hall3D'));
 const WATCHDOG_MS = 3000;
 /** Crossfade between the 2D map and the 3D picture. */
 export const FADE_MS = 200;
-/** How far the stats panel travels when it slides in and out. */
-const PANEL_TRAVEL = 260;
 /** The dive's progress at which the stats panel starts to slide in. */
 const PANEL_FROM = 0.85;
 /** Swipe down this far (or fast) to leave the view. */
@@ -71,6 +69,8 @@ type Props = {
   selected: SeatState[];
   /** The seat to look from first. */
   initialSeatId: string;
+  /** Seats others hold or bought, as the 2D map showed them when the view opened. */
+  takenIds: string[];
   /** The 3D canvas, in the seat map screen's coordinates: the whole window. */
   rect: OverlayRect;
   /** The camera pose that lines the first 3D frame up with the 2D map. */
@@ -101,6 +101,7 @@ export function SeatViewOverlay({
   map,
   selected,
   initialSeatId,
+  takenIds,
   rect,
   topPose,
   dive,
@@ -242,7 +243,8 @@ export function SeatViewOverlay({
       : still
         ? fade.get()
         : smoothstep(PANEL_FROM, 1, dive.get());
-    return { transform: [{ translateY: (1 - p) * PANEL_TRAVEL }] };
+    // Slides exactly its own height: a taller or shorter panel never peeks.
+    return { transform: [{ translateY: (1 - p) * (panelH + 4) }] };
   });
 
   const swipe = usePanGesture({
@@ -323,6 +325,7 @@ export function SeatViewOverlay({
                   tone={tone}
                   screen={screen}
                   selectedIds={selectedIds}
+                  takenIds={takenIds}
                   currentId={current.id}
                   reduceMotion={still}
                   topPose={topPose}

@@ -1,7 +1,7 @@
 /* eslint-disable react/no-unknown-property -- react-three-fiber props */
 import './three-shim';
 import type { SeatMap, SeatState } from '@open-cinema/shared';
-import { SCREEN_BOTTOM_M } from '@open-cinema/shared';
+import { avoidOrange, SCREEN_BOTTOM_M } from '@open-cinema/shared';
 import { Canvas, useFrame, useThree } from '@react-three/fiber/native';
 import * as Device from 'expo-device';
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
@@ -20,9 +20,9 @@ import {
   type TopDownPose,
 } from './camera-math';
 import { CameraRig, type RigGoal } from './camera-rig';
+import { HallRoom } from './HallRoom';
 import { palette } from './palette';
-import { aisleCentres, aisleStrips, type Obstacles, slatLayout } from './room-layout';
-import { useScreenTexture } from './screen-texture';
+import type { Obstacles } from './room-layout';
 import { createSeatGeometry } from './seat-geometry';
 
 const MAX_SELECTED = 10;
@@ -33,13 +33,6 @@ const TOP_LIGHT = 18;
 const FILL = 1.1;
 /** Seats are brightened toward the seat view so they read against the dark room. */
 const SEAT_LIFT = 2.4;
-/** The screen bows toward the audience by this share of its width. */
-const SCREEN_BOW = 0.015;
-/**
- * Side walls run past the camera (a seat sits beside them). One long quad crossing the near
- * plane rasterises as a dark wedge across the picture on some GPUs, so cut them into short ones.
- */
-const WALL_SEGMENTS = 24;
 
 export type Hall3DProps = {
   seats: SeatState[];
@@ -47,6 +40,8 @@ export type Hall3DProps = {
   tone: string;
   screen: ScreenSource;
   selectedIds: string[];
+  /** Seats someone else holds or has bought, as the 2D map shows them. */
+  takenIds: string[];
   currentId: string;
   reduceMotion: boolean;
   /** The camera pose that matches the 2D seat map under the canvas. */
@@ -79,6 +74,13 @@ export default function Hall3D(props: Hall3DProps) {
   // Bumped once the context exists: a size change makes expo-gl rebuild its buffers with the
   // sample count r3f reported only after the context was created (see below).
   const [nudge, setNudge] = useState(0);
+  const nudgeTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  useEffect(
+    () => () => {
+      if (nudgeTimer.current) clearTimeout(nudgeTimer.current);
+    },
+    [],
+  );
   useEffect(() => {
     onMount();
   }, [onMount]);
@@ -95,7 +97,13 @@ export default function Hall3D(props: Hall3DProps) {
       camera={{ fov: 14, near: 1, far: 400, position: [0, 100, 8] }}
       frameloop="demand"
       gl={{ antialias: !CHEAP_GL }}
-      onCreated={CHEAP_GL ? () => setTimeout(() => setNudge(1), 120) : undefined}
+      onCreated={
+        CHEAP_GL
+          ? () => {
+              nudgeTimer.current = setTimeout(() => setNudge(1), 120);
+            }
+          : undefined
+      }
     >
       <color attach="background" args={[palette.canvas]} />
       <Scene {...props} cover={props.cover / ratio} />
@@ -133,6 +141,7 @@ function Scene({
   tone,
   screen,
   selectedIds,
+  takenIds,
   currentId,
   reduceMotion,
   topPose,
@@ -148,11 +157,8 @@ function Scene({
   const depth = hallDepth(ext);
   const wallH = ext.maxZ + 6;
   const screenY = SCREEN_BOTTOM_M + hall.screen_height_m / 2;
-  const planeAspect = hall.screen_width_m / hall.screen_height_m;
   const get = useThree((s) => s.get);
   const invalidate = useThree((s) => s.invalidate);
-  const maxTexture = useThree((s) => s.gl.capabilities.maxTextureSize);
-  const texture = useScreenTexture(screen, planeAspect, maxTexture);
 
   const steps = useMemo(() => stepSpans(rowsOf(seats), depth), [seats, depth]);
   const drawable = useMemo(() => seats.filter((s) => s.kind !== 'blocked'), [seats]);
@@ -180,7 +186,6 @@ function Scene({
 
   const seatsRef = useRef<THREE.InstancedMesh>(null);
   const pickRef = useRef<THREE.InstancedMesh>(null);
-  const stepsRef = useRef<THREE.InstancedMesh>(null);
 
   // A bad shader or a lost context means no usable 3D: report it so the screen shows 2D.
   useEffect(() => {
@@ -206,27 +211,20 @@ function Scene({
   useLayoutEffect(() => {
     const mesh = seatsRef.current;
     if (!mesh) return;
+    const taken = new Set(takenIds);
     drawable.forEach((s, i) => {
-      tint.set(s.kind === 'premium' ? palette.seatPremium : palette.seat);
+      tint.set(
+        taken.has(s.id)
+          ? palette.seatTaken
+          : s.kind === 'premium'
+            ? palette.seatPremium
+            : palette.seat,
+      );
       mesh.setColorAt(i, tint);
     });
     mesh.count = drawable.length;
     if (mesh.instanceColor) mesh.instanceColor.needsUpdate = true;
-  }, [drawable]);
-
-  useLayoutEffect(() => {
-    const mesh = stepsRef.current;
-    if (!mesh) return;
-    steps.forEach((st, i) => {
-      dummy.position.set(0, st.height / 2, (st.from + st.to) / 2);
-      dummy.scale.set(half * 2, st.height, st.to - st.from);
-      dummy.updateMatrix();
-      mesh.setMatrixAt(i, dummy.matrix);
-    });
-    mesh.count = steps.length;
-    mesh.instanceMatrix.needsUpdate = true;
-    invalidate();
-  }, [steps, half, invalidate]);
+  }, [drawable, takenIds]);
 
   const chosen = useMemo(
     () => seats.filter((s) => selectedIds.includes(s.id)).slice(0, MAX_SELECTED),
@@ -244,8 +242,6 @@ function Scene({
   const fillRef = useRef<THREE.DirectionalLight>(null);
   const floorSpillRef = useRef<THREE.PointLight>(null);
   const fogRef = useRef<THREE.Fog>(null);
-  const slatsRef = useRef<THREE.InstancedMesh>(null);
-  const stripsRef = useRef<THREE.InstancedMesh>(null);
 
   /** Everything that follows the dive: seat footprint, own seat, lights, the screen's tilt. */
   const follow = useCallback(
@@ -331,7 +327,7 @@ function Scene({
 
   // The screen's light on the room: the film's tone, softened toward white so walls stay neutral.
   const spillTone = useMemo(
-    () => new THREE.Color(tone).lerp(new THREE.Color('#FFFFFF'), 0.5),
+    () => new THREE.Color(avoidOrange(tone)).lerp(new THREE.Color('#FFFFFF'), 0.5),
     [tone],
   );
 
@@ -339,58 +335,6 @@ function Scene({
     () => ({ half, depth, wallH, steps, seats: drawable }),
     [half, depth, wallH, steps, drawable],
   );
-
-  // Room detail, written once per hall.
-  const slats = useMemo(() => slatLayout(depth), [depth]);
-  const strips = useMemo(
-    () => aisleStrips(rowsOf(seats), aisleCentres(drawable.map((s) => s.x_m)), half),
-    [seats, drawable, half],
-  );
-  const screenGeo = useMemo(() => {
-    const g = new THREE.PlaneGeometry(hall.screen_width_m, hall.screen_height_m, 32, 1);
-    const p = g.getAttribute('position');
-    const hw = hall.screen_width_m / 2;
-    for (let i = 0; i < p.count; i++) {
-      const u = p.getX(i) / hw;
-      p.setZ(i, hall.screen_width_m * SCREEN_BOW * u * u);
-    }
-    p.needsUpdate = true;
-    g.computeVertexNormals();
-    return g;
-  }, [hall.screen_width_m, hall.screen_height_m]);
-  useEffect(() => () => screenGeo.dispose(), [screenGeo]);
-  useLayoutEffect(() => {
-    const mesh = slatsRef.current;
-    if (!mesh) return;
-    const slatH = wallH - 1.6;
-    slats.forEach((sl, i) => {
-      for (const side of [0, 1]) {
-        dummy.position.set((side ? 1 : -1) * (half - 0.07), 0.7 + slatH / 2, sl.z);
-        dummy.scale.set(1, slatH, 1);
-        dummy.updateMatrix();
-        mesh.setMatrixAt(i * 2 + side, dummy.matrix);
-        tint.set(sl.shade ? palette.slatLight : palette.slatDark);
-        mesh.setColorAt(i * 2 + side, tint);
-      }
-    });
-    mesh.count = slats.length * 2;
-    mesh.instanceMatrix.needsUpdate = true;
-    if (mesh.instanceColor) mesh.instanceColor.needsUpdate = true;
-    invalidate();
-  }, [slats, half, wallH, invalidate]);
-  useLayoutEffect(() => {
-    const mesh = stripsRef.current;
-    if (!mesh) return;
-    strips.forEach((st, i) => {
-      dummy.position.set(st.x, st.y, st.z);
-      dummy.scale.set(1, 1, 1);
-      dummy.updateMatrix();
-      mesh.setMatrixAt(i, dummy.matrix);
-    });
-    mesh.count = strips.length;
-    mesh.instanceMatrix.needsUpdate = true;
-    invalidate();
-  }, [strips, invalidate]);
 
   return (
     <>
@@ -409,81 +353,21 @@ function Scene({
         color={spillTone}
         decay={1.6}
       />
+      {/* A soft cool fill from behind the audience: the rows ahead show their backs and heads. */}
+      <directionalLight ref={fillRef} position={[0, 6, depth + 8]} color="#9DB0E6" />
       <pointLight ref={topRef} position={[0, wallH - 1, depth / 2]} color="#AEB8E0" decay={1.5} />
 
-      {/* Screen: bowed, cover-cropped film image in a black mask, brightest thing in the room.
-          Always upright: tilting it behind the front wall hid it during the dive. */}
-      <group position={[hall.screen_x_m, SCREEN_BOTTOM_M, 0.05]}>
-        <mesh position={[0, hall.screen_height_m / 2, 0]} geometry={screenGeo}>
-          <meshBasicMaterial
-            key={texture ? 'tex' : 'flat'}
-            map={texture}
-            color={texture ? '#FFFFFF' : tone}
-            toneMapped={false}
-          />
-        </mesh>
-        <mesh position={[0, hall.screen_height_m / 2, -0.04]}>
-          <planeGeometry args={[hall.screen_width_m * 1.07, hall.screen_height_m * 1.12]} />
-          <meshBasicMaterial color="#030304" toneMapped={false} />
-        </mesh>
-        <mesh position={[0, hall.screen_height_m / 2, -0.07]}>
-          <planeGeometry args={[hall.screen_width_m * 1.35, hall.screen_height_m * 1.6]} />
-          <meshBasicMaterial
-            color={tone}
-            transparent
-            opacity={0.2}
-            depthWrite={false}
-            toneMapped={false}
-          />
-        </mesh>
-      </group>
-
-      {/* Stepped floor, one instance per row. */}
-      <instancedMesh ref={stepsRef} args={[undefined, undefined, Math.max(steps.length, 1)]}>
-        <boxGeometry args={[1, 1, 1]} />
-        <meshLambertMaterial color={palette.floor} />
-      </instancedMesh>
-      <instancedMesh
-        ref={stripsRef}
-        args={[undefined, undefined, Math.max(strips.length, 1)]}
-        frustumCulled={false}
-      >
-        <boxGeometry args={[0.26, 0.02, 0.04]} />
-        <meshBasicMaterial color={palette.stepLight} toneMapped={false} />
-      </instancedMesh>
-
-      {/* Walls and ceiling are one-sided planes facing in: from outside the hall (the dive
-          passes over the back wall) they are invisible instead of a dark slab in the way. The
-          side walls are cut into short segments so no quad crosses the near plane. */}
-      <mesh position={[-half, wallH / 2, depth / 2]} rotation={[0, Math.PI / 2, 0]}>
-        <planeGeometry args={[depth, wallH, WALL_SEGMENTS, 4]} />
-        <meshLambertMaterial color={palette.wallSide} />
-      </mesh>
-      <mesh position={[half, wallH / 2, depth / 2]} rotation={[0, -Math.PI / 2, 0]}>
-        <planeGeometry args={[depth, wallH, WALL_SEGMENTS, 4]} />
-        <meshLambertMaterial color={palette.wallSide} />
-      </mesh>
-      <mesh position={[0, wallH / 2, 0]}>
-        <planeGeometry args={[half * 2, wallH]} />
-        <meshLambertMaterial color={palette.wallFront} />
-      </mesh>
-      <mesh position={[0, wallH / 2, depth]} rotation={[0, Math.PI, 0]}>
-        <planeGeometry args={[half * 2, wallH]} />
-        <meshLambertMaterial color={palette.wallSide} />
-      </mesh>
-      <mesh position={[0, wallH, depth / 2]} rotation={[Math.PI / 2, 0, 0]}>
-        <planeGeometry args={[half * 2, depth]} />
-        <meshLambertMaterial color={palette.ceiling} />
-      </mesh>
-      {/* Acoustic slats: every other one a shade lighter, both walls in one draw call. */}
-      <instancedMesh
-        ref={slatsRef}
-        args={[undefined, undefined, Math.max(slats.length * 2, 1)]}
-        frustumCulled={false}
-      >
-        <boxGeometry args={[0.14, 1, 0.5]} />
-        <meshLambertMaterial color={0xffffff} />
-      </instancedMesh>
+      <HallRoom
+        hall={hall}
+        seats={seats}
+        drawable={drawable}
+        tone={tone}
+        screen={screen}
+        steps={steps}
+        half={half}
+        depth={depth}
+        wallH={wallH}
+      />
 
       {/* All seats in one draw call, chosen ones in a second. */}
       <instancedMesh
