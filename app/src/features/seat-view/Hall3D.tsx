@@ -21,6 +21,7 @@ import {
 } from './camera-math';
 import { CameraRig, type RigGoal } from './camera-rig';
 import { HallRoom } from './HallRoom';
+import { handoffLook, heldScale } from './handoff';
 import { palette } from './palette';
 import type { Obstacles } from './room-layout';
 import { createSeatGeometry } from './seat-geometry';
@@ -54,6 +55,10 @@ export type Hall3DProps = {
   cover: number;
   /** A flight to `goal` finished. */
   onArrive: (goal: RigGoal) => void;
+  /** A closing flight is about to land. */
+  onLead: () => void;
+  /** 1 while leaving (the hand-off to the 2D map only runs then). */
+  closing: SharedValue<number>;
   /** The canvas component has mounted (its code is loaded); starts the first-frame watchdog. */
   onMount: () => void;
   /** A render finished and issued draw calls: GL works. */
@@ -149,6 +154,8 @@ function Scene({
   dive,
   cover,
   onArrive,
+  onLead,
+  closing,
   onDrew,
   onFail,
 }: Hall3DProps) {
@@ -243,12 +250,14 @@ function Scene({
   const fillRef = useRef<THREE.DirectionalLight>(null);
   const floorSpillRef = useRef<THREE.PointLight>(null);
   const fogRef = useRef<THREE.Fog>(null);
+  const screenRef = useRef<THREE.Group>(null);
 
   /** Everything that follows the dive: seat footprint, own seat, lights, the screen's tilt. */
   const follow = useCallback(
     (s: number) => {
       // Rows are drawn closer together on the 2D map: stretch each seat's depth by the same
       // factor at the start so the footprints read as the map's squares, then settle to real.
+      const look = handoffLook(s, closing.get() > 0);
       const g = (1 / Math.max(0.2, topPose.squash)) ** (1 - s);
       const cam = get().camera.position;
       /** 1 when far from the camera, 0 when it is at the seat. */
@@ -264,7 +273,7 @@ function Scene({
         drawable.forEach((seat, i) => {
           const k = own(seat.id) ? near(seat) : 1;
           dummy.position.set(seat.x_m, seat.z_m, seat.y_m);
-          dummy.scale.set(k, k, k * g);
+          dummy.scale.set(k * look.footprintX, k, k * g);
           dummy.updateMatrix();
           seatMesh.setMatrixAt(i, dummy.matrix);
         });
@@ -273,9 +282,9 @@ function Scene({
       const pickMesh = pickRef.current;
       if (pickMesh) {
         chosen.forEach((seat, i) => {
-          const k = (seat.id === currentId ? 1.3 : 1.06) * (own(seat.id) ? near(seat) : 1);
+          const k = heldScale(look.morph, seat.id === currentId) * (own(seat.id) ? near(seat) : 1);
           dummy.position.set(seat.x_m, seat.z_m, seat.y_m);
-          dummy.scale.set(k, k, k * g);
+          dummy.scale.set(k * look.footprintX, k, k * g);
           dummy.updateMatrix();
           pickMesh.setMatrixAt(i, dummy.matrix);
         });
@@ -283,12 +292,23 @@ function Scene({
         pickMesh.instanceMatrix.needsUpdate = true;
       }
       // Flat at the start (ambient alone shows each colour as it is), lit by the film at the seat.
-      if (ambientRef.current) ambientRef.current.intensity = Math.PI + (AMBIENT - Math.PI) * s;
-      if (spillRef.current) spillRef.current.intensity = SPILL * s;
-      if (topRef.current) topRef.current.intensity = TOP_LIGHT * s;
-      if (fillRef.current) fillRef.current.intensity = FILL * s;
-      if (floorSpillRef.current) floorSpillRef.current.intensity = FLOOR_SPILL * s;
-      seatMat.color.setScalar(1 + SEAT_LIFT * s);
+      if (ambientRef.current)
+        ambientRef.current.intensity = Math.PI + (AMBIENT - Math.PI) * s * look.light;
+      if (spillRef.current) spillRef.current.intensity = SPILL * s * look.light;
+      if (topRef.current) topRef.current.intensity = TOP_LIGHT * s * look.light;
+      if (fillRef.current) fillRef.current.intensity = FILL * s * look.light;
+      if (floorSpillRef.current) floorSpillRef.current.intensity = FLOOR_SPILL * s * look.light;
+      seatMat.color.setScalar(1 + SEAT_LIFT * s * look.light);
+      const screenGroup = screenRef.current;
+      if (screenGroup) {
+        const [face, mask, halo] = screenGroup.children as THREE.Mesh[];
+        const fadeMat = (m: THREE.Mesh | undefined, base: number) => {
+          if (m) (m.material as THREE.Material).opacity = base * look.screen;
+        };
+        fadeMat(face, 1);
+        fadeMat(mask, 1);
+        fadeMat(halo, 0.2);
+      }
       // Depth haze only once inside the hall: from above it would swallow the whole picture.
       if (fogRef.current) {
         const t = smoothstep(0.6, 1, s);
@@ -296,7 +316,7 @@ function Scene({
         fogRef.current.far = 48 + 2e4 * (1 - t) ** 3;
       }
     },
-    [drawable, chosen, currentId, topPose.squash, seatMat, get],
+    [drawable, chosen, currentId, topPose.squash, seatMat, get, closing],
   );
 
   // A new viewing seat: remember the one the camera is leaving.
@@ -363,6 +383,7 @@ function Scene({
       <pointLight ref={topRef} position={[0, wallH - 1, depth / 2]} color="#AEB8E0" decay={1.5} />
 
       <HallRoom
+        screenRef={screenRef}
         hall={hall}
         seats={seats}
         drawable={drawable}
@@ -392,6 +413,7 @@ function Scene({
         cover={cover}
         obstacles={obstacles}
         onArrive={onArrive}
+        onLead={onLead}
         onDrew={onDrew}
         onFail={onFail}
       />

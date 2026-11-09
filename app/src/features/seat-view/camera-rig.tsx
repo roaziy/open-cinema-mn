@@ -23,6 +23,7 @@ import {
   tauHermite,
   type Vec3,
 } from './camera-math';
+import { LEAD_MS } from './handoff';
 import { clearPosition, type Obstacles, seatEnvelope } from './room-layout';
 
 /** Dev only: how long the average frame time is sampled after a flight. */
@@ -71,6 +72,8 @@ type Flight = {
   eye: Vec3;
   /** Dev only: frames of a hop still to log, and the position at the previous one. */
   hopLog: number;
+  /** The lead-out signal of a closing flight has been sent. */
+  leadSent: boolean;
   hopPrev: Vec3;
   /** Per flight, not per frame: the screen's centre, the seat lenses and the height that clears the seat backs. */
   center: Vec3;
@@ -102,6 +105,8 @@ type Props = {
   obstacles: Obstacles;
   /** A flight to `goal` finished. */
   onArrive: (goal: RigGoal) => void;
+  /** A closing flight is LEAD_MS from landing over the map: the crossfade can start. */
+  onLead: () => void;
   /** A render finished and issued draw calls. */
   onDrew: () => void;
   /** Rendering threw. */
@@ -127,6 +132,7 @@ export function CameraRig({
   cover,
   obstacles,
   onArrive,
+  onLead,
   onDrew,
   onFail,
 }: Props) {
@@ -156,6 +162,7 @@ export function CameraRig({
     lastAt: 0,
     eye: [0, 0, 0],
     hopLog: 0,
+    leadSent: false,
     hopPrev: [0, 0, 0],
     center: [0, 0, 0],
     povA: 50,
@@ -178,6 +185,7 @@ export function CameraRig({
     cover,
     obstacles,
     onArrive,
+    onLead,
     onDrew,
     onFail,
   });
@@ -191,6 +199,7 @@ export function CameraRig({
       cover,
       obstacles,
       onArrive,
+      onLead,
       onDrew,
       onFail,
     };
@@ -233,6 +242,7 @@ export function CameraRig({
     const { hall: h, obstacles: ob } = latest.current;
     f.startedAt = performance.now();
     f.measureUntil = 0;
+    f.leadSent = false;
     const c = screenCenter(h);
     f.center[0] = c[0];
     f.center[1] = c[1];
@@ -369,6 +379,15 @@ export function CameraRig({
     if (f.active) {
       const camera = state.camera as THREE.PerspectiveCamera;
       const t = Math.min(1, (now - f.startedAt) / f.durationMs);
+      if (
+        !f.leadSent &&
+        f.kind === 'dive' &&
+        f.s1 === 0 &&
+        now - f.startedAt >= f.durationMs - LEAD_MS
+      ) {
+        f.leadSent = true;
+        latest.current.onLead();
+      }
       const linear = latest.current.reduceMotion ? 1 : t;
       const { topPose: top, cover: c, obstacles: ob } = latest.current;
       const height = Math.max(1, state.size.height);

@@ -7,6 +7,7 @@ import {
   useEffect,
   useMemo,
   useReducer,
+  useRef,
   useState,
   useSyncExternalStore,
 } from 'react';
@@ -40,6 +41,7 @@ import type { RigGoal } from './camera-rig';
 import { GlBoundary } from './gl-boundary';
 import { createGlMachine } from './gl-machine';
 import { Hall2D } from './Hall2D';
+import { CROSSFADE_MS } from './handoff';
 import { StatsCard } from './StatsCard';
 import { goalOf, initialTransition, panelLive, transitionReducer } from './transition-machine';
 
@@ -75,6 +77,8 @@ type Props = {
   dive: SharedValue<number>;
   /** 0 = the map shows, 1 = the 3D picture covers it. */
   fade: SharedValue<number>;
+  /** 1 while leaving, so the scene morphs toward the 2D map's look. */
+  closingFlag: SharedValue<number>;
   /** The viewer asked to leave (back button). */
   closing: boolean;
   /** Ask to leave (holds expired). */
@@ -102,6 +106,7 @@ export function SeatViewOverlay({
   topPose,
   dive,
   fade,
+  closingFlag,
   closing,
   onRequestClose,
   onClosed,
@@ -179,6 +184,22 @@ export function SeatViewOverlay({
     if (closing && !hopping) send({ type: 'close' });
   }, [closing, hopping]);
 
+  // The grid crossfade back to the map: 450 ms, started ahead of the landing when there is a flight.
+  const crossfading = useRef(false);
+  const startCrossfade = useCallback(() => {
+    crossfading.current = true;
+    fallbackFade.set(withTiming(0, { duration: CROSSFADE_MS }));
+    fade.set(
+      withTiming(0, { duration: CROSSFADE_MS }, (done) => {
+        'worklet';
+        if (done) scheduleOnRN(send, { type: 'faded-out' });
+      }),
+    );
+  }, [fade, fallbackFade]);
+  useEffect(() => {
+    if (tr.handoff && !crossfading.current) startCrossfade();
+  }, [tr.handoff, startCrossfade]);
+
   // Phase -> animation.
   const still = tr.still;
   useEffect(() => {
@@ -190,17 +211,12 @@ export function SeatViewOverlay({
         }),
       );
     } else if (tr.phase === 'fading-out') {
-      fallbackFade.set(withTiming(0, { duration: FADE_MS }));
-      fade.set(
-        withTiming(0, { duration: FADE_MS }, (done) => {
-          'worklet';
-          if (done) scheduleOnRN(send, { type: 'faded-out' });
-        }),
-      );
+      // Already under way when the crossfade started ahead of the landing.
+      if (!crossfading.current) startCrossfade();
     } else if (tr.phase === 'closed') {
       onClosed();
     }
-  }, [tr.phase, tr.fallback, fade, fallbackFade, onClosed]);
+  }, [tr.phase, tr.fallback, fade, onClosed, startCrossfade]);
   useEffect(() => {
     if (!tr.fallback || tr.phase === 'mounting' || tr.phase === 'fading-out') return;
     if (tr.phase === 'leaving' || tr.phase === 'closed') return;
@@ -224,6 +240,8 @@ export function SeatViewOverlay({
     const timer = setTimeout(() => send({ type: 'timeout' }), FLY_MS + 3000);
     return () => clearTimeout(timer);
   }, [tr.phase]);
+
+  const onLead = useCallback(() => send({ type: 'near-landing' }), []);
 
   const onArrive = useCallback((arrived: RigGoal) => {
     if (arrived === 'pov') {
@@ -324,6 +342,8 @@ export function SeatViewOverlay({
                   dive={dive}
                   cover={cover}
                   onArrive={onArrive}
+                  onLead={onLead}
+                  closing={closingFlag}
                   onMount={machine.start}
                   onDrew={onDrew}
                   onFail={onFail}

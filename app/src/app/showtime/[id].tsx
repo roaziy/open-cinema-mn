@@ -7,12 +7,14 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { type HostInstance, StyleSheet, Text, useWindowDimensions, View } from 'react-native';
 import Animated, {
   useAnimatedStyle,
+  useDerivedValue,
   useReducedMotion,
   useSharedValue,
 } from 'react-native-reanimated';
 import { PosterBackdrop } from '@/components/poster-backdrop';
 import {
   SeatCanvas,
+  SeatLandmarks,
   seatAreaWidth,
   seatContentMetrics,
   useSeatTransform,
@@ -29,6 +31,7 @@ import {
   topDownFromMap,
 } from '@/features/seat-view/camera-math';
 import { chromeOpacity, footerSlide } from '@/features/seat-view/chrome-fade';
+import { handoffLook } from '@/features/seat-view/handoff';
 import { type OverlayRect, SeatViewOverlay } from '@/features/seat-view/SeatViewOverlay';
 import { useI18n } from '@/i18n';
 import { useAuth } from '@/lib/auth';
@@ -124,6 +127,9 @@ export default function SeatMapScreen() {
   const viewportRef = useRef<HostInstance>(null);
   const fade = useSharedValue(0);
   const dive = useSharedValue(0);
+  const closingFlag = useSharedValue(0);
+  // The 2D layers with no 3D counterpart arrive over the canvas while the camera settles.
+  const landmarks = useDerivedValue(() => handoffLook(dive.get(), closingFlag.get() > 0).landmarks);
   const still = useReducedMotion();
   // The header, legend and footer stay over the 3D picture through the first part of the dive and
   // fade around its middle (see chrome-fade.ts); with Reduce Motion they follow the crossfade.
@@ -138,6 +144,8 @@ export default function SeatMapScreen() {
     seatId: string;
     takenIds: string[];
     rect: OverlayRect;
+    /** The 2D map's viewport in the window's coordinates. */
+    mapRect: OverlayRect;
     topPose: TopDownPose;
     closing: boolean;
   } | null>(null);
@@ -148,8 +156,9 @@ export default function SeatMapScreen() {
   const closed = useCallback(() => {
     dive.set(0);
     fade.set(0);
+    closingFlag.set(0);
     setViewing(null);
-  }, [dive, fade]);
+  }, [dive, fade, closingFlag]);
   // The back button, swipe-back and the Android back key leave the 3D view first. Anything else
   // that removes the screen (a reset after logout, say) goes through untouched.
   const isViewing = viewing !== null;
@@ -169,7 +178,9 @@ export default function SeatMapScreen() {
   }, [guard]);
 
   /** The top-down pose that matches the 2D map as it is right now (live pan/zoom and layout). */
-  const measureTop = (done: (topPose: TopDownPose, rect: OverlayRect) => void) => {
+  const measureTop = (
+    done: (topPose: TopDownPose, rect: OverlayRect, mapRect: OverlayRect) => void,
+  ) => {
     const root = rootRef.current;
     const viewport = viewportRef.current;
     if (!root || !viewport) return;
@@ -195,7 +206,7 @@ export default function SeatMapScreen() {
           offsetY: vy - ry,
           planeY: seatPlaneHeight(map.data?.seats ?? []),
         });
-        done(topPose, { x: 0, y: 0, w: rw, h: rh });
+        done(topPose, { x: 0, y: 0, w: rw, h: rh }, { x: vx - rx, y: vy - ry, w: vw, h: vh });
       });
     });
   };
@@ -204,7 +215,7 @@ export default function SeatMapScreen() {
     const last = selected[selected.length - 1];
     if (!last) return;
     haptic.tap();
-    measureTop((topPose, rect) => {
+    measureTop((topPose, rect, mapRect) => {
       if (__DEV__)
         console.log(
           '[seat-view] open from',
@@ -220,6 +231,7 @@ export default function SeatMapScreen() {
           .filter(({ seat }) => seat.kind !== 'blocked' && statusOf(seat.id) === 'taken')
           .map(({ seat }) => seat.id),
         rect,
+        mapRect,
         topPose,
         closing: false,
       });
@@ -228,6 +240,9 @@ export default function SeatMapScreen() {
 
   // Leaving lands on the 2D map as it is NOW, not as it was when the view opened.
   const isClosing = viewing?.closing === true;
+  useEffect(() => {
+    closingFlag.set(isClosing ? 1 : 0);
+  }, [isClosing, closingFlag]);
   const measureRef = useRef(measureTop);
   useEffect(() => {
     measureRef.current = measureTop;
@@ -353,6 +368,18 @@ export default function SeatMapScreen() {
           />
         ) : null}
       </Animated.View>
+      {viewing && map.data && !still ? (
+        <View style={styles.landmarks} pointerEvents="none">
+          <SeatLandmarks
+            layout={layout}
+            transform={transform}
+            rect={viewing.mapRect}
+            tone={tone}
+            statusOf={statusOf}
+            opacity={landmarks}
+          />
+        </View>
+      ) : null}
       {viewing && map.data ? (
         <SeatViewOverlay
           map={map.data}
@@ -363,6 +390,7 @@ export default function SeatMapScreen() {
           topPose={viewing.topPose}
           dive={dive}
           fade={fade}
+          closingFlag={closingFlag}
           closing={viewing.closing}
           onRequestClose={requestClose}
           onClosed={closed}
@@ -390,6 +418,8 @@ const styles = StyleSheet.create({
   root: { flex: 1, backgroundColor: colors.canvas },
   /** Above the 3D picture (zIndex 2 in the overlay) while the dive begins. */
   chrome: { zIndex: 3 },
+  /** Over the 3D canvas (zIndex 2), under the stats panel (4). */
+  landmarks: { ...StyleSheet.absoluteFill, zIndex: 3 },
   grid: { flex: 1, zIndex: 0 },
   head: { paddingHorizontal: space.lg, paddingBottom: space.md, overflow: 'hidden' },
   headRow: { flexDirection: 'row', alignItems: 'center', gap: space.md },
