@@ -97,6 +97,7 @@ function SeatCellView({ id, left, top, size, kind, status, label, onPress, glyph
         );
         onPress(id);
       }}
+      accessible={!glyphsOnly}
       accessibilityRole="button"
       accessibilityLabel={label}
       accessibilityState={{ selected: status === 'mine', disabled: status === 'taken' }}

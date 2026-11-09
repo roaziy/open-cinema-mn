@@ -6,25 +6,27 @@ import type { SharedValue } from 'react-native-reanimated';
 import type * as THREE from 'three';
 import {
   CLOSE_CAPS,
-  type DivePose,
   diveClock,
+  handOver,
+  type MoveClock,
+  OPEN_CAPS,
+  reversalMs,
+  shouldLead,
+  tauHermite,
+} from './camera-clock';
+import { hopDurationMs, hopFrame } from './camera-hop';
+import {
+  type DivePose,
   divePose,
   eyePosition,
-  hopDurationMs,
-  hopFrame,
   lensRange,
-  type MoveClock,
   newDivePose,
-  OPEN_CAPS,
   povFov,
-  reversalMs,
   screenCenter,
   type TopDownPose,
-  tauHermite,
   type Vec3,
 } from './camera-math';
-import { LEAD_MS } from './handoff';
-import { clearPosition, type Obstacles, seatEnvelope } from './room-layout';
+import { clearPosition, type Obstacles } from './room-layout';
 
 /** Dev only: how long the average frame time is sampled after a flight. */
 const MEASURE_MS = 3000;
@@ -70,16 +72,12 @@ type Flight = {
   lastTau: number;
   lastAt: number;
   eye: Vec3;
-  /** Dev only: frames of a hop still to log, and the position at the previous one. */
-  hopLog: number;
   /** The lead-out signal of a closing flight has been sent. */
   leadSent: boolean;
-  hopPrev: Vec3;
-  /** Per flight, not per frame: the screen's centre, the seat lenses and the height that clears the seat backs. */
+  /** Per flight, not per frame: the screen's centre and the seat lenses. */
   center: Vec3;
   povA: number;
   povB: number;
-  envelope: number;
   from: Vec3;
   to: Vec3;
   cur: Vec3;
@@ -161,13 +159,10 @@ export function CameraRig({
     lastTau: 0,
     lastAt: 0,
     eye: [0, 0, 0],
-    hopLog: 0,
     leadSent: false,
-    hopPrev: [0, 0, 0],
     center: [0, 0, 0],
     povA: 50,
     povB: 50,
-    envelope: 0,
     from: [0, 0, 0],
     to: [0, 0, 0],
     cur: [0, 0, 0],
@@ -247,7 +242,6 @@ export function CameraRig({
     f.center[0] = c[0];
     f.center[1] = c[1];
     f.center[2] = c[2];
-    f.envelope = seatEnvelope(ob);
     if (hop) {
       f.kind = 'hop';
       f.from[0] = camera.position.x;
@@ -262,15 +256,6 @@ export function CameraRig({
       f.s1 = 1;
       f.clock = null;
       f.durationMs = hopDurationMs(f.from, f.to);
-      if (__DEV__) {
-        console.log(
-          `[seat-view] hop start from ${f.from.map((v) => v.toFixed(2))} to ${f.to.map((v) => v.toFixed(2))} in ${f.durationMs.toFixed(0)} ms`,
-        );
-        f.hopLog = 5;
-        f.hopPrev[0] = f.from[0];
-        f.hopPrev[1] = f.from[1];
-        f.hopPrev[2] = f.from[2];
-      }
       f.v0 = 0;
     } else {
       f.kind = 'dive';
@@ -294,12 +279,9 @@ export function CameraRig({
       let vel = f.vel;
       if (turnedRound && prev) {
         // The move being turned round was played on the other clock: carry its place and speed over.
-        const e = 1e-3;
-        const k = prev.at(at.current);
-        const dkdTau = (prev.at(at.current + e) - prev.at(at.current - e)) / (2 * e);
-        const dTaudk = (f.clock.tauOf(k + e) - f.clock.tauOf(k - e)) / (2 * e);
-        f.s0 = f.clock.tauOf(k);
-        vel = f.vel * dkdTau * dTaudk;
+        const h = handOver(prev, f.clock, at.current, f.vel);
+        f.s0 = h.s0;
+        vel = h.vel;
       }
       const base = f.clock.ms * Math.max(0.4, Math.abs(f.s1 - f.s0));
       f.durationMs = base;
@@ -380,10 +362,7 @@ export function CameraRig({
       const camera = state.camera as THREE.PerspectiveCamera;
       const t = Math.min(1, (now - f.startedAt) / f.durationMs);
       if (
-        !f.leadSent &&
-        f.kind === 'dive' &&
-        f.s1 === 0 &&
-        now - f.startedAt >= f.durationMs - LEAD_MS
+        shouldLead(now - f.startedAt, f.durationMs, f.kind === 'dive' && f.s1 === 0, f.leadSent)
       ) {
         f.leadSent = true;
         latest.current.onLead();
@@ -412,30 +391,8 @@ export function CameraRig({
         dive.set(k);
       } else {
         // Seat to seat: one curve that rises over the seat backs between the two.
-        const p = hopFrame(
-          linear,
-          f.from,
-          f.to,
-          f.center,
-          f.povA,
-          f.povB,
-          f.envelope,
-          ob,
-          pose.current,
-        );
+        const p = hopFrame(linear, f.from, f.to, f.center, f.povA, f.povB, ob, pose.current);
         applyPose(camera, p);
-        if (__DEV__ && f.hopLog > 0) {
-          f.hopLog--;
-          const d = Math.hypot(
-            p.position[0] - f.hopPrev[0],
-            p.position[1] - f.hopPrev[1],
-            p.position[2] - f.hopPrev[2],
-          );
-          console.log(`[seat-view] hop frame t=${linear.toFixed(3)} moved ${d.toFixed(3)} m`);
-          f.hopPrev[0] = p.position[0];
-          f.hopPrev[1] = p.position[1];
-          f.hopPrev[2] = p.position[2];
-        }
         lens.current = { fov: p.fov, squash: 1, shift: c / height };
       }
       applyLens(camera, lens.current.fov, lens.current.squash, lens.current.shift);

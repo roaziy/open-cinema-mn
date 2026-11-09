@@ -146,10 +146,3 @@ export function insideGeometry(
   }
   return false;
 }
-
-/** The height that clears every seat back, with room to spare. */
-export function seatEnvelope(o: Obstacles): number {
-  let max = 0;
-  for (const s of o.seats) max = Math.max(max, s.z_m + SEAT_HEIGHT);
-  return max + CLEAR_M + 0.5;
-}

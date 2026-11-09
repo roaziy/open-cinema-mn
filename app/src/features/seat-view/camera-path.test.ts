@@ -4,34 +4,37 @@ import { generateSeats } from '../../../../shared/src/hall-generator';
 import { layoutSeats } from '../../lib/seat-layout';
 import {
   CLOSE_CAPS,
-  type DivePose,
   diveClock,
+  handOver,
+  OPEN_CAPS,
+  reversalMs,
+  shouldLead,
+  tauHermite,
+} from './camera-clock';
+import { hopDurationMs, hopFrame } from './camera-hop';
+import {
+  type DivePose,
   divePose,
   eyePosition,
   forwardOf,
   hallDepth,
   hallExtents,
   hallHalfWidth,
-  hopDurationMs,
-  hopFrame,
   MAX_TURN_DEG_PER_S,
   mapFitOf,
   newDivePose,
-  OPEN_CAPS,
   povFov,
-  reversalMs,
   rotationAngleDeg,
   rowsOf,
   screenCenter,
   seatPlaneHeight,
   stepSpans,
   type TopDownPose,
-  tauHermite,
   topDownFromMap,
   type Vec3,
   viewAngles,
 } from './camera-math';
-import { type Obstacles, seatEnvelope } from './room-layout';
+import { insideGeometry, type Obstacles } from './room-layout';
 
 const FPS = 60;
 const ASPECT = 402 / 874;
@@ -215,8 +218,12 @@ for (const [hallName, h] of HALLS) {
               peak = Math.max(peak, angle(poses[i - 1] as DivePose, poses[i] as DivePose) * FPS);
               zPeak = Math.max(zPeak, zoom(poses[i - 1] as DivePose, poses[i] as DivePose));
             }
-            expect(peak).toBeLessThanOrEqual((reverse ? 125 : MAX_TURN_DEG_PER_S) * 1.05);
-            expect(zPeak).toBeLessThanOrEqual(reverse ? 4.2 : 3);
+            expect(peak).toBeLessThanOrEqual(
+              (reverse ? CLOSE_CAPS.turnDegPerS : MAX_TURN_DEG_PER_S) * 1.05,
+            );
+            expect(zPeak).toBeLessThanOrEqual(
+              reverse ? CLOSE_CAPS.zoomLnPerS * 1.05 : OPEN_CAPS.zoomLnPerS,
+            );
           });
 
           it('has no jump in speed from frame to frame', () => {
@@ -253,13 +260,10 @@ describe('turning a dive round', () => {
         for (let i = 0; i <= frames; i++) {
           out.push(copy(poseOf(open.at((i * dtMs) / D), newDivePose())));
         }
-        // the rig's hand-over: place and speed carried from the opening clock to the closing one
-        const e = 1e-3;
-        const k0 = open.at(atOpen);
-        const dkdTau = (open.at(atOpen + e) - open.at(atOpen - e)) / (2 * e);
-        const dTaudk = (close.tauOf(k0 + e) - close.tauOf(k0 - e)) / (2 * e);
-        const s0 = close.tauOf(k0);
-        const vel = (1 / D) * dkdTau * dTaudk;
+        // the rig's hand-over, through the shipped function
+        const ho = handOver(open, close, atOpen, 1 / D);
+        const s0 = ho.s0;
+        const vel = ho.vel;
         const base = close.ms * Math.max(0.4, s0);
         const Dr = reversalMs(poseOf, close, s0, 0, vel, base, 125);
         const n = Math.round(Dr / dtMs);
@@ -271,7 +275,7 @@ describe('turning a dive round', () => {
           w.push(angle(out[i - 1] as DivePose, out[i] as DivePose) * FPS);
         }
         const peak = Math.max(...w);
-        expect(peak).toBeLessThanOrEqual(125 * 1.05);
+        expect(peak).toBeLessThanOrEqual(CLOSE_CAPS.turnDegPerS * 1.05);
         for (let i = 1; i < w.length; i++) {
           expect(Math.abs((w[i] as number) - (w[i - 1] as number))).toBeLessThan(0.2 * peak + 3);
         }
@@ -324,7 +328,7 @@ describe('the seat switch glides between the seats', () => {
         const ms = hopDurationMs(a, b);
         const n = Math.round((ms / 1000) * FPS);
         const frame = (i: number) =>
-          copy(hopFrame(i / n, a, b, h.center, povA, povB, seatEnvelope(h.o), h.o, newDivePose()));
+          copy(hopFrame(i / n, a, b, h.center, povA, povB, h.o, newDivePose()));
         const poses = Array.from({ length: n + 1 }, (_, i) => frame(i));
 
         it("takes 1.6 to 2.2 s, starts at the first seat's view and ends at the second's", () => {
@@ -357,6 +361,23 @@ describe('the seat switch glides between the seats', () => {
             // the ease peaks at 1.5x the average speed over the curve (which is a bit longer than the chord)
             expect(d).toBeLessThan(((total + 4) / n) * 2.2);
             if (i < 3 || i > n - 3) expect(d).toBeLessThan(0.05);
+          }
+        });
+
+        it('never passes through a seat, step or wall (the two seats exempt close to them)', () => {
+          const near = (p: DivePose, e: Vec3) =>
+            Math.hypot(p.position[0] - e[0], p.position[1] - e[1], p.position[2] - e[2]) < 1;
+          for (const p of poses) {
+            expect(
+              insideGeometry(
+                p.position,
+                h.o,
+                0.12,
+                (st) =>
+                  (near(p, a) && Math.abs(st.x_m - a[0]) < 0.6 && Math.abs(st.y_m - a[2]) < 0.6) ||
+                  (near(p, b) && Math.abs(st.x_m - b[0]) < 0.6 && Math.abs(st.y_m - b[2]) < 0.6),
+              ),
+            ).toBe(false);
           }
         });
 
@@ -445,4 +466,30 @@ describe('the close lands exactly on the aligned top-down frame', () => {
       });
     }
   }
+});
+
+describe('shouldLead', () => {
+  it('fires once, only for a closing flight, LEAD_MS before it lands', () => {
+    expect(shouldLead(1000, 2000, true, false)).toBe(false);
+    expect(shouldLead(1750, 2000, true, false)).toBe(true);
+    expect(shouldLead(1900, 2000, true, true)).toBe(false);
+    expect(shouldLead(1900, 2000, false, false)).toBe(false);
+    expect(shouldLead(10, 200, true, false)).toBe(true);
+  });
+});
+
+describe('handOver', () => {
+  it('lands on the same progress on the new clock, and keeps a stopped camera stopped', () => {
+    const [, h] = HALLS[0] as [string, Hall];
+    const top = topFor(h, 'fit');
+    const eye = pick(h, 3, 3);
+    const pov = povFov(eye, h.hall, ASPECT);
+    const open = diveClock(top, eye, h.center, pov, h.o, OPEN_CAPS);
+    const close = diveClock(top, eye, h.center, pov, h.o, CLOSE_CAPS);
+    for (const tau of [0.2, 0.5, 0.8]) {
+      const ho = handOver(open, close, tau, 0);
+      expect(close.at(ho.s0)).toBeCloseTo(open.at(tau), 3);
+      expect(ho.vel).toBeCloseTo(0, 9);
+    }
+  });
 });

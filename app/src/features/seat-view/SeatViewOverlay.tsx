@@ -77,7 +77,7 @@ type Props = {
   dive: SharedValue<number>;
   /** 0 = the map shows, 1 = the 3D picture covers it. */
   fade: SharedValue<number>;
-  /** 1 while leaving, so the scene morphs toward the 2D map's look. */
+  /** NOT_CLOSING, or where the dive was when leaving began: the scene morphs toward the 2D look. */
   closingFlag: SharedValue<number>;
   /** The viewer asked to leave (back button). */
   closing: boolean;
@@ -318,9 +318,6 @@ export function SeatViewOverlay({
               { left: rect.x, top: rect.y, width: rect.w, height: rect.h },
               canvasStyle,
             ]}
-            accessible
-            accessibilityRole="image"
-            accessibilityLabel={a11y}
           >
             <GlBoundary
               onError={(e) =>
@@ -358,6 +355,14 @@ export function SeatViewOverlay({
         pointerEvents="box-none"
         accessibilityViewIsModal
       >
+        {/* The picture's description lives here, in the modal layer, so VoiceOver can reach it. */}
+        <View
+          accessible
+          accessibilityRole="image"
+          accessibilityLabel={a11y}
+          pointerEvents="none"
+          style={StyleSheet.absoluteFill}
+        />
         {fallback ? (
           <Animated.View
             style={[StyleSheet.absoluteFill, styles.fallback, fallbackStyle]}

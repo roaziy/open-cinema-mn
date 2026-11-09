@@ -20,7 +20,7 @@ import {
   type Vec3,
 } from './camera-math';
 import { CameraRig, type RigGoal } from './camera-rig';
-import { HallRoom } from './HallRoom';
+import { HallRoom, SCREEN_FACE, SCREEN_HALO, SCREEN_MASK } from './HallRoom';
 import { handoffLook, heldScale } from './handoff';
 import { palette } from './palette';
 import type { Obstacles } from './room-layout';
@@ -57,7 +57,7 @@ export type Hall3DProps = {
   onArrive: (goal: RigGoal) => void;
   /** A closing flight is about to land. */
   onLead: () => void;
-  /** 1 while leaving (the hand-off to the 2D map only runs then). */
+  /** NOT_CLOSING, or the dive progress at which leaving began (the hand-off only runs then). */
   closing: SharedValue<number>;
   /** The canvas component has mounted (its code is loaded); starts the first-frame watchdog. */
   onMount: () => void;
@@ -257,7 +257,7 @@ function Scene({
     (s: number) => {
       // Rows are drawn closer together on the 2D map: stretch each seat's depth by the same
       // factor at the start so the footprints read as the map's squares, then settle to real.
-      const look = handoffLook(s, closing.get() > 0);
+      const look = handoffLook(s, closing.get());
       const g = (1 / Math.max(0.2, topPose.squash)) ** (1 - s);
       const cam = get().camera.position;
       /** 1 when far from the camera, 0 when it is at the seat. */
@@ -301,13 +301,13 @@ function Scene({
       seatMat.color.setScalar(1 + SEAT_LIFT * s * look.light);
       const screenGroup = screenRef.current;
       if (screenGroup) {
-        const [face, mask, halo] = screenGroup.children as THREE.Mesh[];
-        const fadeMat = (m: THREE.Mesh | undefined, base: number) => {
+        const fadeMat = (name: string, base: number) => {
+          const m = screenGroup.getObjectByName(name) as THREE.Mesh | undefined;
           if (m) (m.material as THREE.Material).opacity = base * look.screen;
         };
-        fadeMat(face, 1);
-        fadeMat(mask, 1);
-        fadeMat(halo, 0.2);
+        fadeMat(SCREEN_FACE, 1);
+        fadeMat(SCREEN_MASK, 1);
+        fadeMat(SCREEN_HALO, 0.2);
       }
       // Depth haze only once inside the hall: from above it would swallow the whole picture.
       if (fogRef.current) {

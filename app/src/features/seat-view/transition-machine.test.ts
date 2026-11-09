@@ -95,6 +95,31 @@ describe('the staged hand-off', () => {
   });
 });
 
+describe('the crossfade guard', () => {
+  it('a failure or a timeout during the hand-off still ends in closed, once', () => {
+    const failed = run(['ready', 'faded-in', 'landed', 'close', 'near-landing', 'failed']);
+    expect(failed.s.phase).toBe('fading-out');
+    expect(failed.s.handoff).toBe(true);
+    expect(
+      run(['ready', 'faded-in', 'landed', 'close', 'near-landing', 'failed', 'faded-out']).s.phase,
+    ).toBe('closed');
+    const timeout = run(['ready', 'faded-in', 'landed', 'close', 'near-landing', 'timeout']);
+    expect(timeout.s.phase).toBe('fading-out');
+    expect(
+      run([
+        'ready',
+        'faded-in',
+        'landed',
+        'close',
+        'near-landing',
+        'timeout',
+        'faded-out',
+        'faded-out',
+      ]).s.phase,
+    ).toBe('closed');
+  });
+});
+
 describe('GL failing', () => {
   it('before the first frame: the diagram fades in instead', () => {
     const { s, seen } = run(['failed', 'faded-in']);

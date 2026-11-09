@@ -1,4 +1,5 @@
 import { describe, expect, it } from 'vitest';
+import { hopPose } from './camera-hop';
 import {
   divePose,
   easeFlight,
@@ -7,7 +8,6 @@ import {
   hallDepth,
   hallExtents,
   hallHalfWidth,
-  hopPose,
   newDivePose,
   rowsOf,
   screenCenter,
@@ -20,7 +20,6 @@ import {
   clearPosition,
   insideGeometry,
   type Obstacles,
-  seatEnvelope,
   seatHeightM,
   slatLayout,
 } from './room-layout';
@@ -166,7 +165,7 @@ describe('the dive never goes through the room', () => {
     const eb = eyePosition(b);
     const out = newDivePose();
     for (let i = 0; i <= 300; i++) {
-      const p = hopPose(easeFlight(i / 300), ea, eb, center, 60, 60, seatEnvelope(o), bounds, out);
+      const p = hopPose(easeFlight(i / 300), ea, eb, center, 60, 60, bounds, out);
       const near = (e: [number, number, number]) =>
         Math.hypot(p.position[0] - e[0], p.position[1] - e[1], p.position[2] - e[2]) < 1;
       expect(

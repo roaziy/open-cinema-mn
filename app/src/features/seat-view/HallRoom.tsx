@@ -16,6 +16,11 @@ const WALL_SEGMENTS = 24;
 /** The screen bows toward the audience by this share of its width. */
 const SCREEN_BOW = 0.015;
 
+/** Names of the screen's three layers: the hand-off to the 2D map fades them by name. */
+export const SCREEN_FACE = 'screen-face';
+export const SCREEN_MASK = 'screen-mask';
+export const SCREEN_HALO = 'screen-halo';
+
 const dummy = new THREE.Object3D();
 const tint = new THREE.Color();
 
@@ -128,7 +133,7 @@ export function HallRoom({
       {/* Screen: bowed, cover-cropped film image in a black mask, brightest thing in the room.
           Always upright: tilting it behind the front wall hid it during the dive. */}
       <group ref={screenRef} position={[hall.screen_x_m, SCREEN_BOTTOM_M, 0.12]}>
-        <mesh position={[0, hall.screen_height_m / 2, 0]} geometry={screenGeo}>
+        <mesh name={SCREEN_FACE} position={[0, hall.screen_height_m / 2, 0]} geometry={screenGeo}>
           <meshBasicMaterial
             key={texture ? 'tex' : 'flat'}
             map={texture}
@@ -138,11 +143,11 @@ export function HallRoom({
             fog={false}
           />
         </mesh>
-        <mesh position={[0, hall.screen_height_m / 2, -0.04]}>
+        <mesh name={SCREEN_MASK} position={[0, hall.screen_height_m / 2, -0.04]}>
           <planeGeometry args={[hall.screen_width_m * 1.07, hall.screen_height_m * 1.12]} />
           <meshBasicMaterial color="#030304" transparent toneMapped={false} fog={false} />
         </mesh>
-        <mesh position={[0, hall.screen_height_m / 2, -0.07]}>
+        <mesh name={SCREEN_HALO} position={[0, hall.screen_height_m / 2, -0.07]}>
           <planeGeometry args={[hall.screen_width_m * 1.35, hall.screen_height_m * 1.6]} />
           <meshBasicMaterial
             color={tone}
