@@ -1,5 +1,6 @@
 import { Asset } from 'expo-asset';
 import { useEffect, useState } from 'react';
+import { Image } from 'react-native';
 import * as THREE from 'three';
 import { coverTransform, type ScreenSource, textureFits } from './camera-math';
 
@@ -30,24 +31,35 @@ export function useScreenTexture(
       .then((asset) => {
         const uri = asset.localUri;
         if (!uri || cancelled) return;
-        new THREE.TextureLoader().load(
+        // The decoded texture's own width and height are not reliable on native; ask the image
+        // system for the real size so the cover crop never stretches the picture.
+        Image.getSize(
           uri,
-          (t) => {
-            const img = t.image as { width: number; height: number };
-            if (cancelled || !textureFits(img.width, img.height, maxTextureSize)) {
-              if (!cancelled) warn(`image ${img.width}x${img.height} too large, using flat tone`);
-              t.dispose();
+          (w, h) => {
+            if (cancelled) return;
+            if (!textureFits(w, h, maxTextureSize)) {
+              warn(`image ${w}x${h} too large, using flat tone`);
               return;
             }
-            const c = coverTransform(img.width / img.height, planeAspect);
-            t.repeat.set(c.rx, c.ry);
-            t.offset.set(c.ox, c.oy);
-            t.colorSpace = THREE.SRGBColorSpace;
-            loaded = t;
-            setTexture(t);
+            new THREE.TextureLoader().load(
+              uri,
+              (t) => {
+                if (cancelled) {
+                  t.dispose();
+                  return;
+                }
+                const c = coverTransform(w / h, planeAspect);
+                t.repeat.set(c.rx, c.ry);
+                t.offset.set(c.ox, c.oy);
+                t.colorSpace = THREE.SRGBColorSpace;
+                loaded = t;
+                setTexture(t);
+              },
+              undefined,
+              (e) => warn('decode failed', e),
+            );
           },
-          undefined,
-          (e) => warn('decode failed', e),
+          (e) => warn('size failed', e),
         );
       })
       .catch((e) => warn('download failed', e));

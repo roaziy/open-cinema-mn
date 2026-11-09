@@ -21,13 +21,19 @@ import {
 } from './camera-math';
 import { CameraRig, type RigGoal } from './camera-rig';
 import { palette } from './palette';
+import { aisleCentres, aisleStrips, slatLayout } from './room-layout';
 import { useScreenTexture } from './screen-texture';
 import { createSeatGeometry } from './seat-geometry';
 
 const MAX_SELECTED = 10;
-const AMBIENT = 0.55;
-const SPILL = 260;
-const TOP_LIGHT = 30;
+const AMBIENT = 1.25;
+const SPILL = 150;
+const FLOOR_SPILL = 40;
+const TOP_LIGHT = 18;
+/** Seats are brightened toward the seat view so they read against the dark room. */
+const SEAT_LIFT = 1.3;
+/** The screen bows toward the audience by this share of its width. */
+const SCREEN_BOW = 0.015;
 /**
  * Side walls run past the camera (a seat sits beside them). One long quad crossing the near
  * plane rasterises as a dark wedge across the picture on some GPUs, so cut them into short ones.
@@ -139,7 +145,7 @@ function Scene({
   const ext = useMemo(() => hallExtents(seats), [seats]);
   const half = hallHalfWidth(ext, hall);
   const depth = hallDepth(ext);
-  const wallH = ext.maxZ + 7;
+  const wallH = ext.maxZ + 6;
   const screenY = SCREEN_BOTTOM_M + hall.screen_height_m / 2;
   const planeAspect = hall.screen_width_m / hall.screen_height_m;
   const get = useThree((s) => s.get);
@@ -234,6 +240,10 @@ function Scene({
   const spillRef = useRef<THREE.PointLight>(null);
   const topRef = useRef<THREE.PointLight>(null);
   const screenRef = useRef<THREE.Group>(null);
+  const floorSpillRef = useRef<THREE.PointLight>(null);
+  const fogRef = useRef<THREE.Fog>(null);
+  const slatsRef = useRef<THREE.InstancedMesh>(null);
+  const stripsRef = useRef<THREE.InstancedMesh>(null);
 
   /** Everything that follows the dive: seat footprint, own seat, lights, the screen's tilt. */
   const follow = useCallback(
@@ -270,10 +280,18 @@ function Scene({
       if (ambientRef.current) ambientRef.current.intensity = Math.PI + (AMBIENT - Math.PI) * s;
       if (spillRef.current) spillRef.current.intensity = SPILL * s;
       if (topRef.current) topRef.current.intensity = TOP_LIGHT * s;
+      if (floorSpillRef.current) floorSpillRef.current.intensity = FLOOR_SPILL * s;
+      seatMat.color.setScalar(1 + SEAT_LIFT * s);
+      // Depth haze only once inside the hall: from above it would swallow the whole picture.
+      if (fogRef.current) {
+        const t = smoothstep(0.6, 1, s);
+        fogRef.current.near = 9 + 1e4 * (1 - t) ** 3;
+        fogRef.current.far = 48 + 2e4 * (1 - t) ** 3;
+      }
       // The screen lies flat at the start, where the 2D map draws its arc, and stands up.
       if (screenRef.current) screenRef.current.rotation.x = -(1 - s) * (Math.PI / 2);
     },
-    [drawable, chosen, currentId, topPose.squash],
+    [drawable, chosen, currentId, topPose.squash, seatMat],
   );
 
   // A new viewing seat: keep the previous one out of the way until the camera has left it.
@@ -310,21 +328,87 @@ function Scene({
 
   const current = useMemo(() => seats.find((s) => s.id === currentId), [seats, currentId]);
 
+  // The screen's light on the room: the film's tone, softened toward white so walls stay neutral.
+  const spillTone = useMemo(
+    () => new THREE.Color(tone).lerp(new THREE.Color('#FFFFFF'), 0.5),
+    [tone],
+  );
+
+  // Room detail, written once per hall.
+  const slats = useMemo(() => slatLayout(depth), [depth]);
+  const strips = useMemo(
+    () => aisleStrips(rowsOf(seats), aisleCentres(drawable.map((s) => s.x_m)), half),
+    [seats, drawable, half],
+  );
+  const screenGeo = useMemo(() => {
+    const g = new THREE.PlaneGeometry(hall.screen_width_m, hall.screen_height_m, 32, 1);
+    const p = g.getAttribute('position');
+    const hw = hall.screen_width_m / 2;
+    for (let i = 0; i < p.count; i++) {
+      const u = p.getX(i) / hw;
+      p.setZ(i, hall.screen_width_m * SCREEN_BOW * u * u);
+    }
+    p.needsUpdate = true;
+    g.computeVertexNormals();
+    return g;
+  }, [hall.screen_width_m, hall.screen_height_m]);
+  useEffect(() => () => screenGeo.dispose(), [screenGeo]);
+  useLayoutEffect(() => {
+    const mesh = slatsRef.current;
+    if (!mesh) return;
+    const slatH = wallH - 1.6;
+    slats.forEach((sl, i) => {
+      for (const side of [0, 1]) {
+        dummy.position.set((side ? 1 : -1) * (half - 0.07), 0.7 + slatH / 2, sl.z);
+        dummy.scale.set(1, slatH, 1);
+        dummy.updateMatrix();
+        mesh.setMatrixAt(i * 2 + side, dummy.matrix);
+        tint.set(sl.shade ? palette.slatLight : palette.slatDark);
+        mesh.setColorAt(i * 2 + side, tint);
+      }
+    });
+    mesh.count = slats.length * 2;
+    mesh.instanceMatrix.needsUpdate = true;
+    if (mesh.instanceColor) mesh.instanceColor.needsUpdate = true;
+    invalidate();
+  }, [slats, half, wallH, invalidate]);
+  useLayoutEffect(() => {
+    const mesh = stripsRef.current;
+    if (!mesh) return;
+    strips.forEach((st, i) => {
+      dummy.position.set(st.x, st.y, st.z);
+      dummy.scale.set(1, 1, 1);
+      dummy.updateMatrix();
+      mesh.setMatrixAt(i, dummy.matrix);
+    });
+    mesh.count = strips.length;
+    mesh.instanceMatrix.needsUpdate = true;
+    invalidate();
+  }, [strips, invalidate]);
+
   return (
     <>
+      <fog ref={fogRef} attach="fog" args={[palette.canvas, 1e4, 2e4]} />
       <ambientLight ref={ambientRef} color={0xffffff} />
+      {/* The screen's light, tinted by the film: spills over the front rows and walls. */}
       <pointLight
         ref={spillRef}
-        position={[hall.screen_x_m, screenY + 0.3, 4]}
-        color={tone}
-        decay={1.7}
+        position={[hall.screen_x_m, screenY + 0.3, 3.5]}
+        color={spillTone}
+        decay={1.5}
       />
-      <pointLight ref={topRef} position={[0, wallH - 1, depth / 2]} color="#FFFFFF" decay={1.5} />
+      <pointLight
+        ref={floorSpillRef}
+        position={[hall.screen_x_m, 0.9, 2]}
+        color={spillTone}
+        decay={1.6}
+      />
+      <pointLight ref={topRef} position={[0, wallH - 1, depth / 2]} color="#AEB8E0" decay={1.5} />
 
-      {/* Screen: film backdrop or flat tone with a soft halo. It lies flat at the dive's start. */}
+      {/* Screen: bowed, cover-cropped film image in a black mask, brightest thing in the room.
+          It lies flat at the dive's start, where the 2D map draws its arc, and stands up. */}
       <group ref={screenRef} position={[hall.screen_x_m, SCREEN_BOTTOM_M, 0.05]}>
-        <mesh position={[0, hall.screen_height_m / 2, 0]}>
-          <planeGeometry args={[hall.screen_width_m, hall.screen_height_m]} />
+        <mesh position={[0, hall.screen_height_m / 2, 0]} geometry={screenGeo}>
           <meshBasicMaterial
             key={texture ? 'tex' : 'flat'}
             map={texture}
@@ -332,12 +416,16 @@ function Scene({
             toneMapped={false}
           />
         </mesh>
-        <mesh position={[0, hall.screen_height_m / 2, -0.02]}>
-          <planeGeometry args={[hall.screen_width_m * 1.1, hall.screen_height_m * 1.22]} />
+        <mesh position={[0, hall.screen_height_m / 2, -0.04]}>
+          <planeGeometry args={[hall.screen_width_m * 1.07, hall.screen_height_m * 1.12]} />
+          <meshBasicMaterial color="#030304" toneMapped={false} />
+        </mesh>
+        <mesh position={[0, hall.screen_height_m / 2, -0.07]}>
+          <planeGeometry args={[hall.screen_width_m * 1.35, hall.screen_height_m * 1.6]} />
           <meshBasicMaterial
             color={tone}
             transparent
-            opacity={0.28}
+            opacity={0.2}
             depthWrite={false}
             toneMapped={false}
           />
@@ -349,10 +437,18 @@ function Scene({
         <boxGeometry args={[1, 1, 1]} />
         <meshLambertMaterial color={palette.floor} />
       </instancedMesh>
+      <instancedMesh
+        ref={stripsRef}
+        args={[undefined, undefined, Math.max(strips.length, 1)]}
+        frustumCulled={false}
+      >
+        <boxGeometry args={[0.26, 0.02, 0.04]} />
+        <meshBasicMaterial color={palette.stepLight} toneMapped={false} />
+      </instancedMesh>
 
-      {/* Walls are one-sided planes facing in: from outside the hall (the dive passes over the
-          back wall) they are invisible instead of a dark slab in the way. Cut into short
-          segments so no quad crosses the near plane. */}
+      {/* Walls and ceiling are one-sided planes facing in: from outside the hall (the dive
+          passes over the back wall) they are invisible instead of a dark slab in the way. The
+          side walls are cut into short segments so no quad crosses the near plane. */}
       <mesh position={[-half, wallH / 2, depth / 2]} rotation={[0, Math.PI / 2, 0]}>
         <planeGeometry args={[depth, wallH, WALL_SEGMENTS, 4]} />
         <meshLambertMaterial color={palette.wallSide} />
@@ -369,6 +465,19 @@ function Scene({
         <planeGeometry args={[half * 2, wallH]} />
         <meshLambertMaterial color={palette.wallSide} />
       </mesh>
+      <mesh position={[0, wallH, depth / 2]} rotation={[Math.PI / 2, 0, 0]}>
+        <planeGeometry args={[half * 2, depth]} />
+        <meshLambertMaterial color={palette.ceiling} />
+      </mesh>
+      {/* Acoustic slats: every other one a shade lighter, both walls in one draw call. */}
+      <instancedMesh
+        ref={slatsRef}
+        args={[undefined, undefined, Math.max(slats.length * 2, 1)]}
+        frustumCulled={false}
+      >
+        <boxGeometry args={[0.14, 1, 0.5]} />
+        <meshLambertMaterial color={0xffffff} />
+      </instancedMesh>
 
       {/* All seats in one draw call, chosen ones in a second. */}
       <instancedMesh
