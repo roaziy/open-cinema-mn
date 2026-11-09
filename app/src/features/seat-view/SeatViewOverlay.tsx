@@ -36,7 +36,14 @@ import { mediaUrl } from '@/lib/http';
 import { seatLabel } from '@/lib/seats';
 import { colors, radius, space } from '@/theme/tokens';
 import { type } from '@/theme/type';
-import { FLY_MS, pickScreenSource, safeTone, smoothstep, type TopDownPose } from './camera-math';
+import {
+  type CamState,
+  FLY_MS,
+  pickScreenSource,
+  safeTone,
+  smoothstep,
+  type TopDownPose,
+} from './camera-math';
 import type { RigGoal } from './camera-rig';
 import { GlBoundary } from './gl-boundary';
 import { createGlMachine } from './gl-machine';
@@ -77,6 +84,8 @@ type Props = {
   dive: SharedValue<number>;
   /** 0 = the map shows, 1 = the 3D picture covers it. */
   fade: SharedValue<number>;
+  /** The 3D camera as numbers (written by the rig). */
+  cam: SharedValue<CamState>;
   /** NOT_CLOSING, or where the dive was when leaving began: the scene morphs toward the 2D look. */
   closingFlag: SharedValue<number>;
   /** The viewer asked to leave (back button). */
@@ -107,6 +116,7 @@ export function SeatViewOverlay({
   dive,
   fade,
   closingFlag,
+  cam,
   closing,
   onRequestClose,
   onClosed,
@@ -341,6 +351,7 @@ export function SeatViewOverlay({
                   onArrive={onArrive}
                   onLead={onLead}
                   closing={closingFlag}
+                  cam={cam}
                   onMount={machine.start}
                   onDrew={onDrew}
                   onFail={onFail}

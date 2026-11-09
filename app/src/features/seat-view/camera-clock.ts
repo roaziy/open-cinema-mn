@@ -10,7 +10,6 @@ import {
   type TopDownPose,
   type Vec3,
 } from './camera-math';
-import { LEAD_MS } from './handoff';
 
 const sTurnPose = newDivePose();
 
@@ -173,12 +172,10 @@ export function handOver(
   return { s0: next.tauOf(k), vel: vel * dkdTau * dTaudk };
 }
 
-/** True when a closing flight is `LEAD_MS` from landing and the lead-out has not been sent yet. */
-export function shouldLead(
-  elapsedMs: number,
-  durationMs: number,
-  closing: boolean,
-  sent: boolean,
-): boolean {
-  return closing && !sent && elapsedMs >= durationMs - LEAD_MS;
+/** How close (px) the drawn grid must be to the 2D layout before the crossfade may start. */
+export const ALIGN_PX = 2;
+
+/** True when a closing flight's grid is within `ALIGN_PX` of the 2D layout and the lead-out has not been sent. */
+export function shouldLead(alignPx: number, closing: boolean, sent: boolean): boolean {
+  return closing && !sent && alignPx <= ALIGN_PX;
 }

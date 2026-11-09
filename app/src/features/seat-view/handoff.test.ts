@@ -5,7 +5,6 @@ import {
   handoffLook,
   handoffProgress,
   heldScale,
-  LEAD_MS,
   NOT_CLOSING,
 } from './handoff';
 
@@ -69,11 +68,8 @@ describe('handoffProgress and the crossfade window', () => {
     expect(handoffProgress(HANDOFF_FROM / 2, 1)).toBeCloseTo(0.5);
     expect(handoffProgress(0, 1)).toBe(1);
   });
-  it('starts the crossfade before landing and ends it after', () => {
+  it('crossfades over 450 ms', () => {
     expect(CROSSFADE_MS).toBe(450);
-    expect(LEAD_MS).toBeGreaterThan(0);
-    expect(LEAD_MS).toBeLessThan(CROSSFADE_MS);
-    expect(CROSSFADE_MS - LEAD_MS).toBeGreaterThanOrEqual(150);
   });
 });
 

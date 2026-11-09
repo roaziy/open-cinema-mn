@@ -2,10 +2,8 @@ import { smoothstep } from './camera-math';
 
 /** The 3D to 2D hand-off covers the last stretch of the close: from this dive progress down to 0. */
 export const HANDOFF_FROM = 0.3;
-/** The grid crossfade lasts this long... */
+/** The grid crossfade lasts this long; it starts once the drawn grid is aligned with the 2D map. */
 export const CROSSFADE_MS = 450;
-/** ...and starts this long before the camera lands, so it is over 200 ms after. */
-export const LEAD_MS = 250;
 
 /** 2D tile width over the 3D seat's width (0.55 m pitch * 0.86 over cushion + armrests 0.52 m). */
 export const TILE_WIDTH_RATIO = (0.55 * 0.86) / 0.52;

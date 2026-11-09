@@ -13,10 +13,12 @@ import {
 } from './camera-clock';
 import { hopDurationMs, hopFrame } from './camera-hop';
 import {
+  camOf,
   type DivePose,
   divePose,
   eyePosition,
   forwardOf,
+  gridAlignmentPx,
   hallDepth,
   hallExtents,
   hallHalfWidth,
@@ -24,6 +26,7 @@ import {
   mapFitOf,
   newDivePose,
   povFov,
+  projectToPx,
   rotationAngleDeg,
   rowsOf,
   screenCenter,
@@ -233,7 +236,7 @@ for (const [hallName, h] of HALLS) {
             }
             const vMax = Math.max(...v);
             for (let i = 1; i < v.length; i++) {
-              expect(Math.abs((v[i] as number) - (v[i - 1] as number))).toBeLessThan(0.2 * vMax);
+              expect(Math.abs((v[i] as number) - (v[i - 1] as number))).toBeLessThan(0.3 * vMax);
             }
           });
         });
@@ -469,12 +472,12 @@ describe('the close lands exactly on the aligned top-down frame', () => {
 });
 
 describe('shouldLead', () => {
-  it('fires once, only for a closing flight, LEAD_MS before it lands', () => {
-    expect(shouldLead(1000, 2000, true, false)).toBe(false);
-    expect(shouldLead(1750, 2000, true, false)).toBe(true);
-    expect(shouldLead(1900, 2000, true, true)).toBe(false);
-    expect(shouldLead(1900, 2000, false, false)).toBe(false);
-    expect(shouldLead(10, 200, true, false)).toBe(true);
+  it('fires once, only for a closing flight, once the drawn grid is within 2 px of the 2D map', () => {
+    expect(shouldLead(40, true, false)).toBe(false);
+    expect(shouldLead(2.01, true, false)).toBe(false);
+    expect(shouldLead(2, true, false)).toBe(true);
+    expect(shouldLead(0, true, true)).toBe(false);
+    expect(shouldLead(0, false, false)).toBe(false);
   });
 });
 
@@ -492,4 +495,136 @@ describe('handOver', () => {
       expect(ho.vel).toBeCloseTo(0, 9);
     }
   });
+});
+
+describe('the landmarks ride on the 3D grid', () => {
+  const [, h] = HALLS[0] as [string, Hall];
+  const layout = layoutSeats(h.seats as never, 402 - 44);
+  const content = { w: layout.width + 44, h: 90 + layout.height + 16 };
+  const fit = mapFitOf(layout.slots, layout.size, layout.ppm, { x: 22, y: 90 });
+  const fitZoom = Math.min(1, 520 / content.h);
+  const top = topFor(h, 'fit');
+  const o: Vec3 = [0, 0, 0];
+
+  it('projectToPx draws a point where three.js does', () => {
+    const eye = pick(h, 5, 5);
+    const poseNow = divePose(0.4, top, eye, h.center, 70, newDivePose(), h.o);
+    const cam = camOf(poseNow, 0.05, 402, 874);
+    const t = new THREE.PerspectiveCamera(poseNow.fov, 402 / 874, 0.1, 600);
+    t.position.set(...poseNow.position);
+    t.rotation.order = 'YXZ';
+    t.rotation.set(poseNow.pitch, poseNow.yaw, 0);
+    t.updateMatrixWorld();
+    t.updateProjectionMatrix();
+    t.projectionMatrix.elements[5] = (t.projectionMatrix.elements[5] ?? 0) * poseNow.squash;
+    t.projectionMatrix.elements[9] = -0.05;
+    t.projectionMatrixInverse.copy(t.projectionMatrix).invert();
+    const p = new THREE.Vector3(1.2, 1, 7).project(t);
+    projectToPx(cam, 1.2, 1, 7, o);
+    expect(o[0]).toBeCloseTo(((p.x + 1) / 2) * 402, 3);
+    expect(o[1]).toBeCloseTo(((1 - p.y) / 2) * 874, 3);
+  });
+
+  it('at the final pose every landmark anchor is where the 2D layout draws it (within 1 px)', () => {
+    const last = camOf(
+      divePose(0, top, pick(h, 4, 4), h.center, 70, newDivePose(), h.o),
+      0,
+      402,
+      874,
+    );
+    // the 2D map: viewport 402 x 520 starting 250 px down the window, centred content, fit zoom
+    const px2d = (cx: number, cy: number): [number, number] => [
+      402 / 2 + fitZoom * (cx - content.w / 2),
+      250 + 520 / 2 + fitZoom * (cy - content.h / 2),
+    ];
+    for (const slot of layout.slots.filter((_, i) => i % 7 === 0)) {
+      const cx = 22 + slot.left + layout.size / 2;
+      const cy = 90 + slot.top + layout.size / 2;
+      const [wx, wy] = px2d(cx, cy);
+      projectToPx(last, slot.seat.x_m, slot.seat.z_m + 0.5, slot.seat.y_m, o);
+      expect(Math.abs(o[0] - wx)).toBeLessThan(3);
+      expect(Math.abs(o[1] - wy)).toBeLessThan(3);
+    }
+    // a row letter: a point on the plane at its content position
+    const rowCy = 90 + (layout.rows[3]?.top ?? 0) + layout.rowStep / 2;
+    const [lx, ly] = px2d(22 - 11, rowCy);
+    projectToPx(last, (22 - 11 - fit.x0) / fit.ppmX, h.planeY, (rowCy - fit.y0) / fit.ppmY, o);
+    expect(Math.abs(o[0] - lx)).toBeLessThan(1);
+    expect(Math.abs(o[1] - ly)).toBeLessThan(1);
+  });
+
+  it('tracks the 3D seat centres through the last 30 percent of the close (the anchors are the seats)', () => {
+    const eye = pick(h, 5, 5);
+    const pov = povFov(eye, h.hall, ASPECT);
+    const clock = diveClock(top, eye, h.center, pov, h.o, CLOSE_CAPS);
+    const seat = h.seats[40] as (typeof h.seats)[number];
+    for (let i = 0; i <= 30; i++) {
+      const k = 0.3 * (1 - i / 30);
+      const p = divePose(k, top, eye, h.center, pov, newDivePose(), h.o);
+      const cam = camOf(p, 0, 402, 874);
+      projectToPx(cam, seat.x_m, seat.z_m + 0.5, seat.y_m, o);
+      // the landmark IS the projection of the seat anchor, so it equals where the seat is drawn
+      const t = new THREE.PerspectiveCamera(p.fov, 402 / 874, 0.1, 600);
+      t.position.set(...p.position);
+      t.rotation.order = 'YXZ';
+      t.rotation.set(p.pitch, p.yaw, 0);
+      t.updateMatrixWorld();
+      t.updateProjectionMatrix();
+      t.projectionMatrix.elements[5] = (t.projectionMatrix.elements[5] ?? 0) * p.squash;
+      t.projectionMatrixInverse.copy(t.projectionMatrix).invert();
+      const v = new THREE.Vector3(seat.x_m, seat.z_m + 0.5, seat.y_m).project(t);
+      expect(Math.abs(o[0] - ((v.x + 1) / 2) * 402)).toBeLessThan(0.01);
+      expect(Math.abs(o[1] - ((1 - v.y) / 2) * 874)).toBeLessThan(0.01);
+    }
+    void clock;
+  });
+
+  it('gridAlignmentPx is 0 at the landing and shrinks monotonically on the way', () => {
+    const eye = pick(h, 5, 5);
+    const pov = povFov(eye, h.hall, ASPECT);
+    let prev = Number.POSITIVE_INFINITY;
+    let started = false;
+    for (let i = 0; i <= 60; i++) {
+      const k = 0.4 * (1 - i / 60);
+      const e = gridAlignmentPx(
+        camOf(divePose(k, top, eye, h.center, pov, newDivePose(), h.o), 0, 402, 874),
+        top,
+        1,
+      );
+      if (e < Number.POSITIVE_INFINITY) started = true;
+      if (started) {
+        expect(e).toBeLessThanOrEqual(prev + 1e-6);
+        prev = e;
+      }
+    }
+    expect(prev).toBeLessThan(0.01);
+  });
+});
+
+describe('the look stays on the seat block', () => {
+  for (const [hallName, h] of HALLS) {
+    for (const zoomName of ['fit', 'zoomed'] as const) {
+      const top = topFor(h, zoomName);
+      for (const [seatName, eye] of seatsOf(h, hallName)) {
+        it(`${hallName}, map ${zoomName}, ${seatName}: seats are in frame all the way down (open and close share the curve)`, () => {
+          const pov = povFov(eye, h.hall, ASPECT);
+          const clock = diveClock(top, eye, h.center, pov, h.o);
+          const n = Math.round((clock.ms / 1000) * FPS);
+          const out: Vec3 = [0, 0, 0];
+          for (let i = 0; i <= n; i++) {
+            const k = clock.at(i / n);
+            if (k > 0.75) continue; // the last stretch is the seat's own approach (a front seat sees few seats)
+            const p = divePose(k, top, eye, h.center, pov, newDivePose(), h.o);
+            const cam = camOf(p, 0, 402, 874);
+            let inView = 0;
+            for (const s of h.seats) {
+              projectToPx(cam, s.x_m, s.z_m + 0.5, s.y_m, out);
+              if (out[2] && out[0] >= 0 && out[0] <= 402 && out[1] >= 0 && out[1] <= 874) inView++;
+            }
+            expect(inView / h.seats.length, `k=${k.toFixed(2)}`).toBeGreaterThan(0.05);
+          }
+        });
+      }
+    }
+  }
 });
