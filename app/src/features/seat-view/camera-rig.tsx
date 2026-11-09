@@ -21,7 +21,7 @@ import {
   type TopDownPose,
   type Vec3,
 } from './camera-math';
-import { type Look, lookPitch, lookWeight, lookYaw, subscribeLook } from './look-around';
+import { type Look, lookPitch, lookWeight, lookYaw, stepLook, subscribeLook } from './look-around';
 import { clearPosition, type Obstacles } from './room-layout';
 
 /** Dev only: how long the average frame time is sampled after a flight. */
@@ -55,6 +55,18 @@ function turnBy(p: DivePose, look: Look, w: number) {
   if (w <= 0) return;
   p.yaw += lookYaw(look) * w;
   p.pitch = Math.min(PITCH_LIMIT, Math.max(-PITCH_LIMIT, p.pitch + lookPitch(look) * w));
+}
+
+/** Copy a pose into another (no allocation). */
+function copyPose(from: DivePose, to: DivePose): DivePose {
+  to.position[0] = from.position[0];
+  to.position[1] = from.position[1];
+  to.position[2] = from.position[2];
+  to.yaw = from.yaw;
+  to.pitch = from.pitch;
+  to.fov = from.fov;
+  to.squash = from.squash;
+  return to;
 }
 
 /** Position and heading/elevation (no roll: the right vector stays horizontal). */
@@ -153,6 +165,8 @@ export function CameraRig({
   const setFrameloop = useThree((s) => s.setFrameloop);
   const invalidate = useThree((s) => s.invalidate);
   const placed = useRef(false);
+  /** The look-around turn is moving: keep drawing every frame. */
+  const looking = useRef(false);
   const settled = useRef<string | null>(null);
   const reported = useRef(false);
   const failed = useRef(false);
@@ -160,6 +174,8 @@ export function CameraRig({
   const at = useRef(0);
   const lens = useRef({ fov: topPose.fov, squash: topPose.squash, shift: 0 });
   const pose = useRef<DivePose>(newDivePose());
+  /** The camera's pose before the look-around turn (at rest the turn is re-applied on it). */
+  const base = useRef<DivePose>(newDivePose());
   const flight = useRef<Flight>({
     active: false,
     kind: 'dive',
@@ -236,6 +252,7 @@ export function CameraRig({
     p.position[0] = scratch[0];
     p.position[1] = scratch[1];
     p.position[2] = scratch[2];
+    copyPose(p, base.current);
     turnBy(p, latest.current.look, lookWeight(tau));
     applyPose(camera, p);
     lens.current = { fov: p.fov, squash: p.squash, shift: 0 };
@@ -319,16 +336,15 @@ export function CameraRig({
     invalidate();
   }, [size.width, size.height, get, invalidate]);
 
-  // A drag or the phone turned the view: at rest, draw the new view now (in flight the frame
-  // loop picks it up).
+  // A drag, a fling or the phone moves the view: draw every frame until it settles (the turn
+  // is stepped in the frame loop, so uneven touch and sensor events never show as jerks).
   useEffect(
     () =>
       subscribeLook(look, () => {
-        if (!placed.current || flight.current.active) return;
-        placeAt(at.current, eyeOf());
-        invalidate();
+        if (!placed.current) return;
+        setFrameloop('always');
       }),
-    [look, invalidate],
+    [look, setFrameloop],
   );
 
   const seatId = eyeSeat?.id;
@@ -352,6 +368,8 @@ export function CameraRig({
     if (failed.current) return;
     const f = flight.current;
     const now = performance.now();
+    const wasLooking = looking.current;
+    looking.current = stepLook(latest.current.look, delta * 1000);
     if (f.active) {
       const camera = state.camera as THREE.PerspectiveCamera;
       const t = Math.min(1, (now - f.startedAt) / f.durationMs);
@@ -369,6 +387,7 @@ export function CameraRig({
         p.position[1] = scratch[1];
         p.position[2] = scratch[2];
         // the look-around turn fades out early in a close: the way back is exactly the dive's
+        copyPose(p, base.current);
         turnBy(p, latest.current.look, lookWeight(k));
         applyPose(camera, p);
         lens.current = { fov: p.fov, squash: p.squash, shift: 0 };
@@ -381,6 +400,7 @@ export function CameraRig({
       } else {
         // Seat to seat: one curve that rises over the seat backs between the two.
         const p = hopFrame(linear, f.from, f.to, f.center, f.povA, f.povB, ob, pose.current);
+        copyPose(p, base.current);
         turnBy(p, latest.current.look, 1);
         applyPose(camera, p);
         lens.current = { fov: p.fov, squash: 1, shift: 0 };
@@ -405,14 +425,23 @@ export function CameraRig({
           f.measureUntil = now + MEASURE_MS;
           f.frames = 0;
           f.sumDelta = 0;
-        } else {
+        } else if (!looking.current) {
           // Nothing moves any more: draw only when something changes.
           setFrameloop('demand');
           invalidate();
         }
         latest.current.onArrive(f.kind === 'dive' && f.s1 === 0 ? 'top' : 'pov');
       }
-    } else if (__DEV__ && f.measureUntil > 0) {
+      return;
+    }
+    // At rest: the view turns in place while the look moves (and once more as it settles).
+    if (looking.current || wasLooking) {
+      const p = copyPose(base.current, pose.current);
+      turnBy(p, latest.current.look, lookWeight(at.current));
+      applyPose(state.camera as THREE.PerspectiveCamera, p);
+      publishCam(state.size.width, state.size.height);
+    }
+    if (__DEV__ && f.measureUntil > 0) {
       f.frames++;
       f.sumDelta += delta;
       if (now >= f.measureUntil) {
@@ -424,9 +453,11 @@ export function CameraRig({
             `[seat-view] avg frame ${avg.toFixed(1)} ms (${(1000 / avg).toFixed(0)} fps) over ${f.frames} frames, 3 s after flight, gl samples ${String(ctx.getParameter(ctx.SAMPLES))}`,
           );
         }
-        setFrameloop('demand');
+        if (!looking.current) setFrameloop('demand');
         invalidate();
       }
+    } else if (!looking.current) {
+      setFrameloop('demand');
     }
   });
 
@@ -465,7 +496,8 @@ export function CameraRig({
         }
         latest.current.onDrew();
         // Nothing moves until the dive starts: draw only when something changes.
-        if (!flight.current.active && flight.current.measureUntil === 0) setFrameloop('demand');
+        if (!flight.current.active && flight.current.measureUntil === 0 && !looking.current)
+          setFrameloop('demand');
       }
     } catch (e) {
       failed.current = true;

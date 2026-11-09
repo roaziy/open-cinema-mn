@@ -59,9 +59,12 @@ import {
   angleDiff,
   dragLook,
   foldGyroLook,
+  grabLook,
   type Look,
+  letGoLook,
   newLook,
   phoneAim,
+  releaseLook,
   setGyroLook,
 } from './look-around';
 import { StatsCard } from './StatsCard';
@@ -332,13 +335,17 @@ export function SeatViewOverlay({
     return { transform: [{ translateY: (1 - p) * (panelH + 4) }] };
   });
 
-  // At the seat, a drag on the picture looks around (the scene follows the finger).
+  // At the seat, a drag on the picture looks around in place (the scene follows the finger, a
+  // fling glides on, a finger down catches it).
   const lookable = panelLive(tr) && !hopping && !fallback;
   const lookPan = usePanGesture({
     runOnJS: true,
     enabled: lookable,
-    minDistance: 4,
+    minDistance: 2,
+    onBegin: () => grabLook(look),
     onUpdate: (e) => dragLook(look, e.changeX, e.changeY, rect.w),
+    onDeactivate: (e) => releaseLook(look, e.velocityX, e.velocityY, rect.w),
+    onFinalize: () => letGoLook(look),
   });
   const phoneOn = phoneLook && lookable;
 
