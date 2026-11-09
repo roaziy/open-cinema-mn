@@ -6,17 +6,18 @@ import type { SharedValue } from 'react-native-reanimated';
 import type * as THREE from 'three';
 import {
   type DivePose,
+  diveClock,
   divePose,
-  diveTurnDeg,
-  easeFlight,
   eyePosition,
-  flightMs,
+  hopClock,
   hopPose,
   lensRange,
+  type MoveClock,
   newDivePose,
   povFov,
   screenCenter,
   type TopDownPose,
+  tauHermite,
   type Vec3,
 } from './camera-math';
 import { clearPosition, type Obstacles, seatEnvelope } from './room-layout';
@@ -56,6 +57,14 @@ type Flight = {
   durationMs: number;
   s0: number;
   s1: number;
+  /** The move's clock: linear time fraction to progress along the curve. */
+  clock: MoveClock | null;
+  /** Velocity at the start, per unit of the move's time (non-zero when it turns another move round). */
+  v0: number;
+  /** Latest measured velocity of the time fraction, per ms (for turning a move round smoothly). */
+  vel: number;
+  lastTau: number;
+  lastAt: number;
   eye: Vec3;
   /** Per flight, not per frame: the screen's centre, the seat lenses and the height that clears the seat backs. */
   center: Vec3;
@@ -134,6 +143,11 @@ export function CameraRig({
     durationMs: 1600,
     s0: 0,
     s1: 1,
+    clock: null,
+    v0: 0,
+    vel: 0,
+    lastTau: 0,
+    lastAt: 0,
     eye: [0, 0, 0],
     center: [0, 0, 0],
     povA: 50,
@@ -183,7 +197,7 @@ export function CameraRig({
   const placeAt = useEffectEvent((tau: number, eye: Vec3) => {
     const camera = get().camera as THREE.PerspectiveCamera;
     const { topPose: top, hall: h, cover: c, obstacles: ob } = latest.current;
-    const k = easeFlight(tau);
+    const k = tau;
     const p = divePose(
       k,
       top,
@@ -228,7 +242,9 @@ export function CameraRig({
       f.povB = povFov(eye, h, camera.aspect);
       f.s0 = 0;
       f.s1 = 1;
-      f.durationMs = flightMs(diveTurnDeg(eye, c) / 4, 1400);
+      f.clock = hopClock(f.from, f.to, c, f.povA, f.povB, f.envelope, ob);
+      f.durationMs = f.clock.ms;
+      f.v0 = 0;
     } else {
       f.kind = 'dive';
       f.eye[0] = eye[0];
@@ -237,7 +253,11 @@ export function CameraRig({
       f.povB = povFov(eye, h, camera.aspect);
       f.s0 = at.current;
       f.s1 = want === 'pov' ? 1 : 0;
-      f.durationMs = flightMs(diveTurnDeg(eye, c)) * Math.max(0.4, Math.abs(f.s1 - f.s0));
+      f.clock = diveClock(latest.current.topPose, eye, c, f.povB, ob);
+      const turnedRound = f.active;
+      f.durationMs = f.clock.ms * Math.max(0.4, Math.abs(f.s1 - f.s0));
+      // Turned round in flight: carry on at the speed the camera has, then change direction.
+      f.v0 = turnedRound ? f.vel * f.durationMs : 0;
     }
     f.active = true;
     setFrameloop('always');
@@ -294,9 +314,13 @@ export function CameraRig({
       const linear = latest.current.reduceMotion ? 1 : t;
       const { topPose: top, cover: c, obstacles: ob } = latest.current;
       const height = Math.max(1, state.size.height);
+      const clock = f.clock as MoveClock;
       if (f.kind === 'dive') {
-        const tau = f.s0 + (f.s1 - f.s0) * linear;
-        const k = easeFlight(tau);
+        const tau =
+          f.v0 !== 0 && !latest.current.reduceMotion
+            ? tauHermite(linear, f.s0, f.s1, f.v0, 0)
+            : f.s0 + (f.s1 - f.s0) * linear;
+        const k = clock.at(tau);
         const p = divePose(k, top, f.eye, f.center, f.povB, pose.current, ob);
         clearPosition(p.position, f.eye, null, ob, scratch);
         p.position[0] = scratch[0];
@@ -304,11 +328,15 @@ export function CameraRig({
         p.position[2] = scratch[2];
         applyPose(camera, p);
         lens.current = { fov: p.fov, squash: p.squash, shift: (c / height) * k };
+        const dtMs = now - f.lastAt;
+        if (f.lastAt > 0 && dtMs > 0) f.vel = (tau - f.lastTau) / dtMs;
+        f.lastTau = tau;
+        f.lastAt = now;
         at.current = tau;
         dive.set(k);
       } else {
         // Seat to seat: one curve that rises over the seat backs between the two.
-        const k = easeFlight(linear);
+        const k = clock.at(linear);
         const p = hopPose(k, f.from, f.to, f.center, f.povA, f.povB, f.envelope, ob, pose.current);
         applyPose(camera, p);
         lens.current = { fov: p.fov, squash: 1, shift: c / height };
@@ -316,7 +344,9 @@ export function CameraRig({
       applyLens(camera, lens.current.fov, lens.current.squash, lens.current.shift);
       if (t >= 1) {
         f.active = false;
-        if (f.kind === 'dive') dive.set(easeFlight(f.s1));
+        f.vel = 0;
+        f.lastAt = 0;
+        if (f.kind === 'dive') dive.set(f.s1);
         if (__DEV__) {
           f.measureUntil = now + MEASURE_MS;
           f.frames = 0;

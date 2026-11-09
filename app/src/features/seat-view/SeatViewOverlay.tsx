@@ -119,6 +119,8 @@ export function SeatViewOverlay({
   const reduceMotion = useReducedMotion();
   const [picked, setPicked] = useState<string | null>(null);
   const [panelH, setPanelH] = useState(0);
+  // A seat switch is flying: further taps and back wait for it to land.
+  const [hopping, setHopping] = useState(false);
   const fallbackFade = useSharedValue(0);
   const [tr, send] = useReducer(
     transitionReducer,
@@ -178,8 +180,8 @@ export function SeatViewOverlay({
     if (!found) onRequestClose();
   }, [found, onRequestClose]);
   useEffect(() => {
-    if (closing) send({ type: 'close' });
-  }, [closing]);
+    if (closing && !hopping) send({ type: 'close' });
+  }, [closing, hopping]);
 
   // Phase -> animation.
   const still = tr.still;
@@ -229,6 +231,7 @@ export function SeatViewOverlay({
 
   const onArrive = useCallback((arrived: RigGoal) => {
     if (arrived === 'pov') {
+      setHopping(false);
       haptic.tap();
       send({ type: 'landed' });
     } else send({ type: 'landed-top' });
@@ -282,8 +285,9 @@ export function SeatViewOverlay({
               key={s.id}
               style={[styles.chip, on && styles.chipOn]}
               onPress={() => {
-                if (on) return;
+                if (on || hopping || !live) return;
                 haptic.select();
+                if (!tr.fallback) setHopping(true);
                 setPicked(s.id);
               }}
               accessibilityRole="button"
