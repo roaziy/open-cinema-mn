@@ -314,7 +314,7 @@ export function SeatLandmarks({
           );
         }),
       )}
-      {layout.slots.map(({ seat, left, top }) => {
+      {layout.slots.map(({ seat }) => {
         if (seat.kind === 'blocked') return null;
         const status = statusOf(seat.id);
         if (status === 'free' && seat.kind !== 'wheelchair' && seat.kind !== 'premium') return null;
