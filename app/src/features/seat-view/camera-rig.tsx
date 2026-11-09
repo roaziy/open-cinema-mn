@@ -1,6 +1,7 @@
 import type { SeatMap, SeatState } from '@open-cinema/shared';
 import { useFrame, useThree } from '@react-three/fiber/native';
 import { useEffect, useEffectEvent, useLayoutEffect, useRef } from 'react';
+import { AppState } from 'react-native';
 import * as THREE from 'three';
 import {
   eyePosition,
@@ -183,11 +184,27 @@ export function CameraRig({ ext, hall, eyeSeat, reduceMotion, hold, onDrew, onFa
     }
   });
 
+  // Frames are skipped while the app is not active (below); draw the current pose on return.
+  useEffect(() => {
+    const sub = AppState.addEventListener('change', (next) => {
+      if (next === 'active') invalidate();
+    });
+    return () => sub.remove();
+  }, [invalidate]);
+
   // Priority 1 takes over rendering from r3f; a throw (an expo-gl call that is not
   // implemented, a bad shader) must reach the 2D fallback instead of escaping the loop.
   useFrame(({ gl, scene, camera }) => {
     if (failed.current) return;
+    // expo-gl stops running its queue once the app resigns active: a frame would only pile up,
+    // and the wait below would block the JS thread until the app is active again.
+    if (AppState.currentState === 'inactive' || AppState.currentState === 'background') return;
     try {
+      // expo-gl runs GL calls on its own thread from an unbounded queue and presents only after
+      // a drain. If a frame costs more than the frame budget (the simulator's software GL, a busy
+      // GPU), queuing one every vsync piles up seconds of frames and the picture stops changing.
+      // Wait for the previous frame first: at most one frame in flight, so frames keep presenting.
+      (gl.getContext() as { flushEXP?: () => void }).flushEXP?.();
       gl.render(scene, camera);
       if (!reported.current && gl.info.render.calls > 0) {
         reported.current = true;
