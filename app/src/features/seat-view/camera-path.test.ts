@@ -16,6 +16,7 @@ import {
   camOf,
   type DivePose,
   divePose,
+  easedAim,
   eyePosition,
   forwardOf,
   gridAlignmentPx,
@@ -300,6 +301,60 @@ describe('turning a dive round', () => {
         for (let i = 1; i < w.length; i++) {
           expect(Math.abs((w[i] as number) - (w[i - 1] as number))).toBeLessThan(0.2 * peak + 3);
         }
+      });
+    }
+  }
+});
+
+describe('turning a dive round eases the aim sideways too', () => {
+  const [, h10] = HALLS[0] as [string, Hall];
+  const [, imax] = HALLS[1] as [string, Hall];
+  const cases: [string, Hall, Vec3][] = [
+    ['A1', h10, pick(h10, 0, 1)],
+    ['A7', h10, pick(h10, 0, 7)],
+    ['E4', h10, pick(h10, 4, 4)],
+    ['IMAX A1', imax, pick(imax, 0, 1)],
+    ['IMAX A18', imax, pick(imax, 0, 18)],
+  ];
+  for (const [name, h, eye] of cases) {
+    const top = topFor(h, 'fit');
+    const pov = povFov(eye, h.hall, ASPECT);
+    const front = frontOf(h);
+    const open = diveClock(top, eye, h.center, pov, h.o, OPEN_CAPS);
+    const close = diveClock(top, eye, h.center, pov, h.o, CLOSE_CAPS, front);
+    for (const turnAt of [0.3, 0.5, 0.7]) {
+      it(`${name}: close at ${turnAt} turns smoothly (the rig's composition)`, () => {
+        const dtMs = 1000 / FPS;
+        const frames = Math.round((turnAt * open.ms) / dtMs);
+        const out: DivePose[] = [];
+        for (let i = 0; i <= frames; i++) {
+          out.push(
+            copy(
+              divePose(open.at((i * dtMs) / open.ms), top, eye, h.center, pov, newDivePose(), h.o),
+            ),
+          );
+        }
+        const ho = handOver(open, close, (frames * dtMs) / open.ms, 1 / open.ms);
+        const base = close.ms * Math.max(0.4, ho.s0);
+        const timing = (k: number, o: DivePose) =>
+          divePose(k, top, eye, h.center, pov, o, h.o, front);
+        const Dr = reversalMs(timing, close, ho.s0, 0, ho.vel, base, CLOSE_CAPS.turnDegPerS);
+        const n = Math.round(Dr / dtMs);
+        const way = { x: 0, z: 0 };
+        for (let i = 1; i <= n; i++) {
+          const aim = easedAim(h.center, eye, front, i * dtMs, way);
+          const k = close.at(tauHermite(i / n, ho.s0, 0, ho.vel * Dr, 0));
+          out.push(copy(divePose(k, top, eye, h.center, pov, newDivePose(), h.o, aim)));
+        }
+        const w: number[] = [];
+        for (let i = 1; i < out.length; i++)
+          w.push(angle(out[i - 1] as DivePose, out[i] as DivePose) * FPS);
+        let worst = 0;
+        for (let i = frames; i < w.length; i++) {
+          worst = Math.max(worst, Math.abs((w[i] as number) - (w[i - 1] as number)));
+          expect(w[i]).toBeLessThanOrEqual(125);
+        }
+        expect(worst).toBeLessThanOrEqual(30);
       });
     }
   }

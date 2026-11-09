@@ -341,6 +341,27 @@ export const B_FROM = 0.55;
 /** The foot of the screen, where the opening look target passes on its way up. */
 const SCREEN_FOOT_Z_M = 1;
 
+/** The closing aim's floor waypoint: a bare z means "over the held seat" (x = the seat's x). */
+export type AimWaypoint = { x: number; z: number };
+
+/** Time the closing aim takes to ease in from the opening aim after an open was turned round. */
+export const AIM_EASE_MS = 400;
+
+/** The closing aim waypoint `ms` after a turn-round: x and z move together from the opening aim. */
+export function easedAim(
+  center: Vec3,
+  eye: Vec3,
+  front: number,
+  ms: number,
+  out: AimWaypoint,
+): AimWaypoint {
+  const t = Math.min(1, Math.max(0, ms / AIM_EASE_MS));
+  const w = t * t * (3 - 2 * t);
+  out.x = center[0] + (eye[0] - center[0]) * w;
+  out.z = SCREEN_FOOT_Z_M + (front - SCREEN_FOOT_Z_M) * w;
+  return out;
+}
+
 /**
  * Orientation from where the camera is looking: the look target starts where the top-down
  * camera looks (on the floor), slides across the floor to the foot of the screen, and climbs to
@@ -354,7 +375,7 @@ function aimAt(
   center: Vec3,
   end: number,
   eye: Vec3,
-  front: number | null,
+  front: number | AimWaypoint | null,
 ) {
   const a = smooth(0, 0.75, k);
   const b = smooth(B_FROM, 1, k);
@@ -362,8 +383,8 @@ function aimAt(
   // looks at the empty floor between the screen and the first row.
   // The look target's floor waypoint: the foot of the screen when opening (the approved aim); when
   // leaving, the front edge of the seat block over the held seat, so no frame is empty floor.
-  const gx = front === null ? center[0] : eye[0];
-  const gz = front === null ? SCREEN_FOOT_Z_M : front;
+  const gx = front === null ? center[0] : typeof front === 'number' ? eye[0] : front.x;
+  const gz = front === null ? SCREEN_FOOT_Z_M : typeof front === 'number' ? front : front.z;
   const x0 = top.target[0] + (gx - top.target[0]) * a;
   const z0 = top.target[2] + (gz - top.target[2]) * a;
   const tx = x0 + (center[0] - x0) * b;
@@ -437,8 +458,11 @@ export function divePose(
   povFovDeg: number,
   out: DivePose,
   bounds: Bounds,
-  /** null when opening; when leaving, z of the waypoint at the front edge of the seat block. */
-  front: number | null = null,
+  /**
+   * null when opening; when leaving, z of the waypoint at the front edge of the seat block (over
+   * the held seat), or the waypoint {x, z} itself while it eases in from the opening aim.
+   */
+  front: number | AimWaypoint | null = null,
 ): DivePose {
   const k = Math.min(1, Math.max(0, p));
   const end = viewAngles(eye, center);
