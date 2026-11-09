@@ -32,6 +32,7 @@ import { scheduleOnRN } from 'react-native-worklets';
 import { Pressable } from '@/components/pressable';
 import { useI18n } from '@/i18n';
 import { haptic } from '@/lib/haptics';
+import { mediaUrl } from '@/lib/http';
 import { seatLabel } from '@/lib/seats';
 import { colors, radius, space } from '@/theme/tokens';
 import { type } from '@/theme/type';
@@ -166,7 +167,10 @@ export function SeatViewOverlay({
   );
   const selectedIds = useMemo(() => seats.map((s) => s.id), [seats]);
   const tone = safeTone(map.showtime.movie.tone);
-  const screen = useMemo(() => pickScreenSource(map.showtime.movie), [map.showtime.movie]);
+  const screen = useMemo(() => {
+    const src = pickScreenSource(map.showtime.movie);
+    return src.kind === 'remote' ? { ...src, url: mediaUrl(src.url) } : src;
+  }, [map.showtime.movie]);
 
   // Holds all expired while looking: nothing left to look from, so leave.
   useEffect(() => {

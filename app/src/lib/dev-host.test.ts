@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { hostFromHostUri, resolveApiOrigin } from './dev-host';
+import { devMediaUrl, hostFromHostUri, resolveApiOrigin } from './dev-host';
 
 const dev = { dev: true, hostUri: '192.168.1.197:8081' };
 
@@ -41,5 +41,26 @@ describe('resolveApiOrigin', () => {
       resolveApiOrigin('http://localhost:4000', { dev: true, hostUri: 'localhost:8081' }),
     ).toBe('http://localhost:4000');
     expect(resolveApiOrigin('http://localhost:4000', { dev: true })).toBe('http://localhost:4000');
+  });
+});
+
+describe('devMediaUrl', () => {
+  it('points loopback media at the LAN host, keeping port, path and query', () => {
+    expect(devMediaUrl('http://localhost:4000/media/p.jpg?v=2', dev)).toBe(
+      'http://192.168.1.197:4000/media/p.jpg?v=2',
+    );
+    expect(devMediaUrl('http://127.0.0.1:4000/media/p.jpg', dev)).toBe(
+      'http://192.168.1.197:4000/media/p.jpg',
+    );
+  });
+  it('leaves real hosts, production, bad input and a missing host alone', () => {
+    expect(devMediaUrl('https://cdn.example.com/p.jpg', dev)).toBe('https://cdn.example.com/p.jpg');
+    expect(
+      devMediaUrl('http://localhost:4000/p.jpg', { dev: false, hostUri: '10.0.0.2:8081' }),
+    ).toBe('http://localhost:4000/p.jpg');
+    expect(devMediaUrl('not a url', dev)).toBe('not a url');
+    expect(devMediaUrl('http://localhost:4000/p.jpg', { dev: true, hostUri: undefined })).toBe(
+      'http://localhost:4000/p.jpg',
+    );
   });
 });

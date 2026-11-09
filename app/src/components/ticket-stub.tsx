@@ -4,6 +4,7 @@ import { StyleSheet, Text, View } from 'react-native';
 import QRCode from 'react-native-qrcode-svg';
 import { type Locale, useI18n } from '@/i18n';
 import { formatMonthDay } from '@/lib/format';
+import { mediaUrl } from '@/lib/http';
 import { colors, radius, space } from '@/theme/tokens';
 import { fonts, type } from '@/theme/type';
 
@@ -43,7 +44,7 @@ export function TicketStub({ ticket }: { ticket: TicketView }) {
     <View style={styles.wrap} accessible accessibilityLabel={ticketSummary(ticket, t, locale)}>
       <View style={styles.band}>
         <Image
-          source={ticket.movie.backdropUrl ?? ticket.movie.posterUrl}
+          source={mediaUrl(ticket.movie.backdropUrl ?? ticket.movie.posterUrl)}
           style={StyleSheet.absoluteFill}
           contentFit="cover"
           blurRadius={process.env.EXPO_OS === 'ios' ? 40 : 20}
