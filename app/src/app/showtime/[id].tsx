@@ -228,6 +228,9 @@ export default function SeatMapScreen() {
           headerTransparent: true,
           headerBackButtonDisplayMode: 'minimal',
           headerTintColor: colors.ink,
+          // No slide closes the 3D view: the iOS edge swipe cannot even start while it is open.
+          gestureEnabled: !isViewing,
+          fullScreenGestureEnabled: false,
         }}
       />
       <Animated.View
