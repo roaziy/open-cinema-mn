@@ -28,11 +28,11 @@ export const LOOK_UP_MAX = 40 * RAD;
 /** ...and down. (Turning round is free, all the way.) */
 export const LOOK_DOWN_MAX = 55 * RAD;
 /** The picture catches up with the targets with this time constant. */
-export const LOOK_EASE_MS = 45;
+export const LOOK_EASE_MS = 12;
 /** A fling slows with this time constant... */
-export const FLING_TAU_MS = 325;
+export const FLING_TAU_MS = 550;
 /** ...is never faster than this (radians per second)... */
-export const FLING_MAX = 4;
+export const FLING_MAX = 6;
 /** ...and stops below this. */
 const FLING_STOP = 0.02;
 /** Longest frame step taken (a frame after a long idle must not jump). */
