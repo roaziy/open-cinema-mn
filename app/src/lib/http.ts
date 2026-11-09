@@ -1,4 +1,17 @@
-const API_ORIGIN = (process.env.EXPO_PUBLIC_API_URL ?? 'http://localhost:4000').replace(/\/+$/, '');
+import Constants from 'expo-constants';
+import { resolveApiOrigin } from './dev-host';
+
+/** Where Metro is served from: `expoConfig.hostUri` in dev builds, `debuggerHost` in Expo Go. */
+function devServerHostUri(): string | undefined {
+  const go = Constants.expoGoConfig as { debuggerHost?: string } | null;
+  const m2 = Constants.manifest2 as { extra?: { expoGo?: { debuggerHost?: string } } } | null;
+  return Constants.expoConfig?.hostUri ?? go?.debuggerHost ?? m2?.extra?.expoGo?.debuggerHost;
+}
+
+const API_ORIGIN = resolveApiOrigin(
+  (process.env.EXPO_PUBLIC_API_URL ?? 'http://localhost:4000').replace(/\/+$/, ''),
+  { dev: __DEV__, hostUri: devServerHostUri() },
+);
 
 export const API_BASE = `${API_ORIGIN}/v1`;
 

@@ -104,6 +104,8 @@ cd app
 npx expo run:ios
 ```
 
+A physical phone on the same Wi-Fi works without editing `app/.env`: in development the app replaces `localhost` in `EXPO_PUBLIC_API_URL` with the Metro host's LAN address (the API listens on all interfaces). On iOS, allow "Local Network" access when prompted. Fonts are also loaded at runtime, so Expo Go shows the brand font too.
+
 **Admin web:**
 
 ```bash

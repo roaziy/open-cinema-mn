@@ -10,7 +10,8 @@ dist/
 ios/
 android/
 backend/uploads/
-**/fonts/private/
+**/fonts/private/*
+!**/fonts/private/.gitkeep
 *.p12
 *.pem
 *.tsbuildinfo
