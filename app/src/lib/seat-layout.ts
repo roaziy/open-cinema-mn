@@ -4,6 +4,8 @@ export type SeatSlot = { seat: SeatState; left: number; top: number };
 export type RowSlot = { label: string; top: number };
 
 export type SeatLayout = {
+  /** Pixels per metre along x. */
+  ppm: number;
   /** Pixel pitch between neighbouring seats. */
   cell: number;
   /** Side length of a drawn seat. */
@@ -38,7 +40,16 @@ function pitch(values: number[]): number {
  */
 export function layoutSeats(seats: SeatState[], availableWidth: number): SeatLayout {
   if (seats.length === 0) {
-    return { cell: 0, size: 0, rowStep: 0, width: availableWidth, height: 0, slots: [], rows: [] };
+    return {
+      ppm: 0,
+      cell: 0,
+      size: 0,
+      rowStep: 0,
+      width: availableWidth,
+      height: 0,
+      slots: [],
+      rows: [],
+    };
   }
   const minX = Math.min(...seats.map((s) => s.x_m));
   const maxX = Math.max(...seats.map((s) => s.x_m));
@@ -67,6 +78,7 @@ export function layoutSeats(seats: SeatState[], availableWidth: number): SeatLay
   }));
   const rows = order.map((r, i) => ({ label: r.label, top: i * rowStep }));
   return {
+    ppm,
     cell,
     size,
     rowStep,

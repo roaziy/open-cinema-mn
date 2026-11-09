@@ -59,30 +59,106 @@ export function hallHalfWidth(ext: Extents, hall: HallDims): number {
   return Math.max(seats + 1.2, hall.screen_width_m / 2 + 0.6);
 }
 
-/** Height from which the whole hall (screen wall to back wall) fits the view, looking straight down. */
-export function topDownHeight(
-  halfWidthM: number,
-  depthM: number,
-  fovDeg: number,
-  aspect: number,
-): number {
-  const tan = Math.tan((fovDeg * Math.PI) / 360);
-  const forDepth = depthM / 2 / tan;
-  const forWidth = halfWidthM / (tan * Math.max(aspect, 0.1));
-  return Math.max(forDepth, forWidth) * 1.08;
+/** Near/far for a camera at this altitude: far-away views get a far near plane (depth precision). */
+export const POV_NEAR_M = 0.1;
+export function lensRange(altitudeM: number): { near: number; far: number } {
+  return { near: Math.max(POV_NEAR_M, (altitudeM - 8) * 0.35), far: altitudeM + 150 };
 }
 
-/** Straight-down camera over the middle of the hall (depth = screen wall to back wall). */
-export function topDownPosition(
-  ext: Extents,
-  hall: HallDims,
-  fovDeg: number,
-  aspect: number,
-): { position: Vec3; target: Vec3 } {
-  const depth = hallDepth(ext);
-  const half = hallHalfWidth(ext, hall);
-  const h = topDownHeight(half, depth, fovDeg, aspect);
-  return { position: [0, h, depth / 2], target: [0, 0, depth / 2] };
+/** The 2D map's content pixels as a linear function of hall metres: px = x0 + ppmX * x_m, py = y0 + ppmY * y_m. */
+export type MapFit = { x0: number; ppmX: number; y0: number; ppmY: number };
+
+type FitSlot = { seat: { x_m: number; y_m: number }; left: number; top: number };
+
+/**
+ * How the seat grid sits in the 2D map's content box. Columns follow x_m exactly (ppm is the
+ * layout's pixels per metre); rows are evenly stacked on the phone, so the vertical scale is
+ * the least-squares fit of the seats' row centres against y_m.
+ */
+export function mapFitOf(
+  slots: readonly FitSlot[],
+  size: number,
+  ppm: number,
+  origin: { x: number; y: number },
+): MapFit {
+  const first = slots[0];
+  if (!first) return { x0: 0, ppmX: ppm || 1, y0: 0, ppmY: ppm || 1 };
+  const cx = (s: FitSlot) => origin.x + s.left + size / 2;
+  const cy = (s: FitSlot) => origin.y + s.top + size / 2;
+  const x0 = cx(first) - ppm * first.seat.x_m;
+  const n = slots.length;
+  let sy = 0;
+  let sp = 0;
+  for (const s of slots) {
+    sy += s.seat.y_m;
+    sp += cy(s);
+  }
+  const my = sy / n;
+  const mp = sp / n;
+  let num = 0;
+  let den = 0;
+  for (const s of slots) {
+    num += (s.seat.y_m - my) * (cy(s) - mp);
+    den += (s.seat.y_m - my) ** 2;
+  }
+  const ppmY = den > 1e-9 && num > 0 ? num / den : ppm;
+  return { x0, ppmX: ppm, y0: mp - ppmY * my, ppmY };
+}
+
+/** The 2D map's pan/zoom at this moment (viewport px; the content box is centred in the viewport). */
+export type MapView = {
+  scale: number;
+  tx: number;
+  ty: number;
+  viewW: number;
+  viewH: number;
+  contentW: number;
+  contentH: number;
+};
+
+export type TopDownPose = {
+  position: Vec3;
+  target: Vec3;
+  /** Vertical field of view in degrees. */
+  fov: number;
+  /** Multiplies the projection's vertical scale so the hall's rows fall on the 2D map's row pitch. */
+  squash: number;
+};
+
+/** Field of view of the near-orthographic start view. */
+export const TOP_FOV_DEG = 14;
+/** Height of the plane the seats sit on for alignment (cushion level). */
+const SEAT_PLANE_M = 0.4;
+
+/**
+ * Straight-down camera whose picture lines up with the 2D seat map: same px per metre, same
+ * position, screen at the top. `canvas` is the 3D canvas in px; `offset` is where the 2D
+ * viewport's top-left corner sits inside it.
+ */
+export function topDownFromMap(args: {
+  fit: MapFit;
+  view: MapView;
+  canvasW: number;
+  canvasH: number;
+  offsetX: number;
+  offsetY: number;
+  fovDeg?: number;
+}): TopDownPose {
+  const { fit, view: v, canvasW, canvasH, offsetX, offsetY } = args;
+  const fov = args.fovDeg ?? TOP_FOV_DEG;
+  const f = v.scale * fit.ppmX;
+  const fy = canvasH / 2 / Math.tan((fov * Math.PI) / 360);
+  const px0 = offsetX + v.viewW / 2 + v.tx + v.scale * (fit.x0 - v.contentW / 2);
+  const py0 = offsetY + v.viewH / 2 + v.ty + v.scale * (fit.y0 - v.contentH / 2);
+  const x = (canvasW / 2 - px0) / f;
+  const z = (canvasH / 2 - py0) / (v.scale * fit.ppmY);
+  const height = SEAT_PLANE_M + fy / f;
+  return {
+    position: [x, height, z],
+    target: [x, 0, z],
+    fov,
+    squash: fit.ppmY / fit.ppmX,
+  };
 }
 
 /** Write a -> b at progress t into `out` (no allocation). */

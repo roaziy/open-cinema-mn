@@ -221,11 +221,9 @@ export const mn = {
   'view.hint.immersive': 'Дэлгэц харааны талбарыг дүүргэнэ',
   'view.hint.balanced': 'Дэлгэцийг бүхэлд нь тайван харна',
   'view.a11y': 'Эгнээ {row}, дэлгэцээс {distance} м, төвөөс {off}° хазайлттай',
-  'view.loading': 'Танхимыг бэлдэж байна',
   'view.fallbackNote': '3D харагдац энэ төхөөрөмж дээр ажиллахгүй тул зураглалаар үзүүллээ.',
   'view.sideProfile': 'Хажуугаас',
   'view.topDown': 'Дээрээс',
-  'view.noSeat': 'Суудал сонгоогүй байна',
   'view.switcher': 'Суудал солих',
 
   'lang.mn': 'Монгол',

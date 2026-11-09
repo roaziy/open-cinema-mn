@@ -1,12 +1,16 @@
-import { useEffect, useState } from 'react';
-import { type LayoutChangeEvent, StyleSheet, Text, View } from 'react-native';
+import { type RefObject, useEffect, useState } from 'react';
+import { type HostInstance, type LayoutChangeEvent, StyleSheet, Text, View } from 'react-native';
 import {
   GestureDetector,
   usePanGesture,
   usePinchGesture,
   useSimultaneousGestures,
 } from 'react-native-gesture-handler';
-import Animated, { useAnimatedStyle, useSharedValue } from 'react-native-reanimated';
+import Animated, {
+  type SharedValue,
+  useAnimatedStyle,
+  useSharedValue,
+} from 'react-native-reanimated';
 import type { SeatLayout } from '@/lib/seat-layout';
 import { colors, space } from '@/theme/tokens';
 import { type } from '@/theme/type';
@@ -17,14 +21,38 @@ const GUTTER = 22; // row letters live here, on both sides
 const ARC_GAP = space.md;
 const MAX_ZOOM = 3.5;
 
+/** The canvas's pan/zoom, owned by the screen so the 3D view can start from what is on screen. */
+export type SeatTransform = {
+  scale: SharedValue<number>;
+  tx: SharedValue<number>;
+  ty: SharedValue<number>;
+};
+
+export function useSeatTransform(): SeatTransform {
+  return { scale: useSharedValue(1), tx: useSharedValue(0), ty: useSharedValue(0) };
+}
+
 type Props = {
   layout: SeatLayout;
+  transform: SeatTransform;
+  /** The fixed viewport the canvas pans inside; the screen measures it. */
+  viewportRef: RefObject<HostInstance | null>;
   tone: string;
   /** Called with a seat id when a seat is tapped. */
   onSeat: (seatId: string) => void;
   statusOf: (seatId: string) => SeatStatus;
   labelOf: (seatId: string, status: SeatStatus) => string;
 };
+
+/** Size of the canvas content (screen arc, gutters, seats) and where the seat grid starts in it. */
+export function seatContentMetrics(layout: SeatLayout) {
+  const arcH = 78 + ARC_GAP;
+  return {
+    width: layout.width + GUTTER * 2,
+    height: arcH + layout.height + space.lg,
+    origin: { x: GUTTER, y: arcH },
+  };
+}
 
 /** Width the seat grid should be laid out for inside a viewport this wide. */
 export function seatAreaWidth(viewportWidth: number): number {
@@ -37,18 +65,23 @@ const clamp = (v: number, lo: number, hi: number) => {
 };
 
 /** The screen arc, row letters and seats on a canvas you can pinch to zoom and drag around. */
-export function SeatCanvas({ layout, tone, onSeat, statusOf, labelOf }: Props) {
+export function SeatCanvas({
+  layout,
+  transform,
+  viewportRef,
+  tone,
+  onSeat,
+  statusOf,
+  labelOf,
+}: Props) {
   const [view, setView] = useState({ w: 0, h: 0 });
-  const arcH = 78 + ARC_GAP;
-  const cw = layout.width + GUTTER * 2;
-  const ch = arcH + layout.height + space.lg;
+  const { width: cw, height: ch, origin } = seatContentMetrics(layout);
+  const arcH = origin.y;
 
   // Fit the whole hall at first; never zoom out past that.
   const fit = view.h > 0 ? Math.min(1, view.h / ch) : 1;
 
-  const scale = useSharedValue(1);
-  const tx = useSharedValue(0);
-  const ty = useSharedValue(0);
+  const { scale, tx, ty } = transform;
   const vw = useSharedValue(0);
   const vh = useSharedValue(0);
   const minScale = useSharedValue(1);
@@ -111,7 +144,7 @@ export function SeatCanvas({ layout, tone, onSeat, statusOf, labelOf }: Props) {
     // The detector sits on the fixed viewport (not on the moving canvas), so the margins
     // around the hall pan and pinch too and focal points are in viewport coordinates.
     <GestureDetector gesture={gesture}>
-      <View style={styles.viewport} onLayout={onLayout}>
+      <View ref={viewportRef} style={styles.viewport} onLayout={onLayout} collapsable={false}>
         {view.w > 0 ? (
           <Animated.View
             style={[

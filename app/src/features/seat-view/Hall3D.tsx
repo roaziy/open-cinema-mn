@@ -3,7 +3,9 @@ import './three-shim';
 import type { SeatMap, SeatState } from '@open-cinema/shared';
 import { SCREEN_BOTTOM_M } from '@open-cinema/shared';
 import { Canvas, useThree } from '@react-three/fiber/native';
-import { useEffect, useLayoutEffect, useMemo, useRef } from 'react';
+import * as Device from 'expo-device';
+import { useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
+import { type LayoutChangeEvent, PixelRatio, View } from 'react-native';
 import * as THREE from 'three';
 import {
   hallDepth,
@@ -12,13 +14,19 @@ import {
   rowsOf,
   type ScreenSource,
   stepSpans,
+  type TopDownPose,
 } from './camera-math';
-import { CameraRig } from './camera-rig';
+import { CameraRig, type RigGoal } from './camera-rig';
 import { palette } from './palette';
 import { useScreenTexture } from './screen-texture';
 import { createSeatGeometry } from './seat-geometry';
 
 const MAX_SELECTED = 10;
+/**
+ * Side walls run past the camera (a seat sits beside them). One long quad crossing the near
+ * plane rasterises as a dark wedge across the picture on some GPUs, so cut them into short ones.
+ */
+const WALL_SEGMENTS = 24;
 
 export type Hall3DProps = {
   seats: SeatState[];
@@ -28,8 +36,12 @@ export type Hall3DProps = {
   selectedIds: string[];
   currentId: string;
   reduceMotion: boolean;
-  /** Dev only: stay on the top-down view. */
-  hold: boolean;
+  /** The camera pose that matches the 2D seat map under the canvas. */
+  topPose: TopDownPose;
+  /** Over the hall (aligned with the 2D map) or at the seat. */
+  goal: RigGoal;
+  /** A flight to `goal` finished. */
+  onArrive: (goal: RigGoal) => void;
   /** The canvas component has mounted (its code is loaded); starts the first-frame watchdog. */
   onMount: () => void;
   /** A render finished and issued draw calls: GL works. */
@@ -38,20 +50,60 @@ export type Hall3DProps = {
   onFail: (reason: string) => void;
 };
 
+/**
+ * The simulator rasterises GL on the CPU: with 4x MSAA at native density a hall frame takes
+ * seconds. There, MSAA is off and the canvas renders at 1x and is scaled up. Devices keep both.
+ */
+const CHEAP_GL = Device.isDevice === false;
+
 export default function Hall3D(props: Hall3DProps) {
   const { onMount } = props;
+  const [box, setBox] = useState({ w: 0, h: 0 });
+  // Bumped once the context exists: a size change makes expo-gl rebuild its buffers with the
+  // sample count r3f reported only after the context was created (see below).
+  const [nudge, setNudge] = useState(0);
   useEffect(() => {
     onMount();
   }, [onMount]);
-  return (
+  const onLayout = (e: LayoutChangeEvent) => {
+    const { width, height } = e.nativeEvent.layout;
+    setBox((b) => (b.w === width && b.h === height ? b : { w: width, h: height }));
+  };
+  // r3f native renders at the device pixel ratio and ignores its dpr prop; a canvas laid out
+  // at 1/ratio of the size and scaled back up by `ratio` costs ratio^2 fewer pixels.
+  const ratio = CHEAP_GL ? PixelRatio.get() : 1;
+  const canvas = (
     <Canvas
       style={{ flex: 1, backgroundColor: palette.canvas }}
-      camera={{ fov: 60, near: 0.05, far: 120, position: [0, 20, 8] }}
-      frameloop="always"
+      camera={{ fov: 14, near: 1, far: 400, position: [0, 100, 8] }}
+      frameloop="demand"
+      gl={{ antialias: !CHEAP_GL }}
+      onCreated={CHEAP_GL ? () => setNudge(1) : undefined}
     >
       <color attach="background" args={[palette.canvas]} />
       <Scene {...props} />
     </Canvas>
+  );
+  return (
+    <View style={{ flex: 1, overflow: 'hidden' }} onLayout={onLayout}>
+      {box.w > 0 && ratio !== 1 ? (
+        <View
+          style={{
+            position: 'absolute',
+            left: 0,
+            top: 0,
+            width: box.w / ratio + nudge * 0.02,
+            height: box.h / ratio,
+            transform: [{ scale: ratio }],
+            transformOrigin: 'top left',
+          }}
+        >
+          {canvas}
+        </View>
+      ) : ratio === 1 ? (
+        canvas
+      ) : null}
+    </View>
   );
 }
 
@@ -66,7 +118,9 @@ function Scene({
   selectedIds,
   currentId,
   reduceMotion,
-  hold,
+  topPose,
+  goal,
+  onArrive,
   onDrew,
   onFail,
 }: Hall3DProps) {
@@ -88,6 +142,16 @@ function Scene({
   const pickMat = useMemo(
     () => new THREE.MeshBasicMaterial({ color: palette.chosen, toneMapped: false }),
     [],
+  );
+
+  // The overlay mounts the canvas on every open: free what it created when it goes away.
+  useEffect(
+    () => () => {
+      seatGeo.dispose();
+      seatMat.dispose();
+      pickMat.dispose();
+    },
+    [seatGeo, seatMat, pickMat],
   );
 
   const seatsRef = useRef<THREE.InstancedMesh>(null);
@@ -204,11 +268,11 @@ function Scene({
 
       {/* Side, front and back walls. */}
       <mesh position={[-half - 0.1, wallH / 2, depth / 2]}>
-        <boxGeometry args={[0.2, wallH, depth + 0.4]} />
+        <boxGeometry args={[0.2, wallH, depth + 0.4, 1, 4, WALL_SEGMENTS]} />
         <meshLambertMaterial color={palette.wallSide} />
       </mesh>
       <mesh position={[half + 0.1, wallH / 2, depth / 2]}>
-        <boxGeometry args={[0.2, wallH, depth + 0.4]} />
+        <boxGeometry args={[0.2, wallH, depth + 0.4, 1, 4, WALL_SEGMENTS]} />
         <meshLambertMaterial color={palette.wallSide} />
       </mesh>
       <mesh position={[0, wallH / 2, -0.1]}>
@@ -229,11 +293,12 @@ function Scene({
       <instancedMesh ref={pickRef} args={[seatGeo, pickMat, MAX_SELECTED]} frustumCulled={false} />
 
       <CameraRig
-        ext={ext}
         hall={hall}
         eyeSeat={current}
         reduceMotion={reduceMotion}
-        hold={hold}
+        topPose={topPose}
+        goal={goal}
+        onArrive={onArrive}
         onDrew={onDrew}
         onFail={onFail}
       />
