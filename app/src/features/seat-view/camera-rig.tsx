@@ -69,6 +69,9 @@ type Flight = {
   lastTau: number;
   lastAt: number;
   eye: Vec3;
+  /** Dev only: frames of a hop still to log, and the position at the previous one. */
+  hopLog: number;
+  hopPrev: Vec3;
   /** Per flight, not per frame: the screen's centre, the seat lenses and the height that clears the seat backs. */
   center: Vec3;
   povA: number;
@@ -152,6 +155,8 @@ export function CameraRig({
     lastTau: 0,
     lastAt: 0,
     eye: [0, 0, 0],
+    hopLog: 0,
+    hopPrev: [0, 0, 0],
     center: [0, 0, 0],
     povA: 50,
     povB: 50,
@@ -247,6 +252,15 @@ export function CameraRig({
       f.s1 = 1;
       f.clock = null;
       f.durationMs = hopDurationMs(f.from, f.to);
+      if (__DEV__) {
+        console.log(
+          `[seat-view] hop start from ${f.from.map((v) => v.toFixed(2))} to ${f.to.map((v) => v.toFixed(2))} in ${f.durationMs.toFixed(0)} ms`,
+        );
+        f.hopLog = 5;
+        f.hopPrev[0] = f.from[0];
+        f.hopPrev[1] = f.from[1];
+        f.hopPrev[2] = f.from[2];
+      }
       f.v0 = 0;
     } else {
       f.kind = 'dive';
@@ -319,11 +333,17 @@ export function CameraRig({
   }, [size.width, size.height, get, invalidate]);
 
   // The panel's height changed (it is measured after first layout): refit the lift while at rest.
+  // Only the lens lift is refitted: the camera must stay exactly where it is. (Re-placing it
+  // here snapped it to the NEW seat whenever a seat switch changed the panel's height, which
+  // turned the glide into a cut.)
   useEffect(() => {
     if (!placed.current || flight.current.active) return;
-    placeAt(at.current, eyeOf());
+    const camera = get().camera as THREE.PerspectiveCamera;
+    const height = Math.max(1, get().size.height);
+    lens.current = { ...lens.current, shift: (cover / height) * at.current };
+    applyLens(camera, lens.current.fov, lens.current.squash, lens.current.shift);
     invalidate();
-  }, [cover, invalidate]);
+  }, [cover, invalidate, get]);
 
   const seatId = eyeSeat?.id;
   useEffect(() => {
@@ -385,6 +405,18 @@ export function CameraRig({
           pose.current,
         );
         applyPose(camera, p);
+        if (__DEV__ && f.hopLog > 0) {
+          f.hopLog--;
+          const d = Math.hypot(
+            p.position[0] - f.hopPrev[0],
+            p.position[1] - f.hopPrev[1],
+            p.position[2] - f.hopPrev[2],
+          );
+          console.log(`[seat-view] hop frame t=${linear.toFixed(3)} moved ${d.toFixed(3)} m`);
+          f.hopPrev[0] = p.position[0];
+          f.hopPrev[1] = p.position[1];
+          f.hopPrev[2] = p.position[2];
+        }
         lens.current = { fov: p.fov, squash: 1, shift: c / height };
       }
       applyLens(camera, lens.current.fov, lens.current.squash, lens.current.shift);

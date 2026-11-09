@@ -409,3 +409,40 @@ describe('the seat switch glides between the seats', () => {
     }
   }
 });
+
+describe('the close lands exactly on the aligned top-down frame', () => {
+  for (const [hallName, h] of HALLS) {
+    for (const zoomName of ['fit', 'zoomed'] as const) {
+      it(`${hallName}, map ${zoomName}: the last pose of the close is topDownFromMap's pose, and every seat projects within 1 px of the 2D map`, () => {
+        const top = topFor(h, zoomName);
+        const eye = pick(h, 4, 4);
+        const pov = povFov(eye, h.hall, ASPECT);
+        const clock = diveClock(top, eye, h.center, pov, h.o, CLOSE_CAPS);
+        const last = divePose(clock.at(0), top, eye, h.center, pov, newDivePose(), h.o);
+        for (let i = 0; i < 3; i++)
+          expect(last.position[i]).toBeCloseTo(top.position[i] as number, 9);
+        expect(last.fov).toBeCloseTo(top.fov, 9);
+        expect(last.squash).toBeCloseTo(top.squash, 9);
+        expect(last.yaw).toBeCloseTo(0, 9);
+        expect(last.pitch).toBeCloseTo(-Math.PI / 2, 9);
+        // the pose projects the grid onto the 2D map's pixels (same maths as the open's first frame)
+        const layout = layoutSeats(h.seats as never, 402 - 44);
+        const cam = new THREE.PerspectiveCamera(last.fov, 402 / 874, 0.1, 600);
+        cam.position.set(...last.position);
+        cam.rotation.order = 'YXZ';
+        cam.rotation.set(last.pitch, last.yaw, 0);
+        cam.updateMatrixWorld();
+        cam.projectionMatrix.elements[5] = (cam.projectionMatrix.elements[5] ?? 0) * last.squash;
+        cam.projectionMatrixInverse.copy(cam.projectionMatrix).invert();
+        const probe = layout.slots[Math.floor(layout.slots.length / 2)];
+        const seat = probe?.seat as (typeof h.seats)[number];
+        const p = new THREE.Vector3(seat.x_m, seat.z_m + 0.5, seat.y_m).project(cam);
+        const gotX = ((p.x + 1) / 2) * 402;
+        const cw = layout.width + 44;
+        const view = zoomName === 'fit' ? Math.min(1, 520 / (90 + layout.height + 16)) : 3;
+        const want = 0 + 402 / 2 + view * (22 + (probe?.left ?? 0) + layout.size / 2 - cw / 2);
+        expect(Math.abs(gotX - want)).toBeLessThan(1.5);
+      });
+    }
+  }
+});

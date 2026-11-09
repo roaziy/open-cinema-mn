@@ -168,17 +168,16 @@ export default function SeatMapScreen() {
     repeat.current = null;
   }, [guard]);
 
-  const openView = () => {
-    const last = selected[selected.length - 1];
+  /** The top-down pose that matches the 2D map as it is right now (live pan/zoom and layout). */
+  const measureTop = (done: (topPose: TopDownPose, rect: OverlayRect) => void) => {
     const root = rootRef.current;
     const viewport = viewportRef.current;
-    if (!last || !root || !viewport) return;
-    haptic.tap();
+    if (!root || !viewport) return;
     root.measureInWindow((rx, ry, rw, rh) => {
       viewport.measureInWindow((vx, vy, vw, vh) => {
         const content = seatContentMetrics(layout);
         // The 3D canvas is the whole window; the 2D map's viewport sits at (offsetX, offsetY)
-        // inside it, so the first top-down frame lines up with the seats on screen.
+        // inside it, so the top-down frame lines up with the seats on screen.
         const topPose = topDownFromMap({
           fit: mapFitOf(layout.slots, layout.size, layout.ppm, content.origin),
           view: {
@@ -196,20 +195,56 @@ export default function SeatMapScreen() {
           offsetY: vy - ry,
           planeY: seatPlaneHeight(map.data?.seats ?? []),
         });
-        fade.set(0);
-        dive.set(0);
-        setViewing({
-          seatId: last.id,
-          takenIds: layout.slots
-            .filter(({ seat }) => seat.kind !== 'blocked' && statusOf(seat.id) === 'taken')
-            .map(({ seat }) => seat.id),
-          rect: { x: 0, y: 0, w: rw, h: rh },
-          topPose,
-          closing: false,
-        });
+        done(topPose, { x: 0, y: 0, w: rw, h: rh });
       });
     });
   };
+
+  const openView = () => {
+    const last = selected[selected.length - 1];
+    if (!last) return;
+    haptic.tap();
+    measureTop((topPose, rect) => {
+      if (__DEV__)
+        console.log(
+          '[seat-view] open from',
+          topPose.position.map((v) => v.toFixed(3)),
+          'fov',
+          topPose.fov.toFixed(3),
+        );
+      fade.set(0);
+      dive.set(0);
+      setViewing({
+        seatId: last.id,
+        takenIds: layout.slots
+          .filter(({ seat }) => seat.kind !== 'blocked' && statusOf(seat.id) === 'taken')
+          .map(({ seat }) => seat.id),
+        rect,
+        topPose,
+        closing: false,
+      });
+    });
+  };
+
+  // Leaving lands on the 2D map as it is NOW, not as it was when the view opened.
+  const isClosing = viewing?.closing === true;
+  const measureRef = useRef(measureTop);
+  useEffect(() => {
+    measureRef.current = measureTop;
+  });
+  useEffect(() => {
+    if (!isClosing) return;
+    measureRef.current((topPose) => {
+      if (__DEV__)
+        console.log(
+          '[seat-view] close lands on',
+          topPose.position.map((v) => v.toFixed(3)),
+          'fov',
+          topPose.fov.toFixed(3),
+        );
+      setViewing((v) => (v ? { ...v, topPose } : v));
+    });
+  }, [isClosing]);
 
   const show = map.data?.showtime;
   const tone = show?.movie.tone ?? colors.canvas;
