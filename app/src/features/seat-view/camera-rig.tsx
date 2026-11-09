@@ -10,15 +10,15 @@ import {
   easeInOut,
   eyePosition,
   FLY_MS,
+  hopPose,
   lensRange,
-  lerp3,
   newDivePose,
   povFov,
   screenCenter,
   type TopDownPose,
   type Vec3,
 } from './camera-math';
-import { clearPosition, type Obstacles } from './room-layout';
+import { clearPosition, hoverAltitude, type Obstacles } from './room-layout';
 
 /** Dev only: how long the average frame time is sampled after a flight. */
 const MEASURE_MS = 3000;
@@ -46,8 +46,6 @@ type Flight = {
   kind: 'dive' | 'hop';
   startedAt: number;
   durationMs: number;
-  fromFov: number;
-  toFov: number;
   s0: number;
   s1: number;
   eye: Vec3;
@@ -121,8 +119,6 @@ export function CameraRig({
     kind: 'dive',
     startedAt: 0,
     durationMs: FLY_MS,
-    fromFov: 0,
-    toFov: 0,
     s0: 0,
     s1: 1,
     eye: [0, 0, 0],
@@ -170,7 +166,15 @@ export function CameraRig({
   const placeAt = useEffectEvent((s: number, eye: Vec3) => {
     const camera = get().camera as THREE.PerspectiveCamera;
     const { topPose: top, hall: h, cover: c } = latest.current;
-    const p = divePose(s, top, eye, screenCenter(h), povFov(eye, h, camera.aspect), pose.current);
+    const p = divePose(
+      s,
+      top,
+      eye,
+      screenCenter(h),
+      povFov(eye, h, camera.aspect),
+      pose.current,
+      hoverAltitude(eye, latest.current.obstacles),
+    );
     clearPosition(p.position, eye, null, latest.current.obstacles, scratch);
     p.position[0] = scratch[0];
     p.position[1] = scratch[1];
@@ -198,8 +202,6 @@ export function CameraRig({
       f.to[0] = eye[0];
       f.to[1] = eye[1];
       f.to[2] = eye[2];
-      f.fromFov = lens.current.fov;
-      f.toFov = povFov(eye, latest.current.hall, (camera as THREE.PerspectiveCamera).aspect);
       f.durationMs = FLY_MS;
     } else {
       f.kind = 'dive';
@@ -267,6 +269,7 @@ export function CameraRig({
           screenCenter(h),
           povFov(f.eye, h, camera.aspect),
           pose.current,
+          hoverAltitude(f.eye, latest.current.obstacles),
         );
         clearPosition(p.position, f.eye, null, latest.current.obstacles, scratch);
         p.position[0] = scratch[0];
@@ -279,13 +282,24 @@ export function CameraRig({
         at.current = s;
         dive.set(s);
       } else {
-        lerp3(f.cur, f.from, f.to, e);
-        clearPosition(f.cur, f.from, f.to, latest.current.obstacles, scratch);
-        camera.position.set(scratch[0], scratch[1], scratch[2]);
-        lens.current.fov = f.fromFov + (f.toFov - f.fromFov) * e;
-        camera.up.set(0, 1, 0);
-        const ctr = screenCenter(h);
-        camera.lookAt(ctr[0], ctr[1], ctr[2]);
+        // Seat to seat: rise over the first seat, travel over, descend onto the second.
+        const ob = latest.current.obstacles;
+        const p = hopPose(
+          e,
+          top,
+          f.from,
+          f.to,
+          screenCenter(h),
+          povFov(f.from, h, camera.aspect),
+          povFov(f.to, h, camera.aspect),
+          (eyeNow) => hoverAltitude(eyeNow, ob),
+          pose.current,
+          f.cur,
+        );
+        camera.position.set(p.position[0], p.position[1], p.position[2]);
+        camera.up.set(p.up[0], p.up[1], p.up[2]);
+        camera.lookAt(p.target[0], p.target[1], p.target[2]);
+        lens.current = { fov: p.fov, squash: 1, shift: c / height };
       }
       applyLens(camera, lens.current.fov, lens.current.squash, lens.current.shift);
       if (t >= 1) {
