@@ -10,19 +10,8 @@ export type Vec3 = [number, number, number];
 type SeatPos = { x_m: number; y_m: number; z_m: number };
 type HallDims = { screen_width_m: number; screen_height_m: number; screen_x_m: number };
 
-export const FLY_MS = 1500;
-
-/** Ease-in-out (cubic), clamped to 0..1. */
-export function easeInOut(t: number): number {
-  const x = Math.min(1, Math.max(0, t));
-  return x < 0.5 ? 4 * x * x * x : 1 - (-2 * x + 2) ** 3 / 2;
-}
-
-/** Eased progress of a flight; with Reduce Motion the camera jumps straight to the end. */
-export function flightProgress(elapsedMs: number, reduceMotion: boolean, durationMs = FLY_MS) {
-  if (reduceMotion) return 1;
-  return easeInOut(elapsedMs / durationMs);
-}
+/** The longest a flight takes (see flightMs). */
+export const FLY_MS = 2400;
 
 /** Camera position for a seat: its position raised by the eye height. */
 export function eyePosition(seat: SeatPos): Vec3 {
@@ -180,14 +169,6 @@ export function topDownFromMap(args: {
   };
 }
 
-/** Write a -> b at progress t into `out` (no allocation). */
-export function lerp3(out: Vec3, a: Vec3, b: Vec3, t: number): Vec3 {
-  out[0] = a[0] + (b[0] - a[0]) * t;
-  out[1] = a[1] + (b[1] - a[1]) * t;
-  out[2] = a[2] + (b[2] - a[2]) * t;
-  return out;
-}
-
 export type ScreenSource = { kind: 'remote'; url: string } | { kind: 'flat'; color: string };
 
 const HEX = /^#[0-9a-fA-F]{6}$/;
@@ -283,32 +264,48 @@ const smooth = (a: number, b: number, x: number) => {
 /** Public so the scene can time its own fades to the same dive. */
 export const smoothstep = smooth;
 
-/** Share of the dive spent travelling over the hall (looking down) before descending. */
-export const TRAVEL_SHARE = 0.45;
-/** Vertical field of view over the seat, between the wide top-down lens and the seat's lens. */
-export const HOVER_FOV_DEG = 40;
+/** The lens change is done by this share of the move: no lens change while turning fastest. */
+const LENS_DONE_AT = 0.6;
+/** Highest angular speed of the camera, degrees per second. */
+export const MAX_TURN_DEG_PER_S = 90;
+/** Peak of the speed profile of `easeFlight` (its largest slope). */
+const EASE_PEAK = 1.5;
 
 export type DivePose = {
   position: Vec3;
-  target: Vec3;
-  up: Vec3;
+  /** Heading about +Y, radians (0 looks toward -z, the screen). */
+  yaw: number;
+  /** Elevation, radians (-pi/2 looks straight down). Roll is always zero. */
+  pitch: number;
   /** Vertical field of view, degrees. */
   fov: number;
   squash: number;
 };
 
 export function newDivePose(): DivePose {
-  return { position: [0, 0, 0], target: [0, 0, 0], up: [0, 1, 0], fov: 0, squash: 1 };
+  return { position: [0, 0, 0], yaw: 0, pitch: 0, fov: 0, squash: 1 };
 }
 
-const TOP_UP: Vec3 = [0, 0, -1];
+/** Heading and elevation (no roll) of the direction from `from` to `to`. */
+export function viewAngles(from: Vec3, to: Vec3): { yaw: number; pitch: number } {
+  const dx = to[0] - from[0];
+  const dy = to[1] - from[1];
+  const dz = to[2] - from[2];
+  const l = Math.hypot(dx, dy, dz) || 1;
+  return { yaw: Math.atan2(-dx, -dz), pitch: Math.asin(dy / l) };
+}
 
-function norm(v: Vec3): Vec3 {
-  const l = Math.hypot(v[0], v[1], v[2]) || 1;
-  v[0] /= l;
-  v[1] /= l;
-  v[2] /= l;
-  return v;
+/** The unit view direction for a yaw and pitch (three's camera looks down -z). */
+export function forwardOf(yaw: number, pitch: number, out: Vec3): Vec3 {
+  out[0] = -Math.cos(pitch) * Math.sin(yaw);
+  out[1] = Math.sin(pitch);
+  out[2] = -Math.cos(pitch) * Math.cos(yaw);
+  return out;
+}
+
+/** One ease-in-out over the whole move (zero speed at both ends, no seams). */
+export function easeFlight(t: number): number {
+  return smooth(0, 1, t);
 }
 
 const logLerp = (a: number, b: number, t: number) =>
@@ -319,69 +316,126 @@ const tanLerpDeg = (aDeg: number, bDeg: number, t: number) => {
   return (2 * Math.atan(logLerp(ta, tb, t)) * 180) / Math.PI;
 };
 
+/** Milliseconds for a move that turns the camera by `turnDeg`: 1.6 to 2.4 s, never faster than the turn cap. */
+export function flightMs(turnDeg: number, minMs = 1600, maxMs = 2400): number {
+  const need = ((EASE_PEAK * turnDeg) / MAX_TURN_DEG_PER_S) * 1000;
+  return Math.min(maxMs, Math.max(minMs, need));
+}
+
+/** How far the camera turns on the way from straight down to the seat's view, degrees. */
+export function diveTurnDeg(eye: Vec3, center: Vec3): number {
+  const a = viewAngles(eye, center);
+  return (Math.hypot(a.pitch + Math.PI / 2, a.yaw) * 180) / Math.PI;
+}
+
+export type Bounds = { half: number; depth: number };
+
+/** Where the second control point of the final approach sits: behind and above the eye, inside the room. */
+export const APPROACH_BACK_M = 2;
+export const APPROACH_UP_M = 1.2;
+const WALL_INSET_M = 0.4;
+
+function approachPoint(
+  eye: Vec3,
+  yaw: number,
+  b: Bounds,
+  out: Vec3,
+  back = APPROACH_BACK_M,
+  up = APPROACH_UP_M,
+) {
+  // behind = opposite to the horizontal view direction (sin yaw, cos yaw) * -1 in x/z
+  const bx = Math.sin(yaw);
+  const bz = Math.cos(yaw);
+  let x = eye[0] + bx * back;
+  let z = eye[2] + bz * back;
+  const cx = Math.min(b.half - WALL_INSET_M, Math.max(-(b.half - WALL_INSET_M), x));
+  const cz = Math.min(b.depth - WALL_INSET_M, Math.max(WALL_INSET_M, z));
+  const lost = Math.hypot(x - cx, z - cz);
+  x = cx;
+  z = cz;
+  out[0] = x;
+  // closer to the eye than planned: steeper, so it still clears the row behind
+  out[1] = eye[1] + up + lost * 0.6;
+  out[2] = z;
+  return out;
+}
+
+const bez = (a: number, b: number, c: number, d: number, t: number) => {
+  const m = 1 - t;
+  return m * m * m * a + 3 * m * m * t * b + 3 * m * t * t * c + t * t * t * d;
+};
+
+const sP1: Vec3 = [0, 0, 0];
+const sP2: Vec3 = [0, 0, 0];
+
 /**
- * The dive from the top-down pose over the map (s = 0) to the seat (s = 1) in two parts:
- * first the camera stays top-down and travels and zooms until it hovers right above the seat
- * (never lower than `hoverY`, which clears every seat), then it goes straight down onto the
- * eye point while it pitches up to the screen. It never moves sideways at seat height. Altitude
- * and field of view change by the same ratio (log scale), so the zoom is steady. Writes into
- * `out`; the reverse is the same path with s running down.
+ * One continuous move from the top-down pose over the map (p = 0) to the seat (p = 1), `p`
+ * being the eased progress (`easeFlight`). Position is a cubic Bezier: it stays high and heads
+ * for the point above the seat, then settles forward and down into the seat along the view
+ * direction from behind and above the row behind (never sideways at seat height). The camera
+ * turns evenly from looking down to looking at the screen (heading and elevation, so it never
+ * rolls); the lens change is done by 60 % of the move. The reverse is the same curve with p
+ * running down.
  */
 export function divePose(
-  s: number,
+  p: number,
   top: TopDownPose,
   eye: Vec3,
   center: Vec3,
   povFovDeg: number,
   out: DivePose,
-  hoverY: number,
+  bounds: Bounds,
 ): DivePose {
-  const k = Math.min(1, Math.max(0, s));
-  const alt0 = Math.max(1e-3, top.position[1]);
-  const alt1 = Math.max(1e-3, Math.min(alt0, hoverY));
-  if (k <= TRAVEL_SHARE) {
-    const u = k / TRAVEL_SHARE;
-    const m = smooth(0, 1, u);
-    const x = top.position[0] + (eye[0] - top.position[0]) * m;
-    const z = top.position[2] + (eye[2] - top.position[2]) * m;
-    out.position[0] = x;
-    out.position[1] = logLerp(alt0, alt1, u);
-    out.position[2] = z;
-    out.target[0] = x;
-    out.target[1] = 0;
-    out.target[2] = z;
-    out.up[0] = TOP_UP[0];
-    out.up[1] = TOP_UP[1];
-    out.up[2] = TOP_UP[2];
-    out.fov = tanLerpDeg(top.fov, HOVER_FOV_DEG, u);
-    out.squash = top.squash + (1 - top.squash) * u;
-    return out;
-  }
-  const v = (k - TRAVEL_SHARE) / (1 - TRAVEL_SHARE);
-  const w = smooth(0, 1, v);
-  out.position[0] = eye[0];
-  out.position[1] = alt1 + (eye[1] - alt1) * w;
-  out.position[2] = eye[2];
-  const look = norm([
-    (center[0] - eye[0]) * w,
-    -(1 - w) + (center[1] - eye[1]) * w,
-    (center[2] - eye[2]) * w,
-  ]);
-  // Looking at the screen from the seat: re-normalise from the exact direction at w = 1.
-  if (w >= 1) {
-    const l = norm([center[0] - eye[0], center[1] - eye[1], center[2] - eye[2]]);
-    look[0] = l[0];
-    look[1] = l[1];
-    look[2] = l[2];
-  }
-  out.target[0] = out.position[0] + look[0] * 10;
-  out.target[1] = out.position[1] + look[1] * 10;
-  out.target[2] = out.position[2] + look[2] * 10;
-  const up = norm([TOP_UP[0] * (1 - w), TOP_UP[1] * (1 - w) + w, TOP_UP[2] * (1 - w)]);
-  out.up[0] = up[0];
-  out.up[1] = up[1];
-  out.up[2] = up[2];
-  out.fov = tanLerpDeg(HOVER_FOV_DEG, povFovDeg, w);
+  const k = Math.min(1, Math.max(0, p));
+  const end = viewAngles(eye, center);
+  const p1 = sP1;
+  p1[0] = eye[0];
+  p1[1] = Math.max(eye[1] + APPROACH_UP_M, top.position[1] * 0.55);
+  p1[2] = eye[2];
+  const p2 = approachPoint(eye, end.yaw, bounds, sP2);
+  out.position[0] = bez(top.position[0], p1[0], p2[0], eye[0], k);
+  out.position[1] = bez(top.position[1], p1[1], p2[1], eye[1], k);
+  out.position[2] = bez(top.position[2], p1[2], p2[2], eye[2], k);
+  out.yaw = end.yaw * k;
+  out.pitch = -Math.PI / 2 + (end.pitch + Math.PI / 2) * k;
+  const f = smooth(0, LENS_DONE_AT, k);
+  out.fov = tanLerpDeg(top.fov, povFovDeg, f);
+  out.squash = top.squash + (1 - top.squash) * f;
+  return out;
+}
+
+const sQ1: Vec3 = [0, 0, 0];
+const sQ2: Vec3 = [0, 0, 0];
+
+/**
+ * Seat to seat without leaving 3D: one Bezier from eye A to eye B whose control points rise
+ * above the seat backs behind each seat (`envelopeY` is the height that clears them), with the
+ * heading and elevation turning evenly from one seat's view to the other's.
+ */
+export function hopPose(
+  p: number,
+  a: Vec3,
+  b: Vec3,
+  center: Vec3,
+  povFovA: number,
+  povFovB: number,
+  envelopeY: number,
+  bounds: Bounds,
+  out: DivePose,
+): DivePose {
+  const k = Math.min(1, Math.max(0, p));
+  const va = viewAngles(a, center);
+  const vb = viewAngles(b, center);
+  const up = Math.max(APPROACH_UP_M, envelopeY - a[1]);
+  const upB = Math.max(APPROACH_UP_M, envelopeY - b[1]);
+  const q1 = approachPoint(a, va.yaw, bounds, sQ1, 0.5, up);
+  const q2 = approachPoint(b, vb.yaw, bounds, sQ2, 0.5, upB);
+  out.position[0] = bez(a[0], q1[0], q2[0], b[0], k);
+  out.position[1] = bez(a[1], q1[1], q2[1], b[1], k);
+  out.position[2] = bez(a[2], q1[2], q2[2], b[2], k);
+  out.yaw = va.yaw + (vb.yaw - va.yaw) * k;
+  out.pitch = va.pitch + (vb.pitch - va.pitch) * k;
+  out.fov = tanLerpDeg(povFovA, povFovB, k);
   out.squash = 1;
   return out;
 }
@@ -423,41 +477,4 @@ export function povFov(
   const need = Math.max(tanV, tanH / Math.max(aspect, 0.1)) * margin;
   const deg = (2 * Math.atan(need) * 180) / Math.PI;
   return Math.min(max, Math.max(min, deg));
-}
-
-/**
- * Seat to seat without leaving 3D: rise over the first seat (the dive's second part in
- * reverse), travel over to the second at the hover height, descend onto it. `e` is the eased
- * progress 0..1. `eyeOut` receives the eye the path is currently built around.
- */
-export function hopPose(
-  e: number,
-  top: TopDownPose,
-  a: Vec3,
-  b: Vec3,
-  center: Vec3,
-  povFovA: number,
-  povFovB: number,
-  hoverFor: (eye: Vec3) => number,
-  out: DivePose,
-  eyeOut: Vec3,
-): DivePose {
-  let s: number;
-  let pov = povFovA;
-  if (e < 0.3) {
-    s = 1 - (1 - TRAVEL_SHARE) * smooth(0, 0.3, e);
-    eyeOut[0] = a[0];
-    eyeOut[1] = a[1];
-    eyeOut[2] = a[2];
-  } else if (e < 0.7) {
-    s = TRAVEL_SHARE;
-    lerp3(eyeOut, a, b, smooth(0.3, 0.7, e));
-  } else {
-    s = TRAVEL_SHARE + (1 - TRAVEL_SHARE) * smooth(0.7, 1, e);
-    eyeOut[0] = b[0];
-    eyeOut[1] = b[1];
-    eyeOut[2] = b[2];
-    pov = povFovB;
-  }
-  return divePose(s, top, eyeOut, center, pov, out, hoverFor(eyeOut));
 }
