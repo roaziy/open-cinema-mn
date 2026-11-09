@@ -15,6 +15,7 @@ import {
   type MoveClock,
   newDivePose,
   povFov,
+  reversalMs,
   screenCenter,
   type TopDownPose,
   tauHermite,
@@ -255,9 +256,24 @@ export function CameraRig({
       f.s1 = want === 'pov' ? 1 : 0;
       f.clock = diveClock(latest.current.topPose, eye, c, f.povB, ob);
       const turnedRound = f.active;
-      f.durationMs = f.clock.ms * Math.max(0.4, Math.abs(f.s1 - f.s0));
-      // Turned round in flight: carry on at the speed the camera has, then change direction.
-      f.v0 = turnedRound ? f.vel * f.durationMs : 0;
+      const base = f.clock.ms * Math.max(0.4, Math.abs(f.s1 - f.s0));
+      f.durationMs = base;
+      f.v0 = 0;
+      if (turnedRound) {
+        // Turned round in flight: carry on at the speed the camera has, then change direction,
+        // taking as long as it needs to keep the turn under the cap.
+        const clock = f.clock;
+        const tp = latest.current.topPose;
+        f.durationMs = reversalMs(
+          (k, out) => divePose(k, tp, eye, c, f.povB, out, ob),
+          clock,
+          f.s0,
+          f.s1,
+          f.vel,
+          base,
+        );
+        f.v0 = f.vel * f.durationMs;
+      }
     }
     f.active = true;
     setFrameloop('always');
