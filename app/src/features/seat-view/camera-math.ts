@@ -338,8 +338,6 @@ export type Bounds = { half: number; depth: number };
 
 /** A point on the floor at the foot of the screen, where the look target passes on its way up. */
 const SCREEN_FOOT_Z_M = 1;
-/** Pulls the heading toward the screen while looking straight down, so it is defined there. */
-const HEADING_BIAS = 0.002;
 /** Progress at which the look target starts to climb from the floor to the screen centre. */
 export const B_FROM = 0.55;
 
@@ -359,8 +357,7 @@ function aimAt(k: number, top: TopDownPose, out: DivePose, center: Vec3, end: nu
   const tz = z0 + (center[2] - z0) * b;
   const dx = tx - out.position[0];
   const dy = ty - out.position[1];
-  const len = Math.hypot(dx, dy, tz - out.position[2]) || 1;
-  const dz = tz - out.position[2] - HEADING_BIAS * (1 - k) * (1 - k) * len;
+  const dz = tz - out.position[2];
   const pitch = Math.asin(dy / (Math.hypot(dx, dy, dz) || 1));
   // Looking almost straight down the heading is the picture spinning, and the geometric heading
   // there can even point backwards (the target is behind a front seat): turn evenly from the
