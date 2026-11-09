@@ -70,7 +70,7 @@ type Props = {
   goal: RigGoal;
   /** 0 over the map ... 1 at the seat; written every frame of a flight for the fades around it. */
   dive: SharedValue<number>;
-  /** Px of the canvas's bottom that the stats panel covers: the picture is lifted to stay centred above it. */
+  /** Px the picture is lifted at the seat so the screen is centred between the status bar and the stats panel. */
   cover: number;
   /** The room's solids: the camera stays out of them. */
   obstacles: Obstacles;

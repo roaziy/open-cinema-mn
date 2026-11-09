@@ -172,9 +172,11 @@ export default function SeatMapScreen() {
     const viewport = viewportRef.current;
     if (!last || !root || !viewport) return;
     haptic.tap();
-    root.measureInWindow((rx, ry) => {
+    root.measureInWindow((rx, ry, rw, rh) => {
       viewport.measureInWindow((vx, vy, vw, vh) => {
         const content = seatContentMetrics(layout);
+        // The 3D canvas is the whole window; the 2D map's viewport sits at (offsetX, offsetY)
+        // inside it, so the first top-down frame lines up with the seats on screen.
         const topPose = topDownFromMap({
           fit: mapFitOf(layout.slots, layout.size, layout.ppm, content.origin),
           view: {
@@ -186,17 +188,17 @@ export default function SeatMapScreen() {
             contentW: content.width,
             contentH: content.height,
           },
-          canvasW: vw,
-          canvasH: vh,
-          offsetX: 0,
-          offsetY: 0,
+          canvasW: rw,
+          canvasH: rh,
+          offsetX: vx - rx,
+          offsetY: vy - ry,
           planeY: seatPlaneHeight(map.data?.seats ?? []),
         });
         fade.set(0);
         dive.set(0);
         setViewing({
           seatId: last.id,
-          rect: { x: vx - rx, y: vy - ry, w: vw, h: vh },
+          rect: { x: 0, y: 0, w: rw, h: rh },
           topPose,
           closing: false,
         });

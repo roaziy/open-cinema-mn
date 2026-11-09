@@ -30,6 +30,7 @@ const AMBIENT = 1.5;
 const SPILL = 150;
 const FLOOR_SPILL = 40;
 const TOP_LIGHT = 18;
+const FILL = 1.1;
 /** Seats are brightened toward the seat view so they read against the dark room. */
 const SEAT_LIFT = 2.4;
 /** The screen bows toward the audience by this share of its width. */
@@ -97,7 +98,7 @@ export default function Hall3D(props: Hall3DProps) {
       onCreated={CHEAP_GL ? () => setTimeout(() => setNudge(1), 120) : undefined}
     >
       <color attach="background" args={[palette.canvas]} />
-      <Scene {...props} />
+      <Scene {...props} cover={props.cover / ratio} />
     </Canvas>
   );
   return (
@@ -158,11 +159,12 @@ function Scene({
   const seatGeo = useMemo(() => createSeatGeometry(), []);
   // Not tone mapped: at the top-down start the seats must be the 2D map's colours.
   const seatMat = useMemo(
-    () => new THREE.MeshLambertMaterial({ color: 0xffffff, toneMapped: false }),
+    () => new THREE.MeshLambertMaterial({ color: 0xffffff, toneMapped: false, vertexColors: true }),
     [],
   );
   const pickMat = useMemo(
-    () => new THREE.MeshBasicMaterial({ color: palette.chosen, toneMapped: false }),
+    () =>
+      new THREE.MeshBasicMaterial({ color: palette.chosen, toneMapped: false, vertexColors: true }),
     [],
   );
 
@@ -239,6 +241,7 @@ function Scene({
   const ambientRef = useRef<THREE.AmbientLight>(null);
   const spillRef = useRef<THREE.PointLight>(null);
   const topRef = useRef<THREE.PointLight>(null);
+  const fillRef = useRef<THREE.DirectionalLight>(null);
   const floorSpillRef = useRef<THREE.PointLight>(null);
   const fogRef = useRef<THREE.Fog>(null);
   const slatsRef = useRef<THREE.InstancedMesh>(null);
@@ -279,6 +282,7 @@ function Scene({
       if (ambientRef.current) ambientRef.current.intensity = Math.PI + (AMBIENT - Math.PI) * s;
       if (spillRef.current) spillRef.current.intensity = SPILL * s;
       if (topRef.current) topRef.current.intensity = TOP_LIGHT * s;
+      if (fillRef.current) fillRef.current.intensity = FILL * s;
       if (floorSpillRef.current) floorSpillRef.current.intensity = FLOOR_SPILL * s;
       seatMat.color.setScalar(1 + SEAT_LIFT * s);
       // Depth haze only once inside the hall: from above it would swallow the whole picture.

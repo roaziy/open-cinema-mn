@@ -54,7 +54,7 @@ type Step = { from: number; to: number; height: number };
 /** Seat footprint half-sizes (x, z) and height: cushion, armrests and headrest. */
 const SEAT_HALF_X = 0.27;
 const SEAT_HALF_Z = 0.28;
-const SEAT_HEIGHT = 1.2;
+const SEAT_HEIGHT = 1.1;
 /** How far above the seats the camera travels, and how close to the eye it may come down. */
 const CLEAR_M = 0.5;
 const DESCEND_FROM_M = 0.15;

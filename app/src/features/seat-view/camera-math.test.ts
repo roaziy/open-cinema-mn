@@ -227,6 +227,7 @@ describe('topDownFromMap', () => {
   function check(
     view: { scale: number; tx: number; ty: number },
     offset: { x: number; y: number },
+    canvas = { w: 390, h: 640 },
   ) {
     const seats = seatsOf();
     const layout = layoutSeats(seats as never, 330);
@@ -235,8 +236,8 @@ describe('topDownFromMap', () => {
     const fit = mapFitOf(layout.slots, layout.size, layout.ppm, { x: GUTTER, y: ARC_H });
     const viewW = 390;
     const viewH = 520;
-    const canvasW = 390;
-    const canvasH = 640;
+    const canvasW = canvas.w;
+    const canvasH = canvas.h;
     const pose = topDownFromMap({
       fit,
       view: { ...view, viewW, viewH, contentW, contentH },
@@ -274,6 +275,9 @@ describe('topDownFromMap', () => {
   }
   it('lines seats up with the 2D map at the fitted zoom', () => {
     check({ scale: 1, tx: 0, ty: 0 }, { x: 0, y: 60 });
+  });
+  it('lines up when the canvas is the whole window and the map sits in the middle of it', () => {
+    check({ scale: 1.6, tx: 20, ty: -30 }, { x: 0, y: 190 }, { w: 390, h: 844 });
   });
   it('follows pan and zoom, and a canvas offset from the viewport', () => {
     check({ scale: 2.4, tx: -35, ty: 48 }, { x: 0, y: 112 });
