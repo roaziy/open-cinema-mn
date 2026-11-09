@@ -71,7 +71,7 @@ type Props = {
   selected: SeatState[];
   /** The seat to look from first. */
   initialSeatId: string;
-  /** The 3D canvas, in the seat map screen's coordinates: exactly the 2D map's viewport. */
+  /** The 3D canvas, in the seat map screen's coordinates: the whole window. */
   rect: OverlayRect;
   /** The camera pose that lines the first 3D frame up with the 2D map. */
   topPose: TopDownPose;
@@ -114,7 +114,7 @@ export function SeatViewOverlay({
   const { t } = useI18n();
   const insets = useSafeAreaInsets();
   const headerHeight = useHeaderHeight();
-  const { width, height: windowH } = useWindowDimensions();
+  const { width } = useWindowDimensions();
   const reduceMotion = useReducedMotion();
   const [picked, setPicked] = useState<string | null>(null);
   const [panelH, setPanelH] = useState(0);
@@ -262,7 +262,8 @@ export function SeatViewOverlay({
     off: Math.round(stats.offCenterDeg),
   });
   const live = panelLive(tr);
-  const cover = Math.max(0, rect.y + rect.h - (windowH - panelH));
+  // The picture is lifted so the screen sits centred between the status bar and the panel.
+  const cover = Math.max(0, panelH - insets.top);
 
   const chips =
     seats.length > 1 ? (
