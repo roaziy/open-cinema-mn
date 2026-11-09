@@ -286,8 +286,9 @@ export function CameraRig({
         f.measureUntil = 0;
         if (f.frames > 0) {
           const avg = (f.sumDelta / f.frames) * 1000;
+          const ctx = state.gl.getContext();
           console.log(
-            `[seat-view] avg frame ${avg.toFixed(1)} ms (${(1000 / avg).toFixed(0)} fps) over ${f.frames} frames, 3 s after flight`,
+            `[seat-view] avg frame ${avg.toFixed(1)} ms (${(1000 / avg).toFixed(0)} fps) over ${f.frames} frames, 3 s after flight, gl samples ${String(ctx.getParameter(ctx.SAMPLES))}`,
           );
         }
         setFrameloop('demand');
