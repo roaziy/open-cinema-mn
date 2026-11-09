@@ -1,6 +1,7 @@
 // Turns assets/models/cinema-seat.glb into src/features/seat-view/seat-model.ts: the seat's
 // fabric and shell and the divider between seats as plain arrays (base64), so the app needs no
-// model loader at runtime. Run after changing the model:  node scripts/seat-model.mjs
+// model loader at runtime. Run after changing the model:
+//   node scripts/seat-model.mjs && npx biome format --write src/features/seat-view/seat-model.ts
 //
 // The GLB itself comes from scripts/seat-model-split.py (Blender), which cuts one `Seat` and one
 // `Arm` out of the source model. Meshes are turned 180 degrees about y: the model faces +z, the
@@ -49,16 +50,29 @@ function local(node) {
   const [sx, sy, sz] = node.scale ?? [1, 1, 1];
   const [tx, ty, tz] = node.translation ?? [0, 0, 0];
   return [
-    (1 - 2 * (y * y + z * z)) * sx, 2 * (x * y + z * w) * sx, 2 * (x * z - y * w) * sx, 0,
-    2 * (x * y - z * w) * sy, (1 - 2 * (x * x + z * z)) * sy, 2 * (y * z + x * w) * sy, 0,
-    2 * (x * z + y * w) * sz, 2 * (y * z - x * w) * sz, (1 - 2 * (x * x + y * y)) * sz, 0,
-    tx, ty, tz, 1,
+    (1 - 2 * (y * y + z * z)) * sx,
+    2 * (x * y + z * w) * sx,
+    2 * (x * z - y * w) * sx,
+    0,
+    2 * (x * y - z * w) * sy,
+    (1 - 2 * (x * x + z * z)) * sy,
+    2 * (y * z + x * w) * sy,
+    0,
+    2 * (x * z + y * w) * sz,
+    2 * (y * z - x * w) * sz,
+    (1 - 2 * (x * x + y * y)) * sz,
+    0,
+    tx,
+    ty,
+    tz,
+    1,
   ];
 }
 const mul = (a, b) => {
   const o = new Array(16).fill(0);
   for (let c = 0; c < 4; c++)
-    for (let r = 0; r < 4; r++) for (let k = 0; k < 4; k++) o[c * 4 + r] += a[k * 4 + r] * b[c * 4 + k];
+    for (let r = 0; r < 4; r++)
+      for (let k = 0; k < 4; k++) o[c * 4 + r] += a[k * 4 + r] * b[c * 4 + k];
   return o;
 };
 const parentOf = new Map();
@@ -95,7 +109,10 @@ function group(prims) {
       nz /= l;
       nor.push(-nx, ny, -nz);
     }
-    const ix = prim.indices != null ? read(prim.indices) : p.map((_, j) => j).filter((j) => j < p.length / 3);
+    const ix =
+      prim.indices != null
+        ? read(prim.indices)
+        : p.map((_, j) => j).filter((j) => j < p.length / 3);
     for (const v of ix) idx.push(v + offset);
   }
   if (pos.length / 3 > 65535) throw new Error('too many vertices for 16-bit indices');
@@ -147,4 +164,6 @@ export const SEAT_MODEL = {
 } as const;
 `;
 writeFileSync(join(root, 'src/features/seat-view/seat-model.ts'), out);
-console.log(`seat ${fabric.tris}+${shell.tris} tris, arm ${arm.tris} tris, width ${r3(width)} m, ${(out.length / 1024).toFixed(0)} KB`);
+console.log(
+  `seat ${fabric.tris}+${shell.tris} tris, arm ${arm.tris} tris, width ${r3(width)} m, ${(out.length / 1024).toFixed(0)} KB`,
+);
