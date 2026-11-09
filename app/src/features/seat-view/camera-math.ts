@@ -10,8 +10,8 @@ export type Vec3 = [number, number, number];
 type SeatPos = { x_m: number; y_m: number; z_m: number };
 type HallDims = { screen_width_m: number; screen_height_m: number; screen_x_m: number };
 
-/** The longest a flight takes (see flightMs). */
-export const FLY_MS = 2400;
+/** The longest a flight takes (see diveMs). */
+export const FLY_MS = 3200;
 
 /** Camera position for a seat: its position raised by the eye height. */
 export function eyePosition(seat: SeatPos): Vec3 {
@@ -264,8 +264,6 @@ const smooth = (a: number, b: number, x: number) => {
 /** Public so the scene can time its own fades to the same dive. */
 export const smoothstep = smooth;
 
-/** The lens change is done by this share of the move: no lens change while turning fastest. */
-const LENS_DONE_AT = 0.6;
 /** Highest angular speed of the camera, degrees per second. */
 export const MAX_TURN_DEG_PER_S = 90;
 /** Peak of the speed profile of `easeFlight` (its largest slope). */
@@ -316,24 +314,46 @@ const tanLerpDeg = (aDeg: number, bDeg: number, t: number) => {
   return (2 * Math.atan(logLerp(ta, tb, t)) * 180) / Math.PI;
 };
 
-/** Milliseconds for a move that turns the camera by `turnDeg`: 1.6 to 2.4 s, never faster than the turn cap. */
-export function flightMs(turnDeg: number, minMs = 1600, maxMs = 2400): number {
-  const need = ((EASE_PEAK * turnDeg) / MAX_TURN_DEG_PER_S) * 1000;
-  return Math.min(maxMs, Math.max(minMs, need));
-}
-
-/** How far the camera turns on the way from straight down to the seat's view, degrees. */
-export function diveTurnDeg(eye: Vec3, center: Vec3): number {
-  const a = viewAngles(eye, center);
-  return (Math.hypot(a.pitch + Math.PI / 2, a.yaw) * 180) / Math.PI;
-}
-
 export type Bounds = { half: number; depth: number };
+
+/** A point on the floor at the foot of the screen, where the look target passes on its way up. */
+const SCREEN_FOOT_Z_M = 1;
+/** Pulls the heading toward the screen while looking straight down, so it is defined there. */
+const HEADING_BIAS = 0.002;
+/** Progress at which the look target starts to climb from the floor to the screen centre. */
+export const B_FROM = 0.55;
+
+/**
+ * Orientation from where the camera is looking: the look target starts where the top-down
+ * camera looks (on the floor), slides across the floor to the foot of the screen, and climbs to
+ * the screen centre, arriving only as the camera reaches the eye. It always lies in the hall,
+ * so the room stays in view the whole way; heading and elevation come from geometry (no roll).
+ */
+function aimAt(k: number, top: TopDownPose, out: DivePose, center: Vec3) {
+  const a = smooth(0, 0.75, k);
+  const b = smooth(B_FROM, 1, k);
+  const x0 = top.target[0] + (center[0] - top.target[0]) * a;
+  const z0 = top.target[2] + (SCREEN_FOOT_Z_M - top.target[2]) * a;
+  const tx = x0 + (center[0] - x0) * b;
+  const ty = center[1] * b;
+  const tz = z0 + (center[2] - z0) * b;
+  const dx = tx - out.position[0];
+  const dy = ty - out.position[1];
+  const len = Math.hypot(dx, dy, tz - out.position[2]) || 1;
+  const dz = tz - out.position[2] - HEADING_BIAS * (1 - k) * (1 - k) * len;
+  const pitch = Math.asin(dy / (Math.hypot(dx, dy, dz) || 1));
+  // Looking almost straight down, the heading is the image's rotation: hold it at 0 (screen
+  // at the top) and let it come in only as the view levels out.
+  out.yaw = Math.atan2(-dx, -dz) * smooth(0, 0.4, Math.cos(pitch));
+  out.pitch = pitch;
+}
 
 /** Where the second control point of the final approach sits: behind and above the eye, inside the room. */
 export const APPROACH_BACK_M = 2;
 export const APPROACH_UP_M = 1.2;
 const WALL_INSET_M = 0.4;
+/** Share of the top-down altitude the curve's first control point keeps over the seat. */
+export const P1_ALT = 0.55;
 
 function approachPoint(
   eye: Vec3,
@@ -390,17 +410,16 @@ export function divePose(
   const end = viewAngles(eye, center);
   const p1 = sP1;
   p1[0] = eye[0];
-  p1[1] = Math.max(eye[1] + APPROACH_UP_M, top.position[1] * 0.55);
+  p1[1] = Math.max(eye[1] + APPROACH_UP_M, top.position[1] * P1_ALT);
   p1[2] = eye[2];
   const p2 = approachPoint(eye, end.yaw, bounds, sP2);
   out.position[0] = bez(top.position[0], p1[0], p2[0], eye[0], k);
   out.position[1] = bez(top.position[1], p1[1], p2[1], eye[1], k);
   out.position[2] = bez(top.position[2], p1[2], p2[2], eye[2], k);
-  out.yaw = end.yaw * k;
-  out.pitch = -Math.PI / 2 + (end.pitch + Math.PI / 2) * k;
-  const f = smooth(0, LENS_DONE_AT, k);
-  out.fov = tanLerpDeg(top.fov, povFovDeg, f);
-  out.squash = top.squash + (1 - top.squash) * f;
+  aimAt(k, top, out, center);
+  // The lens and the stretch of the seats move evenly with the curve: no burst of zoom.
+  out.fov = tanLerpDeg(top.fov, povFovDeg, k);
+  out.squash = top.squash + (1 - top.squash) * k;
   return out;
 }
 
@@ -433,8 +452,9 @@ export function hopPose(
   out.position[0] = bez(a[0], q1[0], q2[0], b[0], k);
   out.position[1] = bez(a[1], q1[1], q2[1], b[1], k);
   out.position[2] = bez(a[2], q1[2], q2[2], b[2], k);
-  out.yaw = va.yaw + (vb.yaw - va.yaw) * k;
-  out.pitch = va.pitch + (vb.pitch - va.pitch) * k;
+  const v = viewAngles(out.position, center);
+  out.yaw = v.yaw;
+  out.pitch = v.pitch;
   out.fov = tanLerpDeg(povFovA, povFovB, k);
   out.squash = 1;
   return out;
@@ -477,4 +497,111 @@ export function povFov(
   const need = Math.max(tanV, tanH / Math.max(aspect, 0.1)) * margin;
   const deg = (2 * Math.atan(need) * 180) / Math.PI;
   return Math.min(max, Math.max(min, deg));
+}
+
+const sTurnA: Vec3 = [0, 0, 0];
+const sTurnB: Vec3 = [0, 0, 0];
+const sTurnPose = newDivePose();
+
+/** Longest and shortest a move takes. */
+const MIN_MOVE_MS = 1600;
+const MAX_MOVE_MS = 3200;
+const CLOCK_STEPS = 200;
+/** Fastest the lens may change: ln of tan(fov/2) per second. */
+export const MAX_ZOOM_LN_PER_S = 3;
+
+/**
+ * Time to progress along a move. The curve is the same however fast it is played; the clock
+ * decides when each part of it happens: every small step of the curve gets the time its turn and
+ * its lens change need under the caps (90 degrees and 3 ln a second), so the work is spread
+ * instead of bursting where the camera turns or zooms most, and `ms` is the total for the whole
+ * move at the ease's peak speed. `at(tau)` takes the linear fraction of the time (0..1), eases it
+ * and returns the progress k (0..1) along the curve.
+ */
+export type MoveClock = { ms: number; at: (tau: number) => number };
+
+function buildClock(pose: (k: number, out: DivePose) => DivePose, minMs: number): MoveClock {
+  const n = CLOCK_STEPS;
+  const cum = new Float64Array(n + 1);
+  let prev = pose(0, sTurnPose);
+  let py = prev.yaw;
+  let pp = prev.pitch;
+  let pf = Math.tan((prev.fov * Math.PI) / 360);
+  for (let i = 1; i <= n; i++) {
+    prev = pose(i / n, sTurnPose);
+    forwardOf(py, pp, sTurnA);
+    forwardOf(prev.yaw, prev.pitch, sTurnB);
+    const dot = Math.min(
+      1,
+      Math.max(-1, sTurnA[0] * sTurnB[0] + sTurnA[1] * sTurnB[1] + sTurnA[2] * sTurnB[2]),
+    );
+    const turn = (Math.acos(dot) * 180) / Math.PI;
+    const tf = Math.tan((prev.fov * Math.PI) / 360);
+    const lens = Math.abs(Math.log(tf / pf));
+    // seconds this step needs at the caps, with a little for the camera simply travelling
+    const need = Math.max(turn / MAX_TURN_DEG_PER_S, lens / MAX_ZOOM_LN_PER_S, 0.3 / n);
+    cum[i] = (cum[i - 1] as number) + need;
+    py = prev.yaw;
+    pp = prev.pitch;
+    pf = tf;
+  }
+  const total = cum[n] as number;
+  for (let i = 1; i <= n; i++) cum[i] = (cum[i] as number) / total;
+  // the ease's steepest part runs EASE_PEAK times faster than a steady pace
+  const ms = Math.min(MAX_MOVE_MS, Math.max(minMs, total * EASE_PEAK * 1000 * 1.02));
+  const at = (tau: number) => {
+    const u = smooth(0, 1, tau);
+    let lo = 0;
+    let hi = n;
+    while (hi - lo > 1) {
+      const mid = (lo + hi) >> 1;
+      if ((cum[mid] as number) <= u) lo = mid;
+      else hi = mid;
+    }
+    const span = (cum[hi] as number) - (cum[lo] as number);
+    const f = span > 1e-12 ? (u - (cum[lo] as number)) / span : 0;
+    return (lo + Math.min(1, Math.max(0, f))) / n;
+  };
+  return { ms, at };
+}
+
+/** The clock for the dive to this seat (1.6 to 3.2 s, the turn cap decides). */
+export function diveClock(
+  top: TopDownPose,
+  eye: Vec3,
+  center: Vec3,
+  povFovDeg: number,
+  bounds: Bounds,
+): MoveClock {
+  return buildClock((k, out) => divePose(k, top, eye, center, povFovDeg, out, bounds), MIN_MOVE_MS);
+}
+
+/** The clock for a seat-to-seat hop. */
+export function hopClock(
+  a: Vec3,
+  b: Vec3,
+  center: Vec3,
+  povA: number,
+  povB: number,
+  envelopeY: number,
+  bounds: Bounds,
+): MoveClock {
+  return buildClock(
+    (k, out) => hopPose(k, a, b, center, povA, povB, envelopeY, bounds, out),
+    MIN_MOVE_MS,
+  );
+}
+
+/**
+ * Progress when a move is turned round or retimed in flight: a cubic Hermite from `from` to
+ * `to` over the unit time `s`, starting with the velocity the camera has right now (`v0`, per
+ * unit of `s`) and ending at the pace of an undisturbed move (`v1`). No jump in speed.
+ */
+export function tauHermite(s: number, from: number, to: number, v0: number, v1: number): number {
+  const t = Math.min(1, Math.max(0, s));
+  const t2 = t * t;
+  const t3 = t2 * t;
+  return (
+    (2 * t3 - 3 * t2 + 1) * from + (t3 - 2 * t2 + t) * v0 + (-2 * t3 + 3 * t2) * to + (t3 - t2) * v1
+  );
 }

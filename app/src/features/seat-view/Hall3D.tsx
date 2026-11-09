@@ -9,7 +9,6 @@ import { type LayoutChangeEvent, PixelRatio, Platform, View } from 'react-native
 import type { SharedValue } from 'react-native-reanimated';
 import * as THREE from 'three';
 import {
-  FLY_MS,
   hallDepth,
   hallExtents,
   hallHalfWidth,
@@ -18,6 +17,7 @@ import {
   smoothstep,
   stepSpans,
   type TopDownPose,
+  type Vec3,
 } from './camera-math';
 import { CameraRig, type RigGoal } from './camera-rig';
 import { HallRoom } from './HallRoom';
@@ -231,11 +231,12 @@ function Scene({
     [seats, selectedIds],
   );
 
-  // Seats the camera is at (or just left) are dropped at the seat: no geometry around the lens.
-  const away = useRef<string | null>(null);
-  const awayTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  // The seat the camera is at (and the one it just left) shrinks away as the camera comes close:
+  // no geometry around the lens, no pop, and a seat stays in view as the blue landmark until then.
+  const previousId = useRef<string | null>(null);
   const lastCurrent = useRef(currentId);
   const lastS = useRef(-1);
+  const lastCam = useRef<Vec3>([0, 0, 0]);
   const ambientRef = useRef<THREE.AmbientLight>(null);
   const spillRef = useRef<THREE.PointLight>(null);
   const topRef = useRef<THREE.PointLight>(null);
@@ -249,11 +250,19 @@ function Scene({
       // Rows are drawn closer together on the 2D map: stretch each seat's depth by the same
       // factor at the start so the footprints read as the map's squares, then settle to real.
       const g = (1 / Math.max(0.2, topPose.squash)) ** (1 - s);
-      const gone = smoothstep(0.5, 0.85, s);
+      const cam = get().camera.position;
+      /** 1 when far from the camera, 0 when it is at the seat. */
+      const near = (seat: SeatState) =>
+        smoothstep(
+          0.5,
+          2.2,
+          Math.hypot(cam.x - seat.x_m, cam.y - (seat.z_m + 0.6), cam.z - seat.y_m),
+        );
+      const own = (id: string) => id === currentId || id === previousId.current;
       const seatMesh = seatsRef.current;
       if (seatMesh) {
         drawable.forEach((seat, i) => {
-          const k = seat.id === currentId || seat.id === away.current ? 1 - gone : 1;
+          const k = own(seat.id) ? near(seat) : 1;
           dummy.position.set(seat.x_m, seat.z_m, seat.y_m);
           dummy.scale.set(k, k, k * g);
           dummy.updateMatrix();
@@ -264,8 +273,7 @@ function Scene({
       const pickMesh = pickRef.current;
       if (pickMesh) {
         chosen.forEach((seat, i) => {
-          const own = seat.id === currentId || seat.id === away.current;
-          const k = (seat.id === currentId ? 1.3 : 1.06) * (own ? 1 - gone : 1);
+          const k = (seat.id === currentId ? 1.3 : 1.06) * (own(seat.id) ? near(seat) : 1);
           dummy.position.set(seat.x_m, seat.z_m, seat.y_m);
           dummy.scale.set(k, k, k * g);
           dummy.updateMatrix();
@@ -288,27 +296,17 @@ function Scene({
         fogRef.current.far = 48 + 2e4 * (1 - t) ** 3;
       }
     },
-    [drawable, chosen, currentId, topPose.squash, seatMat],
+    [drawable, chosen, currentId, topPose.squash, seatMat, get],
   );
 
-  // A new viewing seat: keep the previous one out of the way until the camera has left it.
+  // A new viewing seat: remember the one the camera is leaving.
   useEffect(() => {
     if (lastCurrent.current === currentId) return;
-    away.current = lastCurrent.current;
+    previousId.current = lastCurrent.current;
     lastCurrent.current = currentId;
-    if (awayTimer.current) clearTimeout(awayTimer.current);
-    awayTimer.current = setTimeout(() => {
-      away.current = null;
-      follow(dive.get());
-      invalidate();
-    }, FLY_MS + 300);
+    follow(dive.get());
+    invalidate();
   }, [currentId, dive, invalidate, follow]);
-  useEffect(
-    () => () => {
-      if (awayTimer.current) clearTimeout(awayTimer.current);
-    },
-    [],
-  );
 
   // Instances and lights are written whenever the data changes and while the dive moves.
   useLayoutEffect(() => {
@@ -316,10 +314,17 @@ function Scene({
     lastS.current = dive.get();
     invalidate();
   }, [follow, dive, invalidate]);
-  useFrame(() => {
+  useFrame(({ camera }) => {
     const s = dive.get();
-    if (Math.abs(s - lastS.current) < 0.002) return;
+    const c = camera.position;
+    const moved = Math.hypot(
+      c.x - lastCam.current[0],
+      c.y - lastCam.current[1],
+      c.z - lastCam.current[2],
+    );
+    if (Math.abs(s - lastS.current) < 0.002 && moved < 0.03) return;
     lastS.current = s;
+    lastCam.current = [c.x, c.y, c.z];
     follow(s);
   });
 
