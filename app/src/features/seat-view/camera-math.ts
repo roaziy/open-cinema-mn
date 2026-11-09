@@ -354,15 +354,16 @@ function aimAt(
   center: Vec3,
   end: number,
   eye: Vec3,
-  held: number,
+  front: number | null,
 ) {
   const a = smooth(0, 0.75, k);
   const b = smooth(B_FROM, 1, k);
   // The target stays on the seat block (the held seat) until it climbs to the screen: no frame
   // looks at the empty floor between the screen and the first row.
-  // Opening keeps the approved aim (toward the foot of the screen); closing keeps the held seat.
-  const gx = center[0] + (eye[0] - center[0]) * held;
-  const gz = SCREEN_FOOT_Z_M + (eye[2] - SCREEN_FOOT_Z_M) * held;
+  // The look target's floor waypoint: the foot of the screen when opening (the approved aim); when
+  // leaving, the front edge of the seat block over the held seat, so no frame is empty floor.
+  const gx = front === null ? center[0] : eye[0];
+  const gz = front === null ? SCREEN_FOOT_Z_M : front;
   const x0 = top.target[0] + (gx - top.target[0]) * a;
   const z0 = top.target[2] + (gz - top.target[2]) * a;
   const tx = x0 + (center[0] - x0) * b;
@@ -436,8 +437,8 @@ export function divePose(
   povFovDeg: number,
   out: DivePose,
   bounds: Bounds,
-  /** 0 opening (the approved aim); 1 leaving: the look stays on the held seat (seats stay in frame). */
-  held = 0,
+  /** null when opening; when leaving, z of the waypoint at the front edge of the seat block. */
+  front: number | null = null,
 ): DivePose {
   const k = Math.min(1, Math.max(0, p));
   const end = viewAngles(eye, center);
@@ -449,7 +450,7 @@ export function divePose(
   out.position[0] = bez(top.position[0], p1[0], p2[0], eye[0], k);
   out.position[1] = bez(top.position[1], p1[1], p2[1], eye[1], k);
   out.position[2] = bez(top.position[2], p1[2], p2[2], eye[2], k);
-  aimAt(k, top, out, center, end.yaw, eye, held);
+  aimAt(k, top, out, center, end.yaw, eye, front);
   // The lens and the stretch of the seats move evenly with the curve: no burst of zoom.
   out.fov = tanLerpDeg(top.fov, povFovDeg, k);
   out.squash = top.squash + (1 - top.squash) * k;
