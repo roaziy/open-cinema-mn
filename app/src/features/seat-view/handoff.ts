@@ -10,11 +10,20 @@ export const LEAD_MS = 250;
 /** 2D tile width over the 3D seat's width (0.55 m pitch * 0.86 over cushion + armrests 0.52 m). */
 export const TILE_WIDTH_RATIO = (0.55 * 0.86) / 0.52;
 
-/** Share of the hand-off that has happened (0 until the close reaches `HANDOFF_FROM`, 1 at the map). */
-export function handoffProgress(dive: number, closing: boolean): number {
+/** The closing flag when the view is not being left; otherwise the dive progress at which leaving began. */
+export const NOT_CLOSING = -1;
+
+/**
+ * Share of the hand-off that has happened: 0 until the close reaches `HANDOFF_FROM`, 1 at the
+ * map. A close that begins below `HANDOFF_FROM` (the open dive was still near the map) starts
+ * from 0 and ramps to 1, so the look never jumps.
+ */
+export function handoffProgress(dive: number, closeStart: number): number {
   'worklet';
-  if (!closing) return 0;
-  return Math.min(1, Math.max(0, (HANDOFF_FROM - dive) / HANDOFF_FROM));
+  if (closeStart < 0) return 0;
+  const raw = Math.min(1, Math.max(0, (HANDOFF_FROM - dive) / HANDOFF_FROM));
+  const p0 = Math.min(1, Math.max(0, (HANDOFF_FROM - closeStart) / HANDOFF_FROM));
+  return p0 >= 1 ? 1 : Math.min(1, Math.max(0, (raw - p0) / (1 - p0)));
 }
 
 /**
@@ -23,9 +32,9 @@ export function handoffProgress(dive: number, closing: boolean): number {
  * first. `morph` takes the 3D seats to the 2D tiles: lighting off, footprint, held seats at tile
  * size, the 3D screen band gone. A pure function of progress, so it is reversible.
  */
-export function handoffLook(dive: number, closing: boolean) {
+export function handoffLook(dive: number, closeStart: number) {
   'worklet';
-  const p = handoffProgress(dive, closing);
+  const p = handoffProgress(dive, closeStart);
   const landmarks = smoothstep(0.05, 0.7, p);
   const morph = smoothstep(0.2, 1, p);
   return {
@@ -42,6 +51,7 @@ export function handoffLook(dive: number, closing: boolean) {
 
 /** Held seats' accent shell: from the oversized box to exactly the tile (scale 1) as `morph` goes to 1. */
 export function heldScale(morph: number, current: boolean): number {
+  'worklet';
   const big = current ? 1.3 : 1.06;
   return big + (1 - big) * morph;
 }

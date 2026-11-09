@@ -64,6 +64,26 @@ const clamp = (v: number, lo: number, hi: number) => {
   return Math.min(hi, Math.max(lo, v));
 };
 
+const noop = () => {};
+
+/** The row letters down both sides of the seat grid (shared by the canvas and the hand-off layer, so they cannot drift apart). */
+function RowLetters({ layout }: { layout: SeatLayout }) {
+  return (
+    <>
+      {layout.rows.map((r) => (
+        <View key={r.label} pointerEvents="none">
+          <View style={[styles.letter, { top: r.top, left: -GUTTER, height: layout.rowStep }]}>
+            <Text style={styles.rowLetter}>{r.label}</Text>
+          </View>
+          <View style={[styles.letter, { top: r.top, left: layout.width, height: layout.rowStep }]}>
+            <Text style={styles.rowLetter}>{r.label}</Text>
+          </View>
+        </View>
+      ))}
+    </>
+  );
+}
+
 /** The screen arc, row letters and seats on a canvas you can pinch to zoom and drag around. */
 export function SeatCanvas({
   layout,
@@ -155,23 +175,7 @@ export function SeatCanvas({
           >
             <ScreenArc width={cw} tone={tone} />
             <View style={{ position: 'absolute', left: GUTTER, top: arcH }}>
-              {layout.rows.map((r) => (
-                <View key={r.label} pointerEvents="none">
-                  <View
-                    style={[styles.letter, { top: r.top, left: -GUTTER, height: layout.rowStep }]}
-                  >
-                    <Text style={styles.rowLetter}>{r.label}</Text>
-                  </View>
-                  <View
-                    style={[
-                      styles.letter,
-                      { top: r.top, left: layout.width, height: layout.rowStep },
-                    ]}
-                  >
-                    <Text style={styles.rowLetter}>{r.label}</Text>
-                  </View>
-                </View>
-              ))}
+              <RowLetters layout={layout} />
               {layout.slots.map(({ seat, left, top }) => {
                 if (seat.kind === 'blocked') return null;
                 const status = statusOf(seat.id);
@@ -248,18 +252,7 @@ export function SeatLandmarks({ layout, transform, rect, tone, statusOf, opacity
       >
         <ScreenArc width={cw} tone={tone} />
         <View style={{ position: 'absolute', left: origin.x, top: origin.y }}>
-          {layout.rows.map((r) => (
-            <View key={r.label}>
-              <View style={[styles.letter, { top: r.top, left: -GUTTER, height: layout.rowStep }]}>
-                <Text style={styles.rowLetter}>{r.label}</Text>
-              </View>
-              <View
-                style={[styles.letter, { top: r.top, left: layout.width, height: layout.rowStep }]}
-              >
-                <Text style={styles.rowLetter}>{r.label}</Text>
-              </View>
-            </View>
-          ))}
+          <RowLetters layout={layout} />
           {layout.slots.map(({ seat, left, top }) => {
             if (seat.kind === 'blocked') return null;
             const status = statusOf(seat.id);
@@ -275,7 +268,7 @@ export function SeatLandmarks({ layout, transform, rect, tone, statusOf, opacity
                 kind={seat.kind}
                 status={status}
                 label=""
-                onPress={() => {}}
+                onPress={noop}
                 glyphsOnly
               />
             );

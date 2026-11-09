@@ -2,21 +2,15 @@ import type { Hold } from '@open-cinema/shared';
 import { formatUbTime } from '@open-cinema/shared';
 import { useQueryClient } from '@tanstack/react-query';
 import { router, Stack, useLocalSearchParams } from 'expo-router';
-import { useHeaderHeight, usePreventRemove } from 'expo-router/react-navigation';
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { type HostInstance, StyleSheet, Text, useWindowDimensions, View } from 'react-native';
-import Animated, {
-  useAnimatedStyle,
-  useDerivedValue,
-  useReducedMotion,
-  useSharedValue,
-} from 'react-native-reanimated';
+import { useHeaderHeight } from 'expo-router/react-navigation';
+import { useCallback, useMemo } from 'react';
+import { StyleSheet, Text, useWindowDimensions, View } from 'react-native';
+import Animated, { useReducedMotion } from 'react-native-reanimated';
 import { PosterBackdrop } from '@/components/poster-backdrop';
 import {
   SeatCanvas,
   SeatLandmarks,
   seatAreaWidth,
-  seatContentMetrics,
   useSeatTransform,
 } from '@/components/seat-canvas';
 import type { SeatStatus } from '@/components/seat-cell';
@@ -24,18 +18,10 @@ import { SeatFooter } from '@/components/seat-footer';
 import { SeatLegend } from '@/components/seat-legend';
 import { Skeleton } from '@/components/skeleton';
 import { ErrorState } from '@/components/state-views';
-import {
-  mapFitOf,
-  seatPlaneHeight,
-  type TopDownPose,
-  topDownFromMap,
-} from '@/features/seat-view/camera-math';
-import { chromeOpacity, footerSlide } from '@/features/seat-view/chrome-fade';
-import { handoffLook } from '@/features/seat-view/handoff';
-import { type OverlayRect, SeatViewOverlay } from '@/features/seat-view/SeatViewOverlay';
+import { SeatViewOverlay } from '@/features/seat-view/SeatViewOverlay';
+import { useSeatView } from '@/features/seat-view/use-seat-view';
 import { useI18n } from '@/i18n';
 import { useAuth } from '@/lib/auth';
-import { haptic } from '@/lib/haptics';
 import { layoutSeats } from '@/lib/seat-layout';
 import { liveHolds, seatLabel, useMyHolds, useSeatActions, useSeatMap } from '@/lib/seats';
 import { useSeatStream } from '@/lib/sse';
@@ -121,145 +107,30 @@ export default function SeatMapScreen() {
     qc.invalidateQueries({ queryKey: ['holds', id] });
   }, [qc, id, t, patch, bySeat]);
 
-  // In-place 3D view: the map fades out under it, the canvas starts from the map's own pose.
+  // In-place 3D view (see use-seat-view.ts).
   const transform = useSeatTransform();
-  const rootRef = useRef<HostInstance>(null);
-  const viewportRef = useRef<HostInstance>(null);
-  const fade = useSharedValue(0);
-  const dive = useSharedValue(0);
-  const closingFlag = useSharedValue(0);
-  // The 2D layers with no 3D counterpart arrive over the canvas while the camera settles.
-  const landmarks = useDerivedValue(() => handoffLook(dive.get(), closingFlag.get() > 0).landmarks);
+  const {
+    rootRef,
+    viewportRef,
+    viewing,
+    isViewing,
+    open: openView,
+    requestClose,
+    closed,
+    fade,
+    dive,
+    closingFlag,
+    landmarks,
+    chromeStyle,
+    footerStyle,
+  } = useSeatView({
+    layout,
+    transform,
+    mapSeats: map.data?.seats,
+    selected,
+    isTaken: (seatId) => statusOf(seatId) === 'taken',
+  });
   const still = useReducedMotion();
-  // The header, legend and footer stay over the 3D picture through the first part of the dive and
-  // fade around its middle (see chrome-fade.ts); with Reduce Motion they follow the crossfade.
-  const chromeStyle = useAnimatedStyle(() => ({
-    opacity: chromeOpacity(dive.get(), fade.get(), still),
-  }));
-  const footerStyle = useAnimatedStyle(() => ({
-    opacity: chromeOpacity(dive.get(), fade.get(), still),
-    transform: [{ translateY: footerSlide(dive.get(), fade.get(), still) }],
-  }));
-  const [viewing, setViewing] = useState<{
-    seatId: string;
-    takenIds: string[];
-    rect: OverlayRect;
-    /** The 2D map's viewport in the window's coordinates. */
-    mapRect: OverlayRect;
-    topPose: TopDownPose;
-    closing: boolean;
-  } | null>(null);
-  const requestClose = useCallback(
-    () => setViewing((v) => (v && !v.closing ? { ...v, closing: true } : v)),
-    [],
-  );
-  const closed = useCallback(() => {
-    dive.set(0);
-    fade.set(0);
-    closingFlag.set(0);
-    setViewing(null);
-  }, [dive, fade, closingFlag]);
-  // The back button, swipe-back and the Android back key leave the 3D view first. Anything else
-  // that removes the screen (a reset after logout, say) goes through untouched.
-  const isViewing = viewing !== null;
-  const [guard, setGuard] = useState(true);
-  const repeat = useRef<(() => void) | null>(null);
-  usePreventRemove(isViewing && guard, ({ data, repeat: again }) => {
-    if (data.action.type === 'GO_BACK' || data.action.type === 'POP') requestClose();
-    else {
-      repeat.current = again;
-      setGuard(false);
-    }
-  });
-  useEffect(() => {
-    if (guard) return;
-    repeat.current?.();
-    repeat.current = null;
-  }, [guard]);
-
-  /** The top-down pose that matches the 2D map as it is right now (live pan/zoom and layout). */
-  const measureTop = (
-    done: (topPose: TopDownPose, rect: OverlayRect, mapRect: OverlayRect) => void,
-  ) => {
-    const root = rootRef.current;
-    const viewport = viewportRef.current;
-    if (!root || !viewport) return;
-    root.measureInWindow((rx, ry, rw, rh) => {
-      viewport.measureInWindow((vx, vy, vw, vh) => {
-        const content = seatContentMetrics(layout);
-        // The 3D canvas is the whole window; the 2D map's viewport sits at (offsetX, offsetY)
-        // inside it, so the top-down frame lines up with the seats on screen.
-        const topPose = topDownFromMap({
-          fit: mapFitOf(layout.slots, layout.size, layout.ppm, content.origin),
-          view: {
-            scale: transform.scale.get(),
-            tx: transform.tx.get(),
-            ty: transform.ty.get(),
-            viewW: vw,
-            viewH: vh,
-            contentW: content.width,
-            contentH: content.height,
-          },
-          canvasW: rw,
-          canvasH: rh,
-          offsetX: vx - rx,
-          offsetY: vy - ry,
-          planeY: seatPlaneHeight(map.data?.seats ?? []),
-        });
-        done(topPose, { x: 0, y: 0, w: rw, h: rh }, { x: vx - rx, y: vy - ry, w: vw, h: vh });
-      });
-    });
-  };
-
-  const openView = () => {
-    const last = selected[selected.length - 1];
-    if (!last) return;
-    haptic.tap();
-    measureTop((topPose, rect, mapRect) => {
-      if (__DEV__)
-        console.log(
-          '[seat-view] open from',
-          topPose.position.map((v) => v.toFixed(3)),
-          'fov',
-          topPose.fov.toFixed(3),
-        );
-      fade.set(0);
-      dive.set(0);
-      setViewing({
-        seatId: last.id,
-        takenIds: layout.slots
-          .filter(({ seat }) => seat.kind !== 'blocked' && statusOf(seat.id) === 'taken')
-          .map(({ seat }) => seat.id),
-        rect,
-        mapRect,
-        topPose,
-        closing: false,
-      });
-    });
-  };
-
-  // Leaving lands on the 2D map as it is NOW, not as it was when the view opened.
-  const isClosing = viewing?.closing === true;
-  useEffect(() => {
-    closingFlag.set(isClosing ? 1 : 0);
-  }, [isClosing, closingFlag]);
-  const measureRef = useRef(measureTop);
-  useEffect(() => {
-    measureRef.current = measureTop;
-  });
-  useEffect(() => {
-    if (!isClosing) return;
-    measureRef.current((topPose) => {
-      if (__DEV__)
-        console.log(
-          '[seat-view] close lands on',
-          topPose.position.map((v) => v.toFixed(3)),
-          'fov',
-          topPose.fov.toFixed(3),
-        );
-      setViewing((v) => (v ? { ...v, topPose } : v));
-    });
-  }, [isClosing]);
 
   const show = map.data?.showtime;
   const tone = show?.movie.tone ?? colors.canvas;
@@ -280,6 +151,7 @@ export default function SeatMapScreen() {
           headerTintColor: colors.ink,
           // No slide closes the 3D view: the iOS edge swipe cannot even start while it is open.
           gestureEnabled: !isViewing,
+          // Intentionally off: a full-screen swipe would fight the seat map's pan.
           fullScreenGestureEnabled: false,
         }}
       />
@@ -369,7 +241,12 @@ export default function SeatMapScreen() {
         ) : null}
       </Animated.View>
       {viewing && map.data && !still ? (
-        <View style={styles.landmarks} pointerEvents="none">
+        <View
+          style={styles.landmarks}
+          pointerEvents="none"
+          accessibilityElementsHidden
+          importantForAccessibility="no-hide-descendants"
+        >
           <SeatLandmarks
             layout={layout}
             transform={transform}
