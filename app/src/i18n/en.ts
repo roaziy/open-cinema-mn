@@ -226,7 +226,6 @@ export const en: Record<TKey, string> = {
   'view.sideProfile': 'Side',
   'view.topDown': 'Top',
   'view.switcher': 'Switch seat',
-  'view.lookAround': 'Look around by moving your phone',
 
   'lang.mn': 'Монгол',
   'lang.en': 'English',

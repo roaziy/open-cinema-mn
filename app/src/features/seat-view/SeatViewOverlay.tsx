@@ -1,5 +1,4 @@
 import { type SeatMap, type SeatState, seatViewStats } from '@open-cinema/shared';
-import { Stack } from 'expo-router';
 import { useHeaderHeight } from 'expo-router/react-navigation';
 import {
   lazy,
@@ -15,7 +14,6 @@ import {
 import {
   AppState,
   type LayoutChangeEvent,
-  Platform,
   ScrollView,
   StyleSheet,
   Text,
@@ -24,10 +22,7 @@ import {
 } from 'react-native';
 import { GestureDetector, usePanGesture } from 'react-native-gesture-handler';
 import Animated, {
-  SensorType,
   type SharedValue,
-  useAnimatedReaction,
-  useAnimatedSensor,
   useAnimatedStyle,
   useReducedMotion,
   useSharedValue,
@@ -55,18 +50,7 @@ import { GlBoundary } from './gl-boundary';
 import { createGlMachine } from './gl-machine';
 import { Hall2D } from './Hall2D';
 import { CROSSFADE_MS } from './handoff';
-import {
-  angleDiff,
-  dragLook,
-  foldGyroLook,
-  grabLook,
-  type Look,
-  letGoLook,
-  newLook,
-  phoneAim,
-  releaseLook,
-  setGyroLook,
-} from './look-around';
+import { dragLook, grabLook, letGoLook, newLook, releaseLook } from './look-around';
 import { StatsCard } from './StatsCard';
 import { goalOf, initialTransition, panelLive, transitionReducer } from './transition-machine';
 
@@ -85,46 +69,6 @@ function byPosition(a: SeatState, b: SeatState) {
 }
 
 export type OverlayRect = { x: number; y: number; w: number; h: number };
-
-/** Looking more steeply than this up or down, the phone's heading is too unsteady to follow. */
-const STEEP = 1.35;
-
-/**
- * While mounted, turning the phone turns the view, by the phone's turn since it mounted (the
- * motion sensor runs only meanwhile). Unmounting keeps the view where it is.
- */
-function PhoneLook({ look }: { look: Look }) {
-  const rotation = useAnimatedSensor(SensorType.ROTATION, {
-    interval: 'auto',
-    adjustToInterfaceOrientation: false,
-  });
-  const start = useRef<{ heading: number; elevation: number } | null>(null);
-  const onTurn = useCallback(
-    (qx: number, qy: number, qz: number, qw: number) => {
-      const aim = phoneAim(qx, qy, qz, qw);
-      if (!start.current) {
-        start.current = aim;
-        return;
-      }
-      const yaw =
-        Math.abs(aim.elevation) > STEEP
-          ? look.gyroYaw
-          : angleDiff(aim.heading, start.current.heading);
-      setGyroLook(look, yaw, aim.elevation - start.current.elevation);
-    },
-    [look],
-  );
-  useAnimatedReaction(
-    () => rotation.sensor.get(),
-    (q) => {
-      // the sensor's first value, before any reading, is all zeros
-      if (q.qw === 0 && q.qx === 0 && q.qy === 0 && q.qz === 0) return;
-      scheduleOnRN(onTurn, q.qx, q.qy, q.qz, q.qw);
-    },
-  );
-  useEffect(() => () => foldGyroLook(look), [look]);
-  return null;
-}
 
 type Props = {
   map: SeatMap;
@@ -190,9 +134,8 @@ export function SeatViewOverlay({
   const [panelH, setPanelH] = useState(0);
   // A seat switch is flying: further taps and back wait for it to land.
   const [hopping, setHopping] = useState(false);
-  // Looking around from the seat: a drag, and (switched on from the header) turning the phone.
+  // Looking around from the seat with a drag.
   const [look] = useState(newLook);
-  const [phoneLook, setPhoneLook] = useState(false);
   const fallbackFade = useSharedValue(0);
   const [tr, send] = useReducer(
     transitionReducer,
@@ -347,7 +290,6 @@ export function SeatViewOverlay({
     onDeactivate: (e) => releaseLook(look, e.velocityX, e.velocityY, rect.w),
     onFinalize: () => letGoLook(look),
   });
-  const phoneOn = phoneLook && lookable;
 
   if (!current || !stats) return null;
 
@@ -393,21 +335,6 @@ export function SeatViewOverlay({
 
   return (
     <>
-      {phoneOn ? <PhoneLook look={look} /> : null}
-      {/* ponytail: iOS only (SF Symbol); Android needs an image icon for the header button. */}
-      {Platform.OS === 'ios' && lookable ? (
-        <Stack.Toolbar placement="right">
-          <Stack.Toolbar.Button
-            icon="gyroscope"
-            selected={phoneLook}
-            accessibilityLabel={t('view.lookAround')}
-            onPress={() => {
-              haptic.select();
-              setPhoneLook((on) => !on);
-            }}
-          />
-        </Stack.Toolbar>
-      ) : null}
       <View style={[StyleSheet.absoluteFill, styles.canvasLayer]}>
         {showCanvas ? (
           <GestureDetector gesture={lookPan}>
