@@ -522,9 +522,6 @@ export function povFov(
 
 const sTurnPose = newDivePose();
 
-/** Longest and shortest a move takes. */
-const MIN_MOVE_MS = 1600;
-const MAX_MOVE_MS = 3200;
 const CLOCK_STEPS = 200;
 /** Fastest the lens may change: ln of tan(fov/2) per second. */
 export const MAX_ZOOM_LN_PER_S = 3;
@@ -537,9 +534,27 @@ export const MAX_ZOOM_LN_PER_S = 3;
  * move at the ease's peak speed. `at(tau)` takes the linear fraction of the time (0..1), eases it
  * and returns the progress k (0..1) along the curve.
  */
-export type MoveClock = { ms: number; at: (tau: number) => number };
+export type MoveClock = {
+  ms: number;
+  at: (tau: number) => number;
+  /** The inverse: the linear time fraction at which the progress is `k`. */
+  tauOf: (k: number) => number;
+};
 
-function buildClock(pose: (k: number, out: DivePose) => DivePose, minMs: number): MoveClock {
+/** The caps a clock plays a move under. */
+export type ClockCaps = { turnDegPerS: number; zoomLnPerS: number; minMs: number; maxMs: number };
+
+/** Opening: 90 degrees and 3 ln a second, 1.6 to 3.2 s. */
+export const OPEN_CAPS: ClockCaps = {
+  turnDegPerS: MAX_TURN_DEG_PER_S,
+  zoomLnPerS: MAX_ZOOM_LN_PER_S,
+  minMs: 1600,
+  maxMs: 3200,
+};
+/** Closing is about 30 percent quicker: 125 degrees and 4 ln a second. */
+export const CLOSE_CAPS: ClockCaps = { turnDegPerS: 125, zoomLnPerS: 4, minMs: 1100, maxMs: 2300 };
+
+function buildClock(pose: (k: number, out: DivePose) => DivePose, caps: ClockCaps): MoveClock {
   const n = CLOCK_STEPS;
   const cum = new Float64Array(n + 1);
   let prev = pose(0, sTurnPose);
@@ -552,7 +567,7 @@ function buildClock(pose: (k: number, out: DivePose) => DivePose, minMs: number)
     const tf = Math.tan((prev.fov * Math.PI) / 360);
     const lens = Math.abs(Math.log(tf / pf));
     // seconds this step needs at the caps, with a little for the camera simply travelling
-    const need = Math.max(turn / MAX_TURN_DEG_PER_S, lens / MAX_ZOOM_LN_PER_S, 0.3 / n);
+    const need = Math.max(turn / caps.turnDegPerS, lens / caps.zoomLnPerS, 0.3 / n);
     cum[i] = (cum[i - 1] as number) + need;
     py = prev.yaw;
     pp = prev.pitch;
@@ -561,7 +576,7 @@ function buildClock(pose: (k: number, out: DivePose) => DivePose, minMs: number)
   const total = cum[n] as number;
   for (let i = 1; i <= n; i++) cum[i] = (cum[i] as number) / total;
   // the ease's steepest part runs EASE_PEAK times faster than a steady pace
-  const ms = Math.min(MAX_MOVE_MS, Math.max(minMs, total * EASE_PEAK * 1000 * 1.02));
+  const ms = Math.min(caps.maxMs, Math.max(caps.minMs, total * EASE_PEAK * 1000 * 1.02));
   const at = (tau: number) => {
     const u = smooth(0, 1, tau);
     let lo = 0;
@@ -575,7 +590,18 @@ function buildClock(pose: (k: number, out: DivePose) => DivePose, minMs: number)
     const f = span > 1e-12 ? (u - (cum[lo] as number)) / span : 0;
     return (lo + Math.min(1, Math.max(0, f))) / n;
   };
-  return { ms, at };
+  const tauOf = (k: number) => {
+    const target = Math.min(1, Math.max(0, k));
+    let lo = 0;
+    let hi = 1;
+    for (let i = 0; i < 40; i++) {
+      const mid = (lo + hi) / 2;
+      if (at(mid) < target) lo = mid;
+      else hi = mid;
+    }
+    return (lo + hi) / 2;
+  };
+  return { ms, at, tauOf };
 }
 
 /** The clock for the dive to this seat (1.6 to 3.2 s, the turn cap decides). */
@@ -585,8 +611,9 @@ export function diveClock(
   center: Vec3,
   povFovDeg: number,
   bounds: Bounds,
+  caps: ClockCaps = OPEN_CAPS,
 ): MoveClock {
-  return buildClock((k, out) => divePose(k, top, eye, center, povFovDeg, out, bounds), MIN_MOVE_MS);
+  return buildClock((k, out) => divePose(k, top, eye, center, povFovDeg, out, bounds), caps);
 }
 
 /** The clock for a seat-to-seat hop. */
@@ -601,7 +628,7 @@ export function hopClock(
 ): MoveClock {
   return buildClock(
     (k, out) => hopPose(k, a, b, center, povA, povB, envelopeY, bounds, out),
-    MIN_MOVE_MS,
+    OPEN_CAPS,
   );
 }
 
@@ -631,6 +658,7 @@ export function reversalMs(
   to: number,
   vel: number,
   baseMs: number,
+  capDegPerS = MAX_TURN_DEG_PER_S,
 ): number {
   const n = 90;
   const out = newDivePose();
@@ -646,7 +674,7 @@ export function reversalMs(
       py = prev.yaw;
       pp = prev.pitch;
     }
-    if (peak <= MAX_TURN_DEG_PER_S) return ms;
+    if (peak <= capDegPerS) return ms;
   }
   return baseMs * 3.5;
 }

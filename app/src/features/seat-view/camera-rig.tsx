@@ -5,6 +5,7 @@ import { AppState } from 'react-native';
 import type { SharedValue } from 'react-native-reanimated';
 import type * as THREE from 'three';
 import {
+  CLOSE_CAPS,
   type DivePose,
   diveClock,
   divePose,
@@ -14,6 +15,7 @@ import {
   lensRange,
   type MoveClock,
   newDivePose,
+  OPEN_CAPS,
   povFov,
   reversalMs,
   screenCenter,
@@ -252,10 +254,29 @@ export function CameraRig({
       f.eye[1] = eye[1];
       f.eye[2] = eye[2];
       f.povB = povFov(eye, h, camera.aspect);
-      f.s0 = at.current;
-      f.s1 = want === 'pov' ? 1 : 0;
-      f.clock = diveClock(latest.current.topPose, eye, c, f.povB, ob);
+      const closing = want === 'top';
       const turnedRound = f.active;
+      const prev = f.clock;
+      f.clock = diveClock(
+        latest.current.topPose,
+        eye,
+        c,
+        f.povB,
+        ob,
+        closing ? CLOSE_CAPS : OPEN_CAPS,
+      );
+      f.s0 = at.current;
+      f.s1 = closing ? 0 : 1;
+      let vel = f.vel;
+      if (turnedRound && prev) {
+        // The move being turned round was played on the other clock: carry its place and speed over.
+        const e = 1e-3;
+        const k = prev.at(at.current);
+        const dkdTau = (prev.at(at.current + e) - prev.at(at.current - e)) / (2 * e);
+        const dTaudk = (f.clock.tauOf(k + e) - f.clock.tauOf(k - e)) / (2 * e);
+        f.s0 = f.clock.tauOf(k);
+        vel = f.vel * dkdTau * dTaudk;
+      }
       const base = f.clock.ms * Math.max(0.4, Math.abs(f.s1 - f.s0));
       f.durationMs = base;
       f.v0 = 0;
@@ -269,10 +290,11 @@ export function CameraRig({
           clock,
           f.s0,
           f.s1,
-          f.vel,
+          vel,
           base,
+          closing ? CLOSE_CAPS.turnDegPerS : OPEN_CAPS.turnDegPerS,
         );
-        f.v0 = f.vel * f.durationMs;
+        f.v0 = vel * f.durationMs;
       }
     }
     f.active = true;

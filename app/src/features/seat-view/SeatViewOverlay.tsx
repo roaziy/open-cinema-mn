@@ -304,89 +304,101 @@ export function SeatViewOverlay({
   const showCanvas = !(fallback && tr.fallbackShown);
 
   return (
-    <View style={StyleSheet.absoluteFill} accessibilityViewIsModal>
-      {showCanvas ? (
-        <GestureDetector gesture={swipe}>
-          <Animated.View
-            style={[
-              styles.canvas,
-              { left: rect.x, top: rect.y, width: rect.w, height: rect.h },
-              canvasStyle,
-            ]}
-            accessible
-            accessibilityRole="image"
-            accessibilityLabel={a11y}
-          >
-            <GlBoundary
-              onError={(e) =>
-                machine.dispatch({ type: 'error', reason: `render/import error: ${String(e)}` })
-              }
+    <>
+      <View style={[StyleSheet.absoluteFill, styles.canvasLayer]}>
+        {showCanvas ? (
+          <GestureDetector gesture={swipe}>
+            <Animated.View
+              style={[
+                styles.canvas,
+                { left: rect.x, top: rect.y, width: rect.w, height: rect.h },
+                canvasStyle,
+              ]}
+              accessible
+              accessibilityRole="image"
+              accessibilityLabel={a11y}
             >
-              <Suspense fallback={null}>
-                <Hall3D
-                  seats={map.seats}
-                  hall={map.hall}
-                  tone={tone}
-                  screen={screen}
-                  selectedIds={selectedIds}
-                  takenIds={takenIds}
-                  currentId={current.id}
-                  reduceMotion={still}
-                  topPose={topPose}
-                  goal={goalOf(tr)}
-                  dive={dive}
-                  cover={cover}
-                  onArrive={onArrive}
-                  onMount={machine.start}
-                  onDrew={onDrew}
-                  onFail={onFail}
-                />
-              </Suspense>
-            </GlBoundary>
-          </Animated.View>
-        </GestureDetector>
-      ) : null}
-      {fallback ? (
-        <Animated.View
-          style={[StyleSheet.absoluteFill, styles.fallback, fallbackStyle]}
-          pointerEvents="box-none"
-        >
-          <ScrollView
-            contentContainerStyle={{
-              paddingTop: headerHeight + space.sm,
-              paddingBottom: panelH + space.lg,
-              gap: space.md,
-            }}
-          >
-            <Hall2D
-              seats={map.seats}
-              hall={map.hall}
-              tone={tone}
-              selectedIds={selectedIds}
-              currentId={current.id}
-              width={width}
-              a11y={a11y}
-            />
-          </ScrollView>
-        </Animated.View>
-      ) : null}
-      <Animated.View
-        style={[styles.panel, { paddingBottom: Math.max(insets.bottom, space.lg) }, panelStyle]}
-        pointerEvents={live ? 'auto' : 'none'}
-        accessibilityElementsHidden={!live}
-        importantForAccessibility={live ? 'auto' : 'no-hide-descendants'}
-        onLayout={(e: LayoutChangeEvent) => setPanelH(e.nativeEvent.layout.height)}
+              <GlBoundary
+                onError={(e) =>
+                  machine.dispatch({ type: 'error', reason: `render/import error: ${String(e)}` })
+                }
+              >
+                <Suspense fallback={null}>
+                  <Hall3D
+                    seats={map.seats}
+                    hall={map.hall}
+                    tone={tone}
+                    screen={screen}
+                    selectedIds={selectedIds}
+                    takenIds={takenIds}
+                    currentId={current.id}
+                    reduceMotion={still}
+                    topPose={topPose}
+                    goal={goalOf(tr)}
+                    dive={dive}
+                    cover={cover}
+                    onArrive={onArrive}
+                    onMount={machine.start}
+                    onDrew={onDrew}
+                    onFail={onFail}
+                  />
+                </Suspense>
+              </GlBoundary>
+            </Animated.View>
+          </GestureDetector>
+        ) : null}
+      </View>
+      <View
+        style={[StyleSheet.absoluteFill, styles.topLayer]}
+        pointerEvents="box-none"
+        accessibilityViewIsModal
       >
-        {chips}
-        <View style={styles.statsWrap}>
-          <StatsCard seatLabel={seatLabel(current)} kind={current.kind} stats={stats} />
-        </View>
-      </Animated.View>
-    </View>
+        {fallback ? (
+          <Animated.View
+            style={[StyleSheet.absoluteFill, styles.fallback, fallbackStyle]}
+            pointerEvents="box-none"
+          >
+            <ScrollView
+              contentContainerStyle={{
+                paddingTop: headerHeight + space.sm,
+                paddingBottom: panelH + space.lg,
+                gap: space.md,
+              }}
+            >
+              <Hall2D
+                seats={map.seats}
+                hall={map.hall}
+                tone={tone}
+                selectedIds={selectedIds}
+                currentId={current.id}
+                width={width}
+                a11y={a11y}
+              />
+            </ScrollView>
+          </Animated.View>
+        ) : null}
+        <Animated.View
+          style={[styles.panel, { paddingBottom: Math.max(insets.bottom, space.lg) }, panelStyle]}
+          pointerEvents={live ? 'auto' : 'none'}
+          accessibilityElementsHidden={!live}
+          importantForAccessibility={live ? 'auto' : 'no-hide-descendants'}
+          onLayout={(e: LayoutChangeEvent) => setPanelH(e.nativeEvent.layout.height)}
+        >
+          {chips}
+          <View style={styles.statsWrap}>
+            <StatsCard seatLabel={seatLabel(current)} kind={current.kind} stats={stats} />
+          </View>
+        </Animated.View>
+      </View>
+    </>
   );
 }
 
 const styles = StyleSheet.create({
+  /** Over the 2D grid, under the page chrome (zIndex 3 on the screen). */
+  canvasLayer: { zIndex: 2 },
+  /** Over everything: the diagram fallback and the stats panel. */
+  topLayer: { zIndex: 4 },
   fallback: { backgroundColor: colors.canvas },
   canvas: { position: 'absolute', backgroundColor: colors.canvas, overflow: 'hidden' },
   panel: {

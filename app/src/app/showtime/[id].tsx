@@ -25,10 +25,10 @@ import { ErrorState } from '@/components/state-views';
 import {
   mapFitOf,
   seatPlaneHeight,
-  smoothstep,
   type TopDownPose,
   topDownFromMap,
 } from '@/features/seat-view/camera-math';
+import { chromeOpacity, footerSlide } from '@/features/seat-view/chrome-fade';
 import { type OverlayRect, SeatViewOverlay } from '@/features/seat-view/SeatViewOverlay';
 import { useI18n } from '@/i18n';
 import { useAuth } from '@/lib/auth';
@@ -125,13 +125,14 @@ export default function SeatMapScreen() {
   const fade = useSharedValue(0);
   const dive = useSharedValue(0);
   const still = useReducedMotion();
-  // The map's header fades as the camera leaves it, its footer just before the stats panel
-  // covers it. With Reduce Motion there is no dive: they follow the crossfade instead.
+  // The header, legend and footer stay over the 3D picture through the first part of the dive and
+  // fade around its middle (see chrome-fade.ts); with Reduce Motion they follow the crossfade.
   const chromeStyle = useAnimatedStyle(() => ({
-    opacity: 1 - (still ? fade.get() : dive.get()),
+    opacity: chromeOpacity(dive.get(), fade.get(), still),
   }));
   const footerStyle = useAnimatedStyle(() => ({
-    opacity: 1 - (still ? fade.get() : smoothstep(0.5, 0.9, dive.get())),
+    opacity: chromeOpacity(dive.get(), fade.get(), still),
+    transform: [{ translateY: footerSlide(dive.get(), fade.get(), still) }],
   }));
   const [viewing, setViewing] = useState<{
     seatId: string;
@@ -220,54 +221,59 @@ export default function SeatMapScreen() {
 
   return (
     <View ref={rootRef} style={styles.root} collapsable={false}>
-      <View
-        style={styles.root}
+      <Stack.Screen
+        options={{
+          headerShown: true,
+          title: '',
+          headerTransparent: true,
+          headerBackButtonDisplayMode: 'minimal',
+          headerTintColor: colors.ink,
+        }}
+      />
+      <Animated.View
+        style={[chromeStyle, styles.chrome]}
+        pointerEvents={isViewing ? 'none' : 'auto'}
         accessibilityElementsHidden={isViewing}
         importantForAccessibility={isViewing ? 'no-hide-descendants' : 'auto'}
       >
-        <Stack.Screen
-          options={{
-            headerShown: true,
-            title: '',
-            headerTransparent: true,
-            headerBackButtonDisplayMode: 'minimal',
-            headerTintColor: colors.ink,
-          }}
-        />
-        <Animated.View style={chromeStyle}>
-          {show ? (
-            <View style={[styles.head, { paddingTop: headerHeight + space.xs }]}>
-              <PosterBackdrop
-                uri={show.movie.backdropUrl ?? show.movie.posterUrl}
-                tone={tone}
-                fadeHeight={90}
-              />
-              <View style={styles.headRow}>
-                <View style={styles.headText}>
-                  <Text style={styles.title} numberOfLines={1}>
-                    {show.movie.title}
-                  </Text>
-                  <Text style={styles.meta} numberOfLines={1}>
-                    {[
-                      show.branch.name,
-                      show.hallName,
-                      `${formatUbTime(show.startsAt)}`,
-                      show.format,
-                    ].join('  ·  ')}
-                  </Text>
-                </View>
-                <LiveBadge status={stream.status} />
+        {show ? (
+          <View style={[styles.head, { paddingTop: headerHeight + space.xs }]}>
+            <PosterBackdrop
+              uri={show.movie.backdropUrl ?? show.movie.posterUrl}
+              tone={tone}
+              fadeHeight={90}
+            />
+            <View style={styles.headRow}>
+              <View style={styles.headText}>
+                <Text style={styles.title} numberOfLines={1}>
+                  {show.movie.title}
+                </Text>
+                <Text style={styles.meta} numberOfLines={1}>
+                  {[
+                    show.branch.name,
+                    show.hallName,
+                    `${formatUbTime(show.startsAt)}`,
+                    show.format,
+                  ].join('  ·  ')}
+                </Text>
               </View>
+              <LiveBadge status={stream.status} />
             </View>
-          ) : (
-            <View style={{ height: headerHeight + 56 }} />
-          )}
-
-          <View style={styles.legend}>
-            <SeatLegend />
           </View>
-        </Animated.View>
+        ) : (
+          <View style={{ height: headerHeight + 56 }} />
+        )}
 
+        <View style={styles.legend}>
+          <SeatLegend />
+        </View>
+      </Animated.View>
+
+      <View
+        style={styles.grid}
+        accessibilityElementsHidden={isViewing}
+        importantForAccessibility={isViewing ? 'no-hide-descendants' : 'auto'}
+      >
         {map.isError && !map.data ? (
           <View style={styles.center}>
             <ErrorState error={map.error} onRetry={() => map.refetch()} />
@@ -288,22 +294,27 @@ export default function SeatMapScreen() {
             labelOf={labelOf}
           />
         )}
-
-        <Animated.View style={footerStyle}>
-          {show ? (
-            <SeatFooter
-              selected={selected}
-              priceStandard={show.priceStandard}
-              pricePremium={show.pricePremium}
-              expiresAt={earliest}
-              onExpire={onExpire}
-              onRelease={toggle}
-              onViewFromSeat={openView}
-              onContinue={onContinue}
-            />
-          ) : null}
-        </Animated.View>
       </View>
+
+      <Animated.View
+        style={[footerStyle, styles.chrome]}
+        pointerEvents={isViewing ? 'none' : 'auto'}
+        accessibilityElementsHidden={isViewing}
+        importantForAccessibility={isViewing ? 'no-hide-descendants' : 'auto'}
+      >
+        {show ? (
+          <SeatFooter
+            selected={selected}
+            priceStandard={show.priceStandard}
+            pricePremium={show.pricePremium}
+            expiresAt={earliest}
+            onExpire={onExpire}
+            onRelease={toggle}
+            onViewFromSeat={openView}
+            onContinue={onContinue}
+          />
+        ) : null}
+      </Animated.View>
       {viewing && map.data ? (
         <SeatViewOverlay
           map={map.data}
@@ -339,6 +350,9 @@ function LiveBadge({ status }: { status: ReturnType<typeof useSeatStream>['statu
 
 const styles = StyleSheet.create({
   root: { flex: 1, backgroundColor: colors.canvas },
+  /** Above the 3D picture (zIndex 2 in the overlay) while the dive begins. */
+  chrome: { zIndex: 3 },
+  grid: { flex: 1, zIndex: 0 },
   head: { paddingHorizontal: space.lg, paddingBottom: space.md, overflow: 'hidden' },
   headRow: { flexDirection: 'row', alignItems: 'center', gap: space.md },
   headText: { flex: 1, gap: 2 },
