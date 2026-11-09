@@ -10,8 +10,8 @@ import {
   diveClock,
   divePose,
   eyePosition,
-  hopClock,
-  hopPose,
+  hopDurationMs,
+  hopFrame,
   lensRange,
   type MoveClock,
   newDivePose,
@@ -245,8 +245,8 @@ export function CameraRig({
       f.povB = povFov(eye, h, camera.aspect);
       f.s0 = 0;
       f.s1 = 1;
-      f.clock = hopClock(f.from, f.to, c, f.povA, f.povB, f.envelope, ob);
-      f.durationMs = f.clock.ms;
+      f.clock = null;
+      f.durationMs = hopDurationMs(f.from, f.to);
       f.v0 = 0;
     } else {
       f.kind = 'dive';
@@ -352,13 +352,12 @@ export function CameraRig({
       const linear = latest.current.reduceMotion ? 1 : t;
       const { topPose: top, cover: c, obstacles: ob } = latest.current;
       const height = Math.max(1, state.size.height);
-      const clock = f.clock as MoveClock;
       if (f.kind === 'dive') {
         const tau =
           f.v0 !== 0 && !latest.current.reduceMotion
             ? tauHermite(linear, f.s0, f.s1, f.v0, 0)
             : f.s0 + (f.s1 - f.s0) * linear;
-        const k = clock.at(tau);
+        const k = (f.clock as MoveClock).at(tau);
         const p = divePose(k, top, f.eye, f.center, f.povB, pose.current, ob);
         clearPosition(p.position, f.eye, null, ob, scratch);
         p.position[0] = scratch[0];
@@ -374,8 +373,17 @@ export function CameraRig({
         dive.set(k);
       } else {
         // Seat to seat: one curve that rises over the seat backs between the two.
-        const k = clock.at(linear);
-        const p = hopPose(k, f.from, f.to, f.center, f.povA, f.povB, f.envelope, ob, pose.current);
+        const p = hopFrame(
+          linear,
+          f.from,
+          f.to,
+          f.center,
+          f.povA,
+          f.povB,
+          f.envelope,
+          ob,
+          pose.current,
+        );
         applyPose(camera, p);
         lens.current = { fov: p.fov, squash: 1, shift: c / height };
       }
