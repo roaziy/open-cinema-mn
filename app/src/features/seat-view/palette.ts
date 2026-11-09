@@ -15,9 +15,14 @@ function lift(hex: string, amount: number): string {
 /** Every colour the 3D scene and the 2D diagram use, derived from the app tokens. */
 export const palette = {
   canvas: colors.canvas,
-  floor: colors.raised,
+  floor: '#2B2B32',
   wallSide: colors.fill,
   wallFront: colors.surface,
+  ceiling: '#0F0F13',
+  /** Acoustic wall slats (two shades) and the small lights along the steps. */
+  slatDark: '#1B1B21',
+  slatLight: '#2A2A32',
+  stepLight: '#5C6896',
   seat: colors.fill,
   seatPremium: lift(colors.fill, 0.1),
   chosen: colors.action,
