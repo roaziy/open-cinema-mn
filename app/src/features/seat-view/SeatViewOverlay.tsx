@@ -19,7 +19,6 @@ import {
   useWindowDimensions,
   View,
 } from 'react-native';
-import { GestureDetector, usePanGesture } from 'react-native-gesture-handler';
 import Animated, {
   type SharedValue,
   useAnimatedStyle,
@@ -53,9 +52,6 @@ const WATCHDOG_MS = 3000;
 export const FADE_MS = 200;
 /** The dive's progress at which the stats panel starts to slide in. */
 const PANEL_FROM = 0.85;
-/** Swipe down this far (or fast) to leave the view. */
-const DISMISS_PX = 90;
-const DISMISS_VELOCITY = 900;
 
 function byPosition(a: SeatState, b: SeatState) {
   return a.y_m - b.y_m || a.x_m - b.x_m;
@@ -81,7 +77,7 @@ type Props = {
   fade: SharedValue<number>;
   /** The viewer asked to leave (back button). */
   closing: boolean;
-  /** Ask to leave (swipe down, holds expired). */
+  /** Ask to leave (holds expired). */
   onRequestClose: () => void;
   /** The map is fully back: the screen can unmount this. */
   onClosed: () => void;
@@ -250,15 +246,6 @@ export function SeatViewOverlay({
     return { transform: [{ translateY: (1 - p) * (panelH + 4) }] };
   });
 
-  const swipe = usePanGesture({
-    runOnJS: true,
-    activeOffsetY: [-1000, 14],
-    failOffsetX: [-30, 30],
-    onDeactivate: (e) => {
-      if (e.translationY > DISMISS_PX || e.velocityY > DISMISS_VELOCITY) onRequestClose();
-    },
-  });
-
   if (!current || !stats) return null;
 
   const a11y = t('view.a11y', {
@@ -307,45 +294,43 @@ export function SeatViewOverlay({
     <>
       <View style={[StyleSheet.absoluteFill, styles.canvasLayer]}>
         {showCanvas ? (
-          <GestureDetector gesture={swipe}>
-            <Animated.View
-              style={[
-                styles.canvas,
-                { left: rect.x, top: rect.y, width: rect.w, height: rect.h },
-                canvasStyle,
-              ]}
-              accessible
-              accessibilityRole="image"
-              accessibilityLabel={a11y}
+          <Animated.View
+            style={[
+              styles.canvas,
+              { left: rect.x, top: rect.y, width: rect.w, height: rect.h },
+              canvasStyle,
+            ]}
+            accessible
+            accessibilityRole="image"
+            accessibilityLabel={a11y}
+          >
+            <GlBoundary
+              onError={(e) =>
+                machine.dispatch({ type: 'error', reason: `render/import error: ${String(e)}` })
+              }
             >
-              <GlBoundary
-                onError={(e) =>
-                  machine.dispatch({ type: 'error', reason: `render/import error: ${String(e)}` })
-                }
-              >
-                <Suspense fallback={null}>
-                  <Hall3D
-                    seats={map.seats}
-                    hall={map.hall}
-                    tone={tone}
-                    screen={screen}
-                    selectedIds={selectedIds}
-                    takenIds={takenIds}
-                    currentId={current.id}
-                    reduceMotion={still}
-                    topPose={topPose}
-                    goal={goalOf(tr)}
-                    dive={dive}
-                    cover={cover}
-                    onArrive={onArrive}
-                    onMount={machine.start}
-                    onDrew={onDrew}
-                    onFail={onFail}
-                  />
-                </Suspense>
-              </GlBoundary>
-            </Animated.View>
-          </GestureDetector>
+              <Suspense fallback={null}>
+                <Hall3D
+                  seats={map.seats}
+                  hall={map.hall}
+                  tone={tone}
+                  screen={screen}
+                  selectedIds={selectedIds}
+                  takenIds={takenIds}
+                  currentId={current.id}
+                  reduceMotion={still}
+                  topPose={topPose}
+                  goal={goalOf(tr)}
+                  dive={dive}
+                  cover={cover}
+                  onArrive={onArrive}
+                  onMount={machine.start}
+                  onDrew={onDrew}
+                  onFail={onFail}
+                />
+              </Suspense>
+            </GlBoundary>
+          </Animated.View>
         ) : null}
       </View>
       <View
