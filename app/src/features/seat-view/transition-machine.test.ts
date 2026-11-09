@@ -74,6 +74,27 @@ describe('every way out', () => {
   });
 });
 
+describe('the staged hand-off', () => {
+  it('starts the crossfade before landing and closes once it ends', () => {
+    const { s } = run(['ready', 'faded-in', 'landed', 'close', 'near-landing']);
+    expect(s.phase).toBe('leaving');
+    expect(s.handoff).toBe(true);
+    expect(
+      run(['ready', 'faded-in', 'landed', 'close', 'near-landing', 'landed-top']).s.phase,
+    ).toBe('fading-out');
+    expect(
+      run(['ready', 'faded-in', 'landed', 'close', 'near-landing', 'landed-top', 'faded-out']).s
+        .phase,
+    ).toBe('closed');
+    expect(run(['ready', 'faded-in', 'landed', 'close', 'near-landing', 'faded-out']).s.phase).toBe(
+      'closed',
+    );
+  });
+  it('ignores a near-landing outside a flight home', () => {
+    expect(run(['ready', 'faded-in', 'landed', 'near-landing']).s.handoff).toBe(false);
+  });
+});
+
 describe('GL failing', () => {
   it('before the first frame: the diagram fades in instead', () => {
     const { s, seen } = run(['failed', 'faded-in']);

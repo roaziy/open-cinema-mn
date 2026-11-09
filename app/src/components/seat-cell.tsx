@@ -64,9 +64,11 @@ type Props = {
   status: SeatStatus;
   label: string;
   onPress: (id: string) => void;
+  /** Draw only the icons (check, cross, wheelchair): the tile is see-through (the premium bar stays). */
+  glyphsOnly?: boolean;
 };
 
-function SeatCellView({ id, left, top, size, kind, status, label, onPress }: Props) {
+function SeatCellView({ id, left, top, size, kind, status, label, onPress, glyphsOnly }: Props) {
   const scale = useSharedValue(1);
   const anim = useAnimatedStyle(() => ({ transform: [{ scale: scale.get() }] }));
   const round = size * 0.42;
@@ -108,8 +110,8 @@ function SeatCellView({ id, left, top, size, kind, status, label, onPress }: Pro
             borderTopRightRadius: round,
             borderBottomLeftRadius: size * 0.16,
             borderBottomRightRadius: size * 0.16,
-            backgroundColor: fill,
-            borderColor: edge,
+            backgroundColor: glyphsOnly ? 'transparent' : fill,
+            borderColor: glyphsOnly ? 'transparent' : edge,
           },
           anim,
         ]}

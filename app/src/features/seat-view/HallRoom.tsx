@@ -1,7 +1,7 @@
 /* eslint-disable react/no-unknown-property -- react-three-fiber props */
 import { SCREEN_BOTTOM_M } from '@open-cinema/shared';
 import { useThree } from '@react-three/fiber/native';
-import { useEffect, useLayoutEffect, useMemo, useRef } from 'react';
+import { type RefObject, useEffect, useLayoutEffect, useMemo, useRef } from 'react';
 import * as THREE from 'three';
 import { rowsOf, type ScreenSource } from './camera-math';
 import { palette } from './palette';
@@ -24,6 +24,8 @@ type Step = { from: number; to: number; height: number };
 type SeatLike = { x_m: number; y_m: number; z_m: number; rowLabel: string };
 
 type Props = {
+  /** The screen group: the hand-off to the 2D map fades its three layers. */
+  screenRef: RefObject<THREE.Group | null>;
   hall: Hall;
   seats: SeatLike[];
   drawable: SeatLike[];
@@ -37,6 +39,7 @@ type Props = {
 
 /** The room around the seats: screen in its mask, stepped floor with step lights, walls, ceiling, slats. */
 export function HallRoom({
+  screenRef,
   hall,
   seats,
   drawable,
@@ -124,19 +127,20 @@ export function HallRoom({
     <>
       {/* Screen: bowed, cover-cropped film image in a black mask, brightest thing in the room.
           Always upright: tilting it behind the front wall hid it during the dive. */}
-      <group position={[hall.screen_x_m, SCREEN_BOTTOM_M, 0.12]}>
+      <group ref={screenRef} position={[hall.screen_x_m, SCREEN_BOTTOM_M, 0.12]}>
         <mesh position={[0, hall.screen_height_m / 2, 0]} geometry={screenGeo}>
           <meshBasicMaterial
             key={texture ? 'tex' : 'flat'}
             map={texture}
             color={texture ? '#FFFFFF' : tone}
+            transparent
             toneMapped={false}
             fog={false}
           />
         </mesh>
         <mesh position={[0, hall.screen_height_m / 2, -0.04]}>
           <planeGeometry args={[hall.screen_width_m * 1.07, hall.screen_height_m * 1.12]} />
-          <meshBasicMaterial color="#030304" toneMapped={false} fog={false} />
+          <meshBasicMaterial color="#030304" transparent toneMapped={false} fog={false} />
         </mesh>
         <mesh position={[0, hall.screen_height_m / 2, -0.07]}>
           <planeGeometry args={[hall.screen_width_m * 1.35, hall.screen_height_m * 1.6]} />

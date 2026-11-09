@@ -203,3 +203,85 @@ const styles = StyleSheet.create({
   letter: { position: 'absolute', width: GUTTER, justifyContent: 'center', alignItems: 'center' },
   rowLetter: { ...type.footnote, fontSize: 10, color: colors.muted },
 });
+
+type LandmarkProps = {
+  layout: SeatLayout;
+  transform: SeatTransform;
+  /** The 2D viewport's rectangle, in the coordinates of the layer this is drawn in. */
+  rect: { x: number; y: number; w: number; h: number };
+  tone: string;
+  statusOf: (seatId: string) => SeatStatus;
+  /** 0..1: how much of the layer shows. */
+  opacity: SharedValue<number>;
+};
+
+/**
+ * The parts of the map that have no 3D counterpart (screen arc and label, row letters, seat
+ * icons), drawn at the same pan and zoom as the canvas, so they can fade in over the 3D picture
+ * while the camera settles. Not interactive.
+ */
+export function SeatLandmarks({ layout, transform, rect, tone, statusOf, opacity }: LandmarkProps) {
+  const { width: cw, height: ch, origin } = seatContentMetrics(layout);
+  const { scale, tx, ty } = transform;
+  const anim = useAnimatedStyle(() => ({
+    opacity: opacity.get(),
+    transform: [{ translateX: tx.get() }, { translateY: ty.get() }, { scale: scale.get() }],
+  }));
+  return (
+    <View
+      pointerEvents="none"
+      style={{
+        position: 'absolute',
+        left: rect.x,
+        top: rect.y,
+        width: rect.w,
+        height: rect.h,
+        overflow: 'hidden',
+      }}
+    >
+      <Animated.View
+        style={[
+          styles.canvas,
+          { width: cw, height: ch, left: (rect.w - cw) / 2, top: (rect.h - ch) / 2 },
+          anim,
+        ]}
+      >
+        <ScreenArc width={cw} tone={tone} />
+        <View style={{ position: 'absolute', left: origin.x, top: origin.y }}>
+          {layout.rows.map((r) => (
+            <View key={r.label}>
+              <View style={[styles.letter, { top: r.top, left: -GUTTER, height: layout.rowStep }]}>
+                <Text style={styles.rowLetter}>{r.label}</Text>
+              </View>
+              <View
+                style={[styles.letter, { top: r.top, left: layout.width, height: layout.rowStep }]}
+              >
+                <Text style={styles.rowLetter}>{r.label}</Text>
+              </View>
+            </View>
+          ))}
+          {layout.slots.map(({ seat, left, top }) => {
+            if (seat.kind === 'blocked') return null;
+            const status = statusOf(seat.id);
+            if (status === 'free' && seat.kind !== 'wheelchair' && seat.kind !== 'premium')
+              return null;
+            return (
+              <SeatCell
+                key={seat.id}
+                id={seat.id}
+                left={left}
+                top={top}
+                size={layout.size}
+                kind={seat.kind}
+                status={status}
+                label=""
+                onPress={() => {}}
+                glyphsOnly
+              />
+            );
+          })}
+        </View>
+      </Animated.View>
+    </View>
+  );
+}

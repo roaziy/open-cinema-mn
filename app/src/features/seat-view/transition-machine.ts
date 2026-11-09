@@ -23,6 +23,8 @@ export type Transition = {
   still: boolean;
   /** Dev only: stay on the top-down start. */
   hold: boolean;
+  /** The grid crossfade back to the map has started, shortly before the camera lands. */
+  handoff: boolean;
 };
 
 export type TransitionEvent =
@@ -42,6 +44,8 @@ export type TransitionEvent =
   | { type: 'close' }
   /** The 3D-to-map crossfade finished. */
   | { type: 'faded-out' }
+  /** The camera is about to land over the map: the crossfade starts now. */
+  | { type: 'near-landing' }
   /** The flight home never reported. */
   | { type: 'timeout' };
 
@@ -56,6 +60,7 @@ export function initialTransition(opts: {
     fallbackShown: false,
     still: opts.still,
     hold: opts.hold,
+    handoff: false,
   };
 }
 
@@ -108,8 +113,11 @@ export function transitionReducer(s: Transition, e: TransitionEvent): Transition
         default:
           return s;
       }
+    case 'near-landing':
+      return s.phase === 'leaving' ? { ...s, handoff: true } : s;
     case 'faded-out':
-      return s.phase === 'fading-out' ? to('closed') : s;
+      // With the crossfade started early it can finish a moment before the landing is reported.
+      return s.phase === 'fading-out' || (s.phase === 'leaving' && s.handoff) ? to('closed') : s;
   }
 }
 
