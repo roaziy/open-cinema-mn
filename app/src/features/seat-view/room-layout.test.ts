@@ -5,6 +5,7 @@ import {
   hallDepth,
   hallExtents,
   hallHalfWidth,
+  hopPose,
   newDivePose,
   rowsOf,
   screenCenter,
@@ -15,8 +16,10 @@ import {
   aisleCentres,
   aisleStrips,
   clearPosition,
+  hoverAltitude,
   insideGeometry,
   type Obstacles,
+  seatHeightM,
   slatLayout,
 } from './room-layout';
 
@@ -103,15 +106,20 @@ describe('the dive never goes through the room', () => {
       const p: [number, number, number] = [0, 0, 0];
       for (let i = 0; i <= 200; i++) {
         const s = i / 200;
-        divePose(s, top, eye, screenCenter(hall), fovForAspect(0.46), out);
+        divePose(s, top, eye, screenCenter(hall), fovForAspect(0.46), out, hoverAltitude(eye, o));
         clearPosition(out.position, eye, null, o, p);
         // The viewer's own seat shrinks away by the end of the dive.
         const gone = Math.min(1, Math.max(0, (s - 0.5) / 0.35));
         const bad = insideGeometry(p, o, 0.12, (st) => st.id === seat.id && gone > 0.95);
         expect(bad, `s=${s} at ${p.map((v) => v.toFixed(2)).join(',')}`).toBe(false);
+        // low enough to be among the seat backs: it must be right over its own seat
+        const maxBack = Math.max(...seats.map((st) => st.z_m)) + seatHeightM + 0.5;
+        if (p[1] < maxBack) {
+          expect(Math.hypot(p[0] - eye[0], p[2] - eye[2]), `s=${s}`).toBeLessThan(0.55);
+        }
       }
       const end = clearPosition(
-        divePose(1, top, eye, screenCenter(hall), 60, out).position,
+        divePose(1, top, eye, screenCenter(hall), 60, out, hoverAltitude(eye, o)).position,
         eye,
         null,
         o,
@@ -121,24 +129,31 @@ describe('the dive never goes through the room', () => {
     });
   }
 
-  it('hops between seats in different rows without a sample inside a seat', () => {
+  it('hops between seats in different rows, over the rows, without a sample inside a seat', () => {
     const a = seats.find((s) => s.id === 'A-1.05');
     const b = seats.find((s) => s.id === 'J3.8');
     if (!a || !b) throw new Error('seat missing');
     const ea: [number, number, number] = [a.x_m, a.z_m + 1.15, a.y_m];
     const eb: [number, number, number] = [b.x_m, b.z_m + 1.15, b.y_m];
-    const p: [number, number, number] = [0, 0, 0];
+    const out = newDivePose();
+    const eyeNow: [number, number, number] = [0, 0, 0];
     for (let i = 0; i <= 200; i++) {
-      const t = i / 200;
-      const lin: [number, number, number] = [
-        ea[0] + (eb[0] - ea[0]) * t,
-        ea[1] + (eb[1] - ea[1]) * t,
-        ea[2] + (eb[2] - ea[2]) * t,
-      ];
-      clearPosition(lin, ea, eb, o, p);
+      const p = hopPose(
+        i / 200,
+        top,
+        ea,
+        eb,
+        screenCenter(hall),
+        60,
+        60,
+        (e) => hoverAltitude(e, o),
+        out,
+        eyeNow,
+      );
+      const pos: [number, number, number] = [p.position[0], p.position[1], p.position[2]];
       expect(
-        insideGeometry(p, o, 0.12, (st) => st.id === a.id || st.id === b.id),
-        `t=${t} at ${p.map((v) => v.toFixed(2)).join(',')}`,
+        insideGeometry(pos, o, 0.12, (st) => st.id === a.id || st.id === b.id),
+        `t=${i / 200} at ${pos.map((v) => v.toFixed(2)).join(',')}`,
       ).toBe(false);
     }
   });

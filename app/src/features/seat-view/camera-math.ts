@@ -283,8 +283,10 @@ const smooth = (a: number, b: number, x: number) => {
 /** Public so the scene can time its own fades to the same dive. */
 export const smoothstep = smooth;
 
-/** The look target leaves the hall for the screen only in the last part of the dive. */
-const TARGET_FROM = 0.45;
+/** Share of the dive spent travelling over the hall (looking down) before descending. */
+export const TRAVEL_SHARE = 0.45;
+/** Vertical field of view over the seat, between the wide top-down lens and the seat's lens. */
+export const HOVER_FOV_DEG = 40;
 
 export type DivePose = {
   position: Vec3;
@@ -309,12 +311,21 @@ function norm(v: Vec3): Vec3 {
   return v;
 }
 
+const logLerp = (a: number, b: number, t: number) =>
+  Math.exp(Math.log(a) + (Math.log(b) - Math.log(a)) * t);
+const tanLerpDeg = (aDeg: number, bDeg: number, t: number) => {
+  const ta = Math.tan((aDeg * Math.PI) / 360);
+  const tb = Math.tan((bDeg * Math.PI) / 360);
+  return (2 * Math.atan(logLerp(ta, tb, t)) * 180) / Math.PI;
+};
+
 /**
- * The dive from the top-down pose (s = 0) to the seat (s = 1), as a camera that looks at a point
- * from a distance. The log of that distance and the log of tan(fov/2) are interpolated together,
- * so the hall's apparent size changes steadily instead of shrinking and then jumping. The camera
- * swings from straight above to the seat's direction; the look target stays in the hall and
- * moves to the screen centre late. Writes into `out` (no allocation besides two tiny tuples).
+ * The dive from the top-down pose over the map (s = 0) to the seat (s = 1) in two parts:
+ * first the camera stays top-down and travels and zooms until it hovers right above the seat
+ * (never lower than `hoverY`, which clears every seat), then it goes straight down onto the
+ * eye point while it pitches up to the screen. It never moves sideways at seat height. Altitude
+ * and field of view change by the same ratio (log scale), so the zoom is steady. Writes into
+ * `out`; the reverse is the same path with s running down.
  */
 export function divePose(
   s: number,
@@ -323,30 +334,55 @@ export function divePose(
   center: Vec3,
   povFovDeg: number,
   out: DivePose,
+  hoverY: number,
 ): DivePose {
   const k = Math.min(1, Math.max(0, s));
-  const d0 = Math.max(1e-3, top.position[1] - top.target[1]);
-  const back1 = norm([eye[0] - center[0], eye[1] - center[1], eye[2] - center[2]]);
-  const d1 = Math.max(1e-3, Math.hypot(eye[0] - center[0], eye[1] - center[1], eye[2] - center[2]));
-  const u = smooth(TARGET_FROM, 1, k);
-  const back = norm([back1[0] * k, 1 - k + back1[1] * k, back1[2] * k]);
-  const d = Math.exp(Math.log(d0) + (Math.log(d1) - Math.log(d0)) * k);
-  const t = out.target;
-  t[0] = top.target[0] + (center[0] - top.target[0]) * u;
-  t[1] = top.target[1] + (center[1] - top.target[1]) * u;
-  t[2] = top.target[2] + (center[2] - top.target[2]) * u;
-  out.position[0] = t[0] + back[0] * d;
-  out.position[1] = t[1] + back[1] * d;
-  out.position[2] = t[2] + back[2] * d;
-  const up = norm([TOP_UP[0] * (1 - k), TOP_UP[1] * (1 - k) + k, TOP_UP[2] * (1 - k)]);
+  const alt0 = Math.max(1e-3, top.position[1]);
+  const alt1 = Math.max(1e-3, Math.min(alt0, hoverY));
+  if (k <= TRAVEL_SHARE) {
+    const u = k / TRAVEL_SHARE;
+    const m = smooth(0, 1, u);
+    const x = top.position[0] + (eye[0] - top.position[0]) * m;
+    const z = top.position[2] + (eye[2] - top.position[2]) * m;
+    out.position[0] = x;
+    out.position[1] = logLerp(alt0, alt1, u);
+    out.position[2] = z;
+    out.target[0] = x;
+    out.target[1] = 0;
+    out.target[2] = z;
+    out.up[0] = TOP_UP[0];
+    out.up[1] = TOP_UP[1];
+    out.up[2] = TOP_UP[2];
+    out.fov = tanLerpDeg(top.fov, HOVER_FOV_DEG, u);
+    out.squash = top.squash + (1 - top.squash) * u;
+    return out;
+  }
+  const v = (k - TRAVEL_SHARE) / (1 - TRAVEL_SHARE);
+  const w = smooth(0, 1, v);
+  out.position[0] = eye[0];
+  out.position[1] = alt1 + (eye[1] - alt1) * w;
+  out.position[2] = eye[2];
+  const look = norm([
+    (center[0] - eye[0]) * w,
+    -(1 - w) + (center[1] - eye[1]) * w,
+    (center[2] - eye[2]) * w,
+  ]);
+  // Looking at the screen from the seat: re-normalise from the exact direction at w = 1.
+  if (w >= 1) {
+    const l = norm([center[0] - eye[0], center[1] - eye[1], center[2] - eye[2]]);
+    look[0] = l[0];
+    look[1] = l[1];
+    look[2] = l[2];
+  }
+  out.target[0] = out.position[0] + look[0] * 10;
+  out.target[1] = out.position[1] + look[1] * 10;
+  out.target[2] = out.position[2] + look[2] * 10;
+  const up = norm([TOP_UP[0] * (1 - w), TOP_UP[1] * (1 - w) + w, TOP_UP[2] * (1 - w)]);
   out.up[0] = up[0];
   out.up[1] = up[1];
   out.up[2] = up[2];
-  const tan0 = Math.tan((top.fov * Math.PI) / 360);
-  const tan1 = Math.tan((povFovDeg * Math.PI) / 360);
-  const tan = Math.exp(Math.log(tan0) + (Math.log(tan1) - Math.log(tan0)) * k);
-  out.fov = (2 * Math.atan(tan) * 180) / Math.PI;
-  out.squash = top.squash + (1 - top.squash) * k;
+  out.fov = tanLerpDeg(HOVER_FOV_DEG, povFovDeg, w);
+  out.squash = 1;
   return out;
 }
 
@@ -387,4 +423,41 @@ export function povFov(
   const need = Math.max(tanV, tanH / Math.max(aspect, 0.1)) * margin;
   const deg = (2 * Math.atan(need) * 180) / Math.PI;
   return Math.min(max, Math.max(min, deg));
+}
+
+/**
+ * Seat to seat without leaving 3D: rise over the first seat (the dive's second part in
+ * reverse), travel over to the second at the hover height, descend onto it. `e` is the eased
+ * progress 0..1. `eyeOut` receives the eye the path is currently built around.
+ */
+export function hopPose(
+  e: number,
+  top: TopDownPose,
+  a: Vec3,
+  b: Vec3,
+  center: Vec3,
+  povFovA: number,
+  povFovB: number,
+  hoverFor: (eye: Vec3) => number,
+  out: DivePose,
+  eyeOut: Vec3,
+): DivePose {
+  let s: number;
+  let pov = povFovA;
+  if (e < 0.3) {
+    s = 1 - (1 - TRAVEL_SHARE) * smooth(0, 0.3, e);
+    eyeOut[0] = a[0];
+    eyeOut[1] = a[1];
+    eyeOut[2] = a[2];
+  } else if (e < 0.7) {
+    s = TRAVEL_SHARE;
+    lerp3(eyeOut, a, b, smooth(0.3, 0.7, e));
+  } else {
+    s = TRAVEL_SHARE + (1 - TRAVEL_SHARE) * smooth(0.7, 1, e);
+    eyeOut[0] = b[0];
+    eyeOut[1] = b[1];
+    eyeOut[2] = b[2];
+    pov = povFovB;
+  }
+  return divePose(s, top, eyeOut, center, pov, out, hoverFor(eyeOut));
 }

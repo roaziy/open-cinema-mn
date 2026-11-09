@@ -146,3 +146,10 @@ export function insideGeometry(
   }
   return false;
 }
+
+/** How high the camera hovers over a seat before it descends: clear of every seat, and a few metres above this one. */
+export function hoverAltitude(eye: readonly [number, number, number], o: Obstacles): number {
+  let max = 0;
+  for (const s of o.seats) max = Math.max(max, s.z_m + SEAT_HEIGHT);
+  return Math.max(eye[1] + 3.5, max + CLEAR_M + 0.5);
+}

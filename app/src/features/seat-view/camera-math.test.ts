@@ -24,6 +24,7 @@ import {
   seatPlaneHeight,
   stepSpans,
   type TopDownPose,
+  TRAVEL_SHARE,
   textureFits,
   topDownFromMap,
 } from './camera-math';
@@ -309,23 +310,12 @@ describe('seatPlaneHeight', () => {
 });
 
 describe('divePose', () => {
-  const top: TopDownPose = { position: [0.4, 105, 7], target: [0.4, 0, 7], fov: 14, squash: 0.62 };
+  const top: TopDownPose = { position: [0, 105, 7], target: [0, 0, 7], fov: 14, squash: 0.62 };
   const eye: [number, number, number] = [-0.55, 1.15 + 0.9, 11];
   const center = screenCenter(hall);
   const pov = 78;
-  const at = (s: number) => divePose(s, top, eye, center, pov, newDivePose());
-
-  function camera(s: number, aspect = 0.6) {
-    const p = at(s);
-    const cam = new THREE.PerspectiveCamera(p.fov, aspect, 0.1, 400);
-    cam.position.set(...p.position);
-    cam.up.set(...p.up);
-    cam.lookAt(...p.target);
-    cam.updateMatrixWorld();
-    cam.projectionMatrix.elements[5] = (cam.projectionMatrix.elements[5] ?? 0) * p.squash;
-    cam.projectionMatrixInverse.copy(cam.projectionMatrix).invert();
-    return cam;
-  }
+  const hover = 7;
+  const at = (s: number) => divePose(s, top, eye, center, pov, newDivePose(), hover);
 
   it('starts exactly at the top-down pose and ends exactly at the seat', () => {
     const a = at(0);
@@ -333,59 +323,66 @@ describe('divePose', () => {
     for (let i = 0; i < 3; i++) expect(a.position[i]).toBeCloseTo(top.position[i] as number, 6);
     expect(a.fov).toBeCloseTo(14);
     expect(a.squash).toBeCloseTo(0.62);
-    for (let i = 0; i < 3; i++) {
-      expect(b.position[i]).toBeCloseTo(eye[i] as number, 6);
-      expect(b.target[i]).toBeCloseTo(center[i] as number, 6);
-    }
+    for (let i = 0; i < 3; i++) expect(b.position[i]).toBeCloseTo(eye[i] as number, 6);
+    const dir = new THREE.Vector3(...b.target).sub(new THREE.Vector3(...b.position)).normalize();
+    const want = new THREE.Vector3(...center).sub(new THREE.Vector3(...eye)).normalize();
+    expect(dir.angleTo(want)).toBeLessThan(1e-6);
     expect(b.fov).toBeCloseTo(pov);
     expect(b.squash).toBe(1);
     expect(b.up[1]).toBeCloseTo(1);
     expect(Math.abs(b.up[0]) + Math.abs(b.up[2])).toBeCloseTo(0);
   });
 
-  it('keeps the hall at a steady apparent size: no shrink then jump', () => {
-    const half = 6;
-    const widthAt = (s: number) => {
-      const cam = camera(s);
-      const l = new THREE.Vector3(-half, 0, 0).project(cam);
-      const r = new THREE.Vector3(half, 0, 0).project(cam);
-      return Math.abs(r.x - l.x);
-    };
-    const w0 = widthAt(0);
-    let prev = w0;
-    for (let i = 1; i <= 50; i++) {
-      const w = widthAt(i / 50);
-      // never shrinks by more than a ripple, never jumps between neighbouring steps
-      expect(w).toBeGreaterThan(prev * 0.99);
-      expect(w).toBeLessThan(prev * 1.12);
-      expect(w).toBeGreaterThan(w0 * 0.95);
-      prev = w;
+  it('first travels over the seat looking straight down, then drops onto it', () => {
+    const at1 = at(TRAVEL_SHARE);
+    expect(at1.position[0]).toBeCloseTo(eye[0] as number);
+    expect(at1.position[2]).toBeCloseTo(eye[2] as number);
+    expect(at1.position[1]).toBeCloseTo(hover);
+    expect(at1.target[0]).toBeCloseTo(at1.position[0]);
+    expect(at1.target[2]).toBeCloseTo(at1.position[2]);
+    // second part: straight down, no sideways movement at all
+    for (let i = 0; i <= 20; i++) {
+      const p = at(TRAVEL_SHARE + ((1 - TRAVEL_SHARE) * i) / 20);
+      expect(p.position[0]).toBeCloseTo(eye[0] as number);
+      expect(p.position[2]).toBeCloseTo(eye[2] as number);
     }
   });
 
-  it('never looks past the screen wall', () => {
-    for (let i = 0; i <= 50; i++) {
-      const p = at(i / 50);
-      // the look target stays between the screen centre and the top-down target
-      expect(p.target[2]).toBeGreaterThanOrEqual(-1e-9);
-      expect(p.target[2]).toBeLessThanOrEqual(top.target[2] + 1e-9);
-      // the view ray meets the floor in front of the wall, or lands on the wall (floor up to a
-      // little above the screen); it never goes over or past it
+  it('only ever descends and widens the lens', () => {
+    let prevY = Number.POSITIVE_INFINITY;
+    let prevFov = 0;
+    for (let i = 0; i <= 100; i++) {
+      const p = at(i / 100);
+      expect(p.position[1]).toBeLessThanOrEqual(prevY + 1e-9);
+      expect(p.fov).toBeGreaterThanOrEqual(prevFov - 1e-9);
+      prevY = p.position[1];
+      prevFov = p.fov;
+    }
+  });
+
+  it('zooms by a steady ratio while travelling', () => {
+    // altitude and tan(fov/2) move by the same ratio per step: no jump in apparent size
+    let prev = 0;
+    for (let i = 0; i <= 18; i++) {
+      const p = at((TRAVEL_SHARE * i) / 18);
+      const size = 1 / (p.position[1] * Math.tan((p.fov * Math.PI) / 360));
+      if (i > 0) expect(size / prev).toBeLessThan(1.35);
+      prev = size;
+    }
+  });
+
+  it('looks at the floor under it, then pitches up to the screen centre without going past it', () => {
+    for (let i = 0; i <= 100; i++) {
+      const p = at(i / 100);
       const dir = new THREE.Vector3(...p.target).sub(new THREE.Vector3(...p.position)).normalize();
+      expect(Math.abs(dir.dot(new THREE.Vector3(...p.up).normalize()))).toBeLessThan(0.999);
+      // meets the floor in front of the wall, or lands on the wall itself (floor to a bit above the screen)
       const floorZ = dir.y < -1e-6 ? p.position[2] + dir.z * (-p.position[1] / dir.y) : Number.NaN;
       if (!(floorZ >= 0)) {
         const y = p.position[1] + dir.y * (-p.position[2] / dir.z);
         expect(y).toBeGreaterThanOrEqual(-0.5);
         expect(y).toBeLessThanOrEqual(8);
       }
-    }
-  });
-
-  it('keeps the look direction away from the up vector', () => {
-    for (let i = 0; i <= 50; i++) {
-      const p = at(i / 50);
-      const look = new THREE.Vector3(...p.target).sub(new THREE.Vector3(...p.position)).normalize();
-      expect(Math.abs(look.dot(new THREE.Vector3(...p.up).normalize()))).toBeLessThan(0.999);
     }
   });
 });
