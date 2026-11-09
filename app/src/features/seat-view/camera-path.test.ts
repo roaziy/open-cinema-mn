@@ -185,9 +185,9 @@ for (const [hallName, h] of HALLS) {
           it('has its own duration and starts and ends where it should', () => {
             const open = playDive(h, top, eye, false).ms;
             if (reverse) {
-              // the smoothed close takes at most 1.5 times the matching open (it was 0.7 before smoothing)
+              // the close is clearly quicker than the matching open (0.6 to 0.85 of it)
               expect(ms / open).toBeGreaterThan(0.6);
-              expect(ms / open).toBeLessThan(1.5);
+              expect(ms / open).toBeLessThan(0.85);
               expect(ms).toBeGreaterThanOrEqual(CLOSE_CAPS.minMs);
             } else {
               expect(ms).toBeGreaterThanOrEqual(1600);
@@ -653,7 +653,7 @@ describe('the approved open is unchanged', () => {
     const top = topFor(h, 'fit');
     for (const [reverse, bound] of [
       [false, 0.1],
-      [true, 0.12],
+      [true, 0.2],
     ] as const) {
       const eye = pick(h, 8, 4);
       const pov = povFov(eye, h.hall, ASPECT);

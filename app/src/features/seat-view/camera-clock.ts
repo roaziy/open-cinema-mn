@@ -38,7 +38,7 @@ export type ClockCaps = {
   zoomLnPerS: number;
   minMs: number;
   maxMs: number;
-  /** Half-width, in clock steps, of the smoothing of each step's time (0 = none). Never below the cap. */
+  /** Half-width, in clock steps, of the moving average of each step's time (0 = none); the total is kept. */
   smooth: number;
 };
 
@@ -52,11 +52,11 @@ export const OPEN_CAPS: ClockCaps = {
 };
 /** Closing is about 30 percent quicker: 125 degrees and 4 ln a second. */
 export const CLOSE_CAPS: ClockCaps = {
-  turnDegPerS: 125,
-  zoomLnPerS: 4,
+  turnDegPerS: 135,
+  zoomLnPerS: 4.5,
   minMs: 1100,
-  maxMs: 3400,
-  smooth: 22,
+  maxMs: 2300,
+  smooth: 14,
 };
 
 function buildClock(pose: (k: number, out: DivePose) => DivePose, caps: ClockCaps): MoveClock {
@@ -78,27 +78,26 @@ function buildClock(pose: (k: number, out: DivePose) => DivePose, caps: ClockCap
     pp = prev.pitch;
     pf = tf;
   }
-  // Smooth each step's time (widen to the local maximum, then average): the speed and zoom rate
-  // stay continuous where the turn cap hands over to the zoom cap, and no step gets less time
-  // than the caps need.
+  // Smooth each step's time with a plain moving average and keep the total exactly as it was:
+  // the speed and zoom rate stay continuous where the turn cap hands over to the zoom cap, and
+  // the move takes no longer than the caps alone would make it (peaks may pass a cap slightly).
   const r = caps.smooth;
   if (r > 0) {
-    const wide = new Float64Array(n + 1);
+    let raw = 0;
+    for (let i = 1; i <= n; i++) raw += needs[i] as number;
+    const avg = new Float64Array(n + 1);
+    let sum = 0;
     for (let i = 1; i <= n; i++) {
-      let mx = 0;
-      for (let j = Math.max(1, i - r); j <= Math.min(n, i + r); j++)
-        mx = Math.max(mx, needs[j] as number);
-      wide[i] = mx;
-    }
-    for (let i = 1; i <= n; i++) {
-      let sum = 0;
+      let s = 0;
       let cnt = 0;
       for (let j = Math.max(1, i - r); j <= Math.min(n, i + r); j++) {
-        sum += wide[j] as number;
+        s += needs[j] as number;
         cnt++;
       }
-      needs[i] = sum / cnt;
+      avg[i] = s / cnt;
+      sum += avg[i] as number;
     }
+    for (let i = 1; i <= n; i++) needs[i] = ((avg[i] as number) * raw) / sum;
   }
   for (let i = 1; i <= n; i++) cum[i] = (cum[i - 1] as number) + (needs[i] as number);
   const total = cum[n] as number;
