@@ -452,6 +452,30 @@ const sQ2: Vec3 = [0, 0, 0];
  * above the seat backs behind each seat (`envelopeY` is the height that clears them), with the
  * heading and elevation turning evenly from one seat's view to the other's.
  */
+/** How far above the higher of the two eyes the glide passes, metres. */
+const HOP_RISE_M = 0.7;
+
+/** Time for a seat switch: 1.6 s plus a little for distance, at most 2.2 s. */
+export function hopDurationMs(a: Vec3, b: Vec3): number {
+  const d = Math.hypot(b[0] - a[0], b[1] - a[1], b[2] - a[2]);
+  return Math.min(2200, 1600 + d * 50);
+}
+
+/** The seat switch at linear time fraction `t`: one ease-in-out over the glide, looking at the screen. */
+export function hopFrame(
+  t: number,
+  a: Vec3,
+  b: Vec3,
+  center: Vec3,
+  povA: number,
+  povB: number,
+  envelopeY: number,
+  bounds: Bounds,
+  out: DivePose,
+): DivePose {
+  return hopPose(easeFlight(t), a, b, center, povA, povB, envelopeY, bounds, out);
+}
+
 export function hopPose(
   p: number,
   a: Vec3,
@@ -466,8 +490,11 @@ export function hopPose(
   const k = Math.min(1, Math.max(0, p));
   const va = viewAngles(a, center);
   const vb = viewAngles(b, center);
-  const up = Math.max(APPROACH_UP_M, envelopeY - a[1]);
-  const upB = Math.max(APPROACH_UP_M, envelopeY - b[1]);
+  // Rise only just above the seat backs on the way: the move reads as travelling between seats.
+  const dy = Math.abs(a[1] - b[1]);
+  const up = HOP_RISE_M + dy;
+  const upB = HOP_RISE_M + dy;
+  void envelopeY;
   const q1 = approachPoint(a, va.yaw, bounds, sQ1, 0.5, up);
   const q2 = approachPoint(b, vb.yaw, bounds, sQ2, 0.5, upB);
   out.position[0] = bez(a[0], q1[0], q2[0], b[0], k);

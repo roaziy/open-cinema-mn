@@ -12,8 +12,8 @@ import {
   hallDepth,
   hallExtents,
   hallHalfWidth,
-  hopClock,
-  hopPose,
+  hopDurationMs,
+  hopFrame,
   MAX_TURN_DEG_PER_S,
   mapFitOf,
   newDivePose,
@@ -29,6 +29,7 @@ import {
   tauHermite,
   topDownFromMap,
   type Vec3,
+  viewAngles,
 } from './camera-math';
 import { type Obstacles, seatEnvelope } from './room-layout';
 
@@ -308,46 +309,102 @@ describe('rotationAngleDeg', () => {
   });
 });
 
-describe('hops between seats', () => {
+describe('the seat switch glides between the seats', () => {
   for (const [hallName, h] of HALLS) {
     const seats = seatsOf(h, hallName);
-    const top = topFor(h, 'fit');
     for (const [[na, a], [nb, b]] of [
       [seats[0], seats[4]],
       [seats[4], seats[1]],
       [seats[2], seats[3]],
+      [seats[5], seats[0]],
     ] as [[string, Vec3], [string, Vec3]][]) {
-      it(`${hallName}: ${na} to ${nb} turns slowly, keeps the hall in view and is never faster than 90 degrees a second`, () => {
+      describe(`${hallName}: ${na} to ${nb}`, () => {
         const povA = povFov(a, h.hall, ASPECT);
         const povB = povFov(b, h.hall, ASPECT);
-        const clock = hopClock(a, b, h.center, povA, povB, seatEnvelope(h.o), h.o);
-        expect(clock.ms).toBeGreaterThanOrEqual(1600);
-        const n = Math.round((clock.ms / 1000) * FPS);
-        const poses: DivePose[] = [];
-        for (let i = 0; i <= n; i++) {
-          poses.push(
-            copy(
-              hopPose(
-                clock.at(i / n),
-                a,
-                b,
-                h.center,
-                povA,
-                povB,
-                seatEnvelope(h.o),
-                h.o,
-                newDivePose(),
-              ),
-            ),
-          );
-        }
-        void top;
-        for (const p of poses) expect(looksAtTheHall(h, p)).toBe(true);
-        for (let i = 1; i < poses.length; i++) {
-          expect(angle(poses[i - 1] as DivePose, poses[i] as DivePose) * FPS).toBeLessThanOrEqual(
-            MAX_TURN_DEG_PER_S * 1.05,
-          );
-        }
+        const ms = hopDurationMs(a, b);
+        const n = Math.round((ms / 1000) * FPS);
+        const frame = (i: number) =>
+          copy(hopFrame(i / n, a, b, h.center, povA, povB, seatEnvelope(h.o), h.o, newDivePose()));
+        const poses = Array.from({ length: n + 1 }, (_, i) => frame(i));
+
+        it("takes 1.6 to 2.2 s, starts at the first seat's view and ends at the second's", () => {
+          expect(ms).toBeGreaterThanOrEqual(1600);
+          expect(ms).toBeLessThanOrEqual(2200);
+          const first = poses[0] as DivePose;
+          const last = poses[n] as DivePose;
+          for (let i = 0; i < 3; i++) {
+            expect(first.position[i]).toBeCloseTo(a[i] as number, 6);
+            expect(last.position[i]).toBeCloseTo(b[i] as number, 6);
+          }
+          const va = viewAngles(a, h.center);
+          const vb = viewAngles(b, h.center);
+          expect(first.yaw).toBeCloseTo(va.yaw, 6);
+          expect(first.pitch).toBeCloseTo(va.pitch, 6);
+          expect(last.yaw).toBeCloseTo(vb.yaw, 6);
+          expect(last.pitch).toBeCloseTo(vb.pitch, 6);
+          expect(first.fov).toBeCloseTo(povA, 6);
+          expect(last.fov).toBeCloseTo(povB, 6);
+        });
+
+        it('moves smoothly: no jump of more than a few centimetres a frame at the start and end, no roll', () => {
+          const total = Math.hypot(b[0] - a[0], b[1] - a[1], b[2] - a[2]);
+          for (let i = 1; i < poses.length; i++) {
+            const d = Math.hypot(
+              ...((poses[i] as DivePose).position.map(
+                (v, j) => v - ((poses[i - 1] as DivePose).position[j] as number),
+              ) as Vec3),
+            );
+            // the ease peaks at 1.5x the average speed over the curve (which is a bit longer than the chord)
+            expect(d).toBeLessThan(((total + 4) / n) * 2.2);
+            if (i < 3 || i > n - 3) expect(d).toBeLessThan(0.05);
+          }
+        });
+
+        it('keeps the screen in view, turns under the open caps and passes between the seats', () => {
+          const cam = new THREE.PerspectiveCamera(60, ASPECT, 0.1, 500);
+          cam.rotation.order = 'YXZ';
+          let peakTurn = 0;
+          let peakZoom = 0;
+          let maxAlong = 0;
+          for (let i = 0; i < poses.length; i++) {
+            const p = poses[i] as DivePose;
+            cam.fov = p.fov;
+            cam.updateProjectionMatrix();
+            cam.position.set(...p.position);
+            cam.rotation.set(p.pitch, p.yaw, 0);
+            cam.updateMatrixWorld();
+            cam.matrixWorldInverse.copy(cam.matrixWorld).invert();
+            const q = new THREE.Vector3(...h.center).applyMatrix4(cam.matrixWorldInverse);
+            const n2 = new THREE.Vector3(...h.center).project(cam);
+            expect(q.z).toBeLessThan(0);
+            expect(Math.abs(n2.x)).toBeLessThanOrEqual(1);
+            if (i > 0) {
+              peakTurn = Math.max(peakTurn, angle(poses[i - 1] as DivePose, p) * FPS);
+              peakZoom = Math.max(peakZoom, zoom(poses[i - 1] as DivePose, p));
+            }
+            // progress along the chord a to b: the camera really travels between them
+            const ab = [b[0] - a[0], b[2] - a[2]];
+            const len = Math.hypot(ab[0] as number, ab[1] as number) || 1;
+            maxAlong = Math.max(
+              maxAlong,
+              ((p.position[0] - a[0]) * (ab[0] as number) +
+                (p.position[2] - a[2]) * (ab[1] as number)) /
+                len /
+                len,
+            );
+          }
+          expect(peakTurn).toBeLessThanOrEqual(MAX_TURN_DEG_PER_S);
+          expect(peakZoom).toBeLessThanOrEqual(3);
+          const mid = poses[Math.round(n / 2)] as DivePose;
+          const along =
+            ((mid.position[0] - a[0]) * (b[0] - a[0]) + (mid.position[2] - a[2]) * (b[2] - a[2])) /
+            (Math.hypot(b[0] - a[0], b[2] - a[2]) ** 2 || 1);
+          if (Math.hypot(b[0] - a[0], b[2] - a[2]) > 1) {
+            expect(along).toBeGreaterThan(0.25);
+            expect(along).toBeLessThan(0.75);
+          }
+          expect(maxAlong).toBeLessThan(1.05);
+        });
       });
     }
   }
