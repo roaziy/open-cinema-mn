@@ -21,17 +21,20 @@ import {
   type Vec3,
 } from './camera-math';
 import { CameraRig, type RigGoal } from './camera-rig';
-import { HallRoom, SCREEN_FACE, SCREEN_HALO, SCREEN_MASK } from './HallRoom';
+import { HallRoom, type RoomControl, SCREEN_FACE, SCREEN_HALO, SCREEN_MASK } from './HallRoom';
 import { handoffLook, heldScale } from './handoff';
 import type { Look } from './look-around';
 import { palette } from './palette';
-import type { Obstacles } from './room-layout';
+import { kitOf, type RoomInput, washLights } from './room-kit-layout';
+import { aisleCentres, type Obstacles } from './room-layout';
 import { armsOf } from './seat-arms';
 import { createSeatParts, MODEL_PITCH } from './seat-geometry';
 
 const MAX_SELECTED = 10;
 const AMBIENT = 1.5;
 const SPILL = 150;
+/** The screen's light reaches what is in front of it only: a cone (half-angle) into the hall. */
+const SPILL_CONE = Math.PI * 0.45;
 const FLOOR_SPILL = 40;
 const TOP_LIGHT = 18;
 const FILL = 1.1;
@@ -44,6 +47,8 @@ export type Hall3DProps = {
   seats: SeatState[];
   hall: SeatMap['hall'];
   tone: string;
+  /** The showtime's format: picks the room kit (IMAX gets its own room). */
+  format?: string;
   screen: ScreenSource;
   selectedIds: string[];
   /** Seats someone else holds or has bought, as the 2D map shows them. */
@@ -151,6 +156,7 @@ function Scene({
   seats,
   hall,
   tone,
+  format,
   screen,
   selectedIds,
   takenIds,
@@ -177,6 +183,25 @@ function Scene({
 
   const steps = useMemo(() => stepSpans(rowsOf(seats), depth), [seats, depth]);
   const drawable = useMemo(() => seats.filter((s) => s.kind !== 'blocked'), [seats]);
+  const kit = kitOf(format);
+  // The kit's few real lights (a sconce wash, an accent wash); the rest of the room glows.
+  const wash = useMemo(() => {
+    const input: RoomInput = {
+      half,
+      depth,
+      wallH,
+      screen: {
+        width: hall.screen_width_m,
+        height: hall.screen_height_m,
+        x: hall.screen_x_m,
+        bottom: SCREEN_BOTTOM_M,
+      },
+      steps,
+      aisleXs: aisleCentres(drawable.map((d) => d.x_m)),
+      seats: drawable,
+    };
+    return washLights(kit, input);
+  }, [kit, half, depth, wallH, hall, steps, drawable]);
   // The seat model (see seat-model.ts), sized to the hall's seat spacing, and its dividers.
   const parts = useMemo(() => createSeatParts(), []);
   const { arms, pitch } = useMemo(() => armsOf(drawable), [drawable]);
@@ -265,12 +290,14 @@ function Scene({
   const lastS = useRef(-1);
   const lastCam = useRef<Vec3>([0, 0, 0]);
   const ambientRef = useRef<THREE.AmbientLight>(null);
-  const spillRef = useRef<THREE.PointLight>(null);
+  const spillRef = useRef<THREE.SpotLight>(null);
   const topRef = useRef<THREE.PointLight>(null);
   const fillRef = useRef<THREE.DirectionalLight>(null);
   const floorSpillRef = useRef<THREE.PointLight>(null);
   const fogRef = useRef<THREE.Fog>(null);
   const screenRef = useRef<THREE.Group>(null);
+  const roomRef = useRef<RoomControl | null>(null);
+  const washRefs = useRef<(THREE.PointLight | null)[]>([]);
 
   /** Everything that follows the dive: seat footprint, own seat, lights, the screen's tilt. */
   const follow = useCallback(
@@ -346,6 +373,12 @@ function Scene({
       if (topRef.current) topRef.current.intensity = TOP_LIGHT * s * look.light;
       if (fillRef.current) fillRef.current.intensity = FILL * s * look.light;
       if (floorSpillRef.current) floorSpillRef.current.intensity = FLOOR_SPILL * s * look.light;
+      wash.forEach((w, i) => {
+        const light = washRefs.current[i];
+        if (light) light.intensity = w.intensity * s * look.light;
+      });
+      // the room's own glow: house lights fade out as the film takes over
+      roomRef.current?.update(s * look.light, s, pos.y);
       const lift = 1 + SEAT_LIFT * s * look.light;
       fabricMat.color.setScalar(lift);
       // black plastic stays dark: half the fabric's lift
@@ -379,8 +412,17 @@ function Scene({
       widthScale,
       get,
       closing,
+      wash,
     ],
   );
+
+  // The spill aims down into the hall; the wall, valance and curtains behind it stay unlit.
+  useLayoutEffect(() => {
+    const t = spillRef.current?.target;
+    if (!t) return;
+    t.position.set(hall.screen_x_m, 0, depth * 0.6);
+    t.updateMatrixWorld();
+  }, [hall.screen_x_m, depth]);
 
   // Instances and lights are written whenever the data changes and while the dive moves.
   useLayoutEffect(() => {
@@ -419,12 +461,14 @@ function Scene({
     <>
       <fog ref={fogRef} attach="fog" args={[palette.canvas, 1e4, 2e4]} />
       <ambientLight ref={ambientRef} color={0xffffff} />
-      {/* The screen's light, tinted by the film: spills over the front rows and walls. */}
-      <pointLight
+      {/* The screen's light, tinted by the film: spills over the rows and side walls ahead. */}
+      <spotLight
         ref={spillRef}
         position={[hall.screen_x_m, screenY + 0.3, 3.5]}
         color={spillTone}
         decay={1.5}
+        angle={SPILL_CONE}
+        penumbra={0.4}
       />
       <pointLight
         ref={floorSpillRef}
@@ -436,10 +480,24 @@ function Scene({
       <directionalLight ref={fillRef} position={[0, 6, depth + 8]} color="#9DB0E6" />
       <pointLight ref={topRef} position={[0, wallH - 1, depth / 2]} color="#AEB8E0" decay={1.5} />
 
+      {wash.map((w, i) => (
+        <pointLight
+          // biome-ignore lint/suspicious/noArrayIndexKey: a fixed pair of lights, never reordered
+          key={i}
+          ref={(l) => {
+            washRefs.current[i] = l;
+          }}
+          position={[w.x, w.y, w.z]}
+          color={w.color}
+          decay={1.6}
+        />
+      ))}
+
       <HallRoom
         screenRef={screenRef}
+        roomRef={roomRef}
+        kit={kit}
         hall={hall}
-        seats={seats}
         drawable={drawable}
         tone={tone}
         screen={screen}

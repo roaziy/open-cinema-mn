@@ -355,6 +355,7 @@ export function SeatViewOverlay({
                     seats={map.seats}
                     hall={map.hall}
                     tone={tone}
+                    format={map.showtime.format}
                     screen={screen}
                     selectedIds={selectedIds}
                     takenIds={takenIds}
