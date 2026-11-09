@@ -318,8 +318,6 @@ export function SeatLandmarks({
         if (seat.kind === 'blocked') return null;
         const status = statusOf(seat.id);
         if (status === 'free' && seat.kind !== 'wheelchair' && seat.kind !== 'premium') return null;
-        const cx = origin.x + left + layout.size / 2;
-        const cy = origin.y + top + layout.size / 2;
         return (
           <Anchored
             key={seat.id}
