@@ -233,6 +233,13 @@ export function CameraRig({
     invalidate();
   }, [size.width, size.height, get, invalidate]);
 
+  // The panel's height changed (it is measured after first layout): refit the lift while at rest.
+  useEffect(() => {
+    if (!placed.current || flight.current.active) return;
+    placeAt(at.current, eyeOf());
+    invalidate();
+  }, [cover, invalidate]);
+
   const seatId = eyeSeat?.id;
   useEffect(() => {
     if (!placed.current) return;

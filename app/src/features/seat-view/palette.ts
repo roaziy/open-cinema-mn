@@ -1,4 +1,4 @@
-import { colors } from '@/theme/tokens';
+import { colors, hues } from '@/theme/tokens';
 
 /** Mix a #rrggbb colour toward white by `amount` (0..1). */
 function lift(hex: string, amount: number): string {
@@ -6,6 +6,20 @@ function lift(hex: string, amount: number): string {
   const ch = (shift: number) => {
     const v = (n >> shift) & 255;
     return Math.round(v + (255 - v) * amount)
+      .toString(16)
+      .padStart(2, '0');
+  };
+  return `#${ch(16)}${ch(8)}${ch(0)}`;
+}
+
+/** Mix two #rrggbb colours: `amount` 0 is `a`, 1 is `b`. */
+function mix(a: string, b: string, amount: number): string {
+  const na = Number.parseInt(a.slice(1), 16);
+  const nb = Number.parseInt(b.slice(1), 16);
+  const ch = (shift: number) => {
+    const va = (na >> shift) & 255;
+    const vb = (nb >> shift) & 255;
+    return Math.round(va + (vb - va) * amount)
       .toString(16)
       .padStart(2, '0');
   };
@@ -24,7 +38,9 @@ export const palette = {
   slatLight: '#2A2A32',
   stepLight: '#5C6896',
   seat: colors.fill,
-  seatPremium: lift(colors.fill, 0.1),
+  /** Premium seats lean indigo (the 2D map's stripe colour); taken ones are the map's near-black. */
+  seatPremium: mix(colors.fill, hues.indigo, 0.4),
+  seatTaken: '#101012',
   chosen: colors.action,
   ambient: colors.muted,
   fill: colors.fill,

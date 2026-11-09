@@ -135,6 +135,7 @@ export default function SeatMapScreen() {
   }));
   const [viewing, setViewing] = useState<{
     seatId: string;
+    takenIds: string[];
     rect: OverlayRect;
     topPose: TopDownPose;
     closing: boolean;
@@ -198,6 +199,9 @@ export default function SeatMapScreen() {
         dive.set(0);
         setViewing({
           seatId: last.id,
+          takenIds: layout.slots
+            .filter(({ seat }) => seat.kind !== 'blocked' && statusOf(seat.id) === 'taken')
+            .map(({ seat }) => seat.id),
           rect: { x: 0, y: 0, w: rw, h: rh },
           topPose,
           closing: false,
@@ -305,6 +309,7 @@ export default function SeatMapScreen() {
           map={map.data}
           selected={selected}
           initialSeatId={viewing.seatId}
+          takenIds={viewing.takenIds}
           rect={viewing.rect}
           topPose={viewing.topPose}
           dive={dive}
