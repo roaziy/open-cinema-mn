@@ -10,14 +10,15 @@ import {
   easeInOut,
   eyePosition,
   FLY_MS,
-  fovForAspect,
   lensRange,
   lerp3,
   newDivePose,
+  povFov,
   screenCenter,
   type TopDownPose,
   type Vec3,
 } from './camera-math';
+import { clearPosition, type Obstacles } from './room-layout';
 
 /** Dev only: how long the average frame time is sampled after a flight. */
 const MEASURE_MS = 3000;
@@ -45,6 +46,8 @@ type Flight = {
   kind: 'dive' | 'hop';
   startedAt: number;
   durationMs: number;
+  fromFov: number;
+  toFov: number;
   s0: number;
   s1: number;
   eye: Vec3;
@@ -69,6 +72,8 @@ type Props = {
   dive: SharedValue<number>;
   /** Px of the canvas's bottom that the stats panel covers: the picture is lifted to stay centred above it. */
   cover: number;
+  /** The room's solids: the camera stays out of them. */
+  obstacles: Obstacles;
   /** A flight to `goal` finished. */
   onArrive: (goal: RigGoal) => void;
   /** A render finished and issued draw calls. */
@@ -78,6 +83,7 @@ type Props = {
 };
 
 const NO_SEAT: Vec3 = [0, 1.5, 6];
+const scratch: Vec3 = [0, 0, 0];
 
 /**
  * Owns the camera (the dive from the top-down pose that matches the 2D map to the seat and back,
@@ -93,6 +99,7 @@ export function CameraRig({
   goal,
   dive,
   cover,
+  obstacles,
   onArrive,
   onDrew,
   onFail,
@@ -114,6 +121,8 @@ export function CameraRig({
     kind: 'dive',
     startedAt: 0,
     durationMs: FLY_MS,
+    fromFov: 0,
+    toFov: 0,
     s0: 0,
     s1: 1,
     eye: [0, 0, 0],
@@ -132,6 +141,7 @@ export function CameraRig({
     topPose,
     goal,
     cover,
+    obstacles,
     onArrive,
     onDrew,
     onFail,
@@ -144,6 +154,7 @@ export function CameraRig({
       topPose,
       goal,
       cover,
+      obstacles,
       onArrive,
       onDrew,
       onFail,
@@ -159,7 +170,11 @@ export function CameraRig({
   const placeAt = useEffectEvent((s: number, eye: Vec3) => {
     const camera = get().camera as THREE.PerspectiveCamera;
     const { topPose: top, hall: h, cover: c } = latest.current;
-    const p = divePose(s, top, eye, screenCenter(h), fovForAspect(camera.aspect), pose.current);
+    const p = divePose(s, top, eye, screenCenter(h), povFov(eye, h, camera.aspect), pose.current);
+    clearPosition(p.position, eye, null, latest.current.obstacles, scratch);
+    p.position[0] = scratch[0];
+    p.position[1] = scratch[1];
+    p.position[2] = scratch[2];
     camera.position.set(p.position[0], p.position[1], p.position[2]);
     camera.up.set(p.up[0], p.up[1], p.up[2]);
     camera.lookAt(p.target[0], p.target[1], p.target[2]);
@@ -183,6 +198,8 @@ export function CameraRig({
       f.to[0] = eye[0];
       f.to[1] = eye[1];
       f.to[2] = eye[2];
+      f.fromFov = lens.current.fov;
+      f.toFov = povFov(eye, latest.current.hall, (camera as THREE.PerspectiveCamera).aspect);
       f.durationMs = FLY_MS;
     } else {
       f.kind = 'dive';
@@ -248,9 +265,13 @@ export function CameraRig({
           top,
           f.eye,
           screenCenter(h),
-          fovForAspect(camera.aspect),
+          povFov(f.eye, h, camera.aspect),
           pose.current,
         );
+        clearPosition(p.position, f.eye, null, latest.current.obstacles, scratch);
+        p.position[0] = scratch[0];
+        p.position[1] = scratch[1];
+        p.position[2] = scratch[2];
         camera.position.set(p.position[0], p.position[1], p.position[2]);
         camera.up.set(p.up[0], p.up[1], p.up[2]);
         camera.lookAt(p.target[0], p.target[1], p.target[2]);
@@ -259,7 +280,9 @@ export function CameraRig({
         dive.set(s);
       } else {
         lerp3(f.cur, f.from, f.to, e);
-        camera.position.set(f.cur[0], f.cur[1], f.cur[2]);
+        clearPosition(f.cur, f.from, f.to, latest.current.obstacles, scratch);
+        camera.position.set(scratch[0], scratch[1], scratch[2]);
+        lens.current.fov = f.fromFov + (f.toFov - f.fromFov) * e;
         camera.up.set(0, 1, 0);
         const ctr = screenCenter(h);
         camera.lookAt(ctr[0], ctr[1], ctr[2]);

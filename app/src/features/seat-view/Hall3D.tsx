@@ -21,17 +21,17 @@ import {
 } from './camera-math';
 import { CameraRig, type RigGoal } from './camera-rig';
 import { palette } from './palette';
-import { aisleCentres, aisleStrips, slatLayout } from './room-layout';
+import { aisleCentres, aisleStrips, type Obstacles, slatLayout } from './room-layout';
 import { useScreenTexture } from './screen-texture';
 import { createSeatGeometry } from './seat-geometry';
 
 const MAX_SELECTED = 10;
-const AMBIENT = 1.25;
+const AMBIENT = 1.5;
 const SPILL = 150;
 const FLOOR_SPILL = 40;
 const TOP_LIGHT = 18;
 /** Seats are brightened toward the seat view so they read against the dark room. */
-const SEAT_LIFT = 1.3;
+const SEAT_LIFT = 2.4;
 /** The screen bows toward the audience by this share of its width. */
 const SCREEN_BOW = 0.015;
 /**
@@ -239,7 +239,6 @@ function Scene({
   const ambientRef = useRef<THREE.AmbientLight>(null);
   const spillRef = useRef<THREE.PointLight>(null);
   const topRef = useRef<THREE.PointLight>(null);
-  const screenRef = useRef<THREE.Group>(null);
   const floorSpillRef = useRef<THREE.PointLight>(null);
   const fogRef = useRef<THREE.Fog>(null);
   const slatsRef = useRef<THREE.InstancedMesh>(null);
@@ -288,8 +287,6 @@ function Scene({
         fogRef.current.near = 9 + 1e4 * (1 - t) ** 3;
         fogRef.current.far = 48 + 2e4 * (1 - t) ** 3;
       }
-      // The screen lies flat at the start, where the 2D map draws its arc, and stands up.
-      if (screenRef.current) screenRef.current.rotation.x = -(1 - s) * (Math.PI / 2);
     },
     [drawable, chosen, currentId, topPose.squash, seatMat],
   );
@@ -332,6 +329,11 @@ function Scene({
   const spillTone = useMemo(
     () => new THREE.Color(tone).lerp(new THREE.Color('#FFFFFF'), 0.5),
     [tone],
+  );
+
+  const obstacles = useMemo<Obstacles>(
+    () => ({ half, depth, wallH, steps, seats: drawable }),
+    [half, depth, wallH, steps, drawable],
   );
 
   // Room detail, written once per hall.
@@ -406,8 +408,8 @@ function Scene({
       <pointLight ref={topRef} position={[0, wallH - 1, depth / 2]} color="#AEB8E0" decay={1.5} />
 
       {/* Screen: bowed, cover-cropped film image in a black mask, brightest thing in the room.
-          It lies flat at the dive's start, where the 2D map draws its arc, and stands up. */}
-      <group ref={screenRef} position={[hall.screen_x_m, SCREEN_BOTTOM_M, 0.05]}>
+          Always upright: tilting it behind the front wall hid it during the dive. */}
+      <group position={[hall.screen_x_m, SCREEN_BOTTOM_M, 0.05]}>
         <mesh position={[0, hall.screen_height_m / 2, 0]} geometry={screenGeo}>
           <meshBasicMaterial
             key={texture ? 'tex' : 'flat'}
@@ -495,6 +497,7 @@ function Scene({
         goal={goal}
         dive={dive}
         cover={cover}
+        obstacles={obstacles}
         onArrive={onArrive}
         onDrew={onDrew}
         onFail={onFail}
