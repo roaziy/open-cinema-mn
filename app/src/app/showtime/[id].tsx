@@ -3,9 +3,13 @@ import { formatUbTime } from '@open-cinema/shared';
 import { useQueryClient } from '@tanstack/react-query';
 import { router, Stack, useLocalSearchParams } from 'expo-router';
 import { useHeaderHeight, usePreventRemove } from 'expo-router/react-navigation';
-import { useCallback, useMemo, useRef, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { type HostInstance, StyleSheet, Text, useWindowDimensions, View } from 'react-native';
-import Animated, { useAnimatedStyle, useSharedValue } from 'react-native-reanimated';
+import Animated, {
+  useAnimatedStyle,
+  useReducedMotion,
+  useSharedValue,
+} from 'react-native-reanimated';
 import { PosterBackdrop } from '@/components/poster-backdrop';
 import {
   SeatCanvas,
@@ -18,7 +22,13 @@ import { SeatFooter } from '@/components/seat-footer';
 import { SeatLegend } from '@/components/seat-legend';
 import { Skeleton } from '@/components/skeleton';
 import { ErrorState } from '@/components/state-views';
-import { mapFitOf, type TopDownPose, topDownFromMap } from '@/features/seat-view/camera-math';
+import {
+  mapFitOf,
+  seatPlaneHeight,
+  smoothstep,
+  type TopDownPose,
+  topDownFromMap,
+} from '@/features/seat-view/camera-math';
 import { type OverlayRect, SeatViewOverlay } from '@/features/seat-view/SeatViewOverlay';
 import { useI18n } from '@/i18n';
 import { useAuth } from '@/lib/auth';
@@ -113,7 +123,16 @@ export default function SeatMapScreen() {
   const rootRef = useRef<HostInstance>(null);
   const viewportRef = useRef<HostInstance>(null);
   const fade = useSharedValue(0);
-  const mapStyle = useAnimatedStyle(() => ({ opacity: 1 - fade.get() }));
+  const dive = useSharedValue(0);
+  const still = useReducedMotion();
+  // The map's header fades as the camera leaves it, its footer just before the stats panel
+  // covers it. With Reduce Motion there is no dive: they follow the crossfade instead.
+  const chromeStyle = useAnimatedStyle(() => ({
+    opacity: 1 - (still ? fade.get() : dive.get()),
+  }));
+  const footerStyle = useAnimatedStyle(() => ({
+    opacity: 1 - (still ? fade.get() : smoothstep(0.5, 0.9, dive.get())),
+  }));
   const [viewing, setViewing] = useState<{
     seatId: string;
     rect: OverlayRect;
@@ -124,9 +143,28 @@ export default function SeatMapScreen() {
     () => setViewing((v) => (v && !v.closing ? { ...v, closing: true } : v)),
     [],
   );
-  const closed = useCallback(() => setViewing(null), []);
-  // Back button, swipe-back and the Android back key leave the 3D view first, not the screen.
-  usePreventRemove(viewing !== null, requestClose);
+  const closed = useCallback(() => {
+    dive.set(0);
+    fade.set(0);
+    setViewing(null);
+  }, [dive, fade]);
+  // The back button, swipe-back and the Android back key leave the 3D view first. Anything else
+  // that removes the screen (a reset after logout, say) goes through untouched.
+  const isViewing = viewing !== null;
+  const [guard, setGuard] = useState(true);
+  const repeat = useRef<(() => void) | null>(null);
+  usePreventRemove(isViewing && guard, ({ data, repeat: again }) => {
+    if (data.action.type === 'GO_BACK' || data.action.type === 'POP') requestClose();
+    else {
+      repeat.current = again;
+      setGuard(false);
+    }
+  });
+  useEffect(() => {
+    if (guard) return;
+    repeat.current?.();
+    repeat.current = null;
+  }, [guard]);
 
   const openView = () => {
     const last = selected[selected.length - 1];
@@ -152,8 +190,10 @@ export default function SeatMapScreen() {
           canvasH: vh,
           offsetX: 0,
           offsetY: 0,
+          planeY: seatPlaneHeight(map.data?.seats ?? []),
         });
         fade.set(0);
+        dive.set(0);
         setViewing({
           seatId: last.id,
           rect: { x: vx - rx, y: vy - ry, w: vw, h: vh },
@@ -174,7 +214,11 @@ export default function SeatMapScreen() {
 
   return (
     <View ref={rootRef} style={styles.root} collapsable={false}>
-      <Animated.View style={[styles.root, mapStyle]}>
+      <View
+        style={styles.root}
+        accessibilityElementsHidden={isViewing}
+        importantForAccessibility={isViewing ? 'no-hide-descendants' : 'auto'}
+      >
         <Stack.Screen
           options={{
             headerShown: true,
@@ -184,37 +228,39 @@ export default function SeatMapScreen() {
             headerTintColor: colors.ink,
           }}
         />
-        {show ? (
-          <View style={[styles.head, { paddingTop: headerHeight + space.xs }]}>
-            <PosterBackdrop
-              uri={show.movie.backdropUrl ?? show.movie.posterUrl}
-              tone={tone}
-              fadeHeight={90}
-            />
-            <View style={styles.headRow}>
-              <View style={styles.headText}>
-                <Text style={styles.title} numberOfLines={1}>
-                  {show.movie.title}
-                </Text>
-                <Text style={styles.meta} numberOfLines={1}>
-                  {[
-                    show.branch.name,
-                    show.hallName,
-                    `${formatUbTime(show.startsAt)}`,
-                    show.format,
-                  ].join('  ·  ')}
-                </Text>
+        <Animated.View style={chromeStyle}>
+          {show ? (
+            <View style={[styles.head, { paddingTop: headerHeight + space.xs }]}>
+              <PosterBackdrop
+                uri={show.movie.backdropUrl ?? show.movie.posterUrl}
+                tone={tone}
+                fadeHeight={90}
+              />
+              <View style={styles.headRow}>
+                <View style={styles.headText}>
+                  <Text style={styles.title} numberOfLines={1}>
+                    {show.movie.title}
+                  </Text>
+                  <Text style={styles.meta} numberOfLines={1}>
+                    {[
+                      show.branch.name,
+                      show.hallName,
+                      `${formatUbTime(show.startsAt)}`,
+                      show.format,
+                    ].join('  ·  ')}
+                  </Text>
+                </View>
+                <LiveBadge status={stream.status} />
               </View>
-              <LiveBadge status={stream.status} />
             </View>
-          </View>
-        ) : (
-          <View style={{ height: headerHeight + 56 }} />
-        )}
+          ) : (
+            <View style={{ height: headerHeight + 56 }} />
+          )}
 
-        <View style={styles.legend}>
-          <SeatLegend />
-        </View>
+          <View style={styles.legend}>
+            <SeatLegend />
+          </View>
+        </Animated.View>
 
         {map.isError && !map.data ? (
           <View style={styles.center}>
@@ -237,19 +283,21 @@ export default function SeatMapScreen() {
           />
         )}
 
-        {show ? (
-          <SeatFooter
-            selected={selected}
-            priceStandard={show.priceStandard}
-            pricePremium={show.pricePremium}
-            expiresAt={earliest}
-            onExpire={onExpire}
-            onRelease={toggle}
-            onViewFromSeat={openView}
-            onContinue={onContinue}
-          />
-        ) : null}
-      </Animated.View>
+        <Animated.View style={footerStyle}>
+          {show ? (
+            <SeatFooter
+              selected={selected}
+              priceStandard={show.priceStandard}
+              pricePremium={show.pricePremium}
+              expiresAt={earliest}
+              onExpire={onExpire}
+              onRelease={toggle}
+              onViewFromSeat={openView}
+              onContinue={onContinue}
+            />
+          ) : null}
+        </Animated.View>
+      </View>
       {viewing && map.data ? (
         <SeatViewOverlay
           map={map.data}
@@ -257,6 +305,7 @@ export default function SeatMapScreen() {
           initialSeatId={viewing.seatId}
           rect={viewing.rect}
           topPose={viewing.topPose}
+          dive={dive}
           fade={fade}
           closing={viewing.closing}
           onRequestClose={requestClose}

@@ -6,7 +6,7 @@ import {
   useCallback,
   useEffect,
   useMemo,
-  useRef,
+  useReducer,
   useState,
   useSyncExternalStore,
 } from 'react';
@@ -35,12 +35,13 @@ import { haptic } from '@/lib/haptics';
 import { seatLabel } from '@/lib/seats';
 import { colors, radius, space } from '@/theme/tokens';
 import { type } from '@/theme/type';
-import { FLY_MS, pickScreenSource, safeTone, type TopDownPose } from './camera-math';
+import { FLY_MS, pickScreenSource, safeTone, smoothstep, type TopDownPose } from './camera-math';
 import type { RigGoal } from './camera-rig';
 import { GlBoundary } from './gl-boundary';
 import { createGlMachine } from './gl-machine';
 import { Hall2D } from './Hall2D';
 import { StatsCard } from './StatsCard';
+import { goalOf, initialTransition, panelLive, transitionReducer } from './transition-machine';
 
 // Loaded on demand: if three or expo-gl cannot even be imported, the boundary routes to 2D.
 const Hall3D = lazy(() => import('./Hall3D'));
@@ -49,9 +50,10 @@ const Hall3D = lazy(() => import('./Hall3D'));
 const WATCHDOG_MS = 3000;
 /** Crossfade between the 2D map and the 3D picture. */
 export const FADE_MS = 200;
-const PANEL_MS = 280;
 /** How far the stats panel travels when it slides in and out. */
-const PANEL_TRAVEL = 220;
+const PANEL_TRAVEL = 260;
+/** The dive's progress at which the stats panel starts to slide in. */
+const PANEL_FROM = 0.85;
 /** Swipe down this far (or fast) to leave the view. */
 const DISMISS_PX = 90;
 const DISMISS_VELOCITY = 900;
@@ -72,13 +74,15 @@ type Props = {
   rect: OverlayRect;
   /** The camera pose that lines the first 3D frame up with the 2D map. */
   topPose: TopDownPose;
-  /** 0 = the 2D map shows, 1 = the 3D picture shows. Owned by the screen, which fades its map with it. */
+  /** 0 over the map ... 1 at the seat. The screen fades the map's header and footer with it. */
+  dive: SharedValue<number>;
+  /** 0 = the map shows, 1 = the 3D picture covers it. */
   fade: SharedValue<number>;
-  /** The viewer asked to leave (back button, swipe down). */
+  /** The viewer asked to leave (back button). */
   closing: boolean;
-  /** Ask to leave. */
+  /** Ask to leave (swipe down, holds expired). */
   onRequestClose: () => void;
-  /** The 2D map is fully back: the screen can unmount this. */
+  /** The map is fully back: the screen can unmount this. */
   onClosed: () => void;
   /** Dev only: force the 2D fallback. */
   forceFallback: boolean;
@@ -88,9 +92,9 @@ type Props = {
 
 /**
  * The 3D view from a seat, shown over the seat map in place. The canvas starts looking straight
- * down at the pose of the 2D map; once its first real frame is drawn the two crossfade, then the
- * camera dives to the seat. Leaving flies back up and crossfades to the map again. If GL fails,
- * the 2D side profile takes the canvas's place with the same crossfade.
+ * down at the pose of the 2D map; once its first real frame is drawn it fades in over the map,
+ * then the camera dives to the seat. Leaving flies back up and fades to the map again. If GL
+ * fails, the 2D side profile fades in over the canvas. The phases live in transition-machine.ts.
  */
 export function SeatViewOverlay({
   map,
@@ -98,6 +102,7 @@ export function SeatViewOverlay({
   initialSeatId,
   rect,
   topPose,
+  dive,
   fade,
   closing,
   onRequestClose,
@@ -108,17 +113,21 @@ export function SeatViewOverlay({
   const { t } = useI18n();
   const insets = useSafeAreaInsets();
   const headerHeight = useHeaderHeight();
-  const { width } = useWindowDimensions();
+  const { width, height: windowH } = useWindowDimensions();
   const reduceMotion = useReducedMotion();
   const [picked, setPicked] = useState<string | null>(null);
-  const [shown, setShown] = useState(false);
   const [panelH, setPanelH] = useState(0);
+  const fallbackFade = useSharedValue(0);
+  const [tr, send] = useReducer(
+    transitionReducer,
+    { still: reduceMotion, hold: __DEV__ && holdTop, forceFallback: __DEV__ && forceFallback },
+    initialTransition,
+  );
 
   // Render-loop state machine: ready only after a real draw; any failure or no draw in 3 s -> 2D.
   const [machine] = useState(() =>
     createGlMachine({
       timeoutMs: WATCHDOG_MS,
-      initial: __DEV__ && forceFallback ? 'failed' : 'loading',
       onFail: (reason) => {
         if (__DEV__) console.warn(`[seat-view] 2D fallback: ${reason}`);
       },
@@ -139,13 +148,18 @@ export function SeatViewOverlay({
       machine.dispose();
     };
   }, [machine]);
+  useEffect(() => {
+    if (gl === 'ready') send({ type: 'ready' });
+    else if (gl === 'failed') send({ type: 'failed' });
+  }, [gl]);
 
-  // 0 = stats panel tucked away, 1 = in place.
-  const panel = useSharedValue(0);
-
+  // Seats: the one being viewed stays on screen after its hold ran out, while the view leaves.
   const seats = useMemo(() => [...selected].sort(byPosition), [selected]);
-  const current =
+  const found =
     seats.find((s) => s.id === picked) ?? seats.find((s) => s.id === initialSeatId) ?? seats[0];
+  const [kept, setKept] = useState(found);
+  if (found && found !== kept) setKept(found);
+  const current = found ?? kept;
   const stats = useMemo(
     () => (current ? seatViewStats(current, map.hall) : null),
     [current, map.hall],
@@ -154,98 +168,78 @@ export function SeatViewOverlay({
   const tone = safeTone(map.showtime.movie.tone);
   const screen = useMemo(() => pickScreenSource(map.showtime.movie), [map.showtime.movie]);
 
-  // Every holds expired while looking: nothing left to look from.
+  // Holds all expired while looking: nothing left to look from, so leave.
   useEffect(() => {
-    if (!current) onRequestClose();
-  }, [current, onRequestClose]);
+    if (!found) onRequestClose();
+  }, [found, onRequestClose]);
+  useEffect(() => {
+    if (closing) send({ type: 'close' });
+  }, [closing]);
 
-  // First real frame (or a failure): 2D map out, 3D picture in. Until then the map stays up.
-  const settled = gl !== 'loading';
-  const fadedIn = useRef(false);
+  // Phase -> animation.
+  const still = tr.still;
   useEffect(() => {
-    if (!settled || closing || fadedIn.current) return;
-    fadedIn.current = true;
-    fade.set(
+    if (tr.phase === 'fading-in' && !tr.fallback) {
+      fade.set(
+        withTiming(1, { duration: FADE_MS }, (done) => {
+          'worklet';
+          if (done) scheduleOnRN(send, { type: 'faded-in' });
+        }),
+      );
+    } else if (tr.phase === 'fading-out') {
+      fallbackFade.set(withTiming(0, { duration: FADE_MS }));
+      fade.set(
+        withTiming(0, { duration: FADE_MS }, (done) => {
+          'worklet';
+          if (done) scheduleOnRN(send, { type: 'faded-out' });
+        }),
+      );
+    } else if (tr.phase === 'closed') {
+      onClosed();
+    }
+  }, [tr.phase, tr.fallback, fade, fallbackFade, onClosed]);
+  useEffect(() => {
+    if (!tr.fallback || tr.phase === 'mounting' || tr.phase === 'fading-out') return;
+    if (tr.phase === 'leaving' || tr.phase === 'closed') return;
+    fallbackFade.set(
       withTiming(1, { duration: FADE_MS }, (done) => {
         'worklet';
-        if (done) scheduleOnRN(setShown, true);
+        if (done) {
+          scheduleOnRN(send, { type: 'fallback-shown' });
+          scheduleOnRN(send, { type: 'faded-in' });
+        }
       }),
     );
-  }, [settled, closing, fade]);
-
-  // No flight to wait for: the stats are there from the start.
+  }, [tr.fallback, tr.phase, fallbackFade]);
+  // Reduce Motion: the scene is at the seat from the start; only the crossfade is animated.
   useEffect(() => {
-    if (shown && !closing && (gl === 'failed' || reduceMotion)) {
-      panel.set(withTiming(1, { duration: PANEL_MS }));
-    }
-  }, [shown, closing, gl, reduceMotion, panel]);
-
-  // Faded in: dive to the seat; leaving: back up to the 2D map's pose. Reduce Motion never flies.
-  const dive = shown && gl === 'ready' && !reduceMotion && !holdTop;
-  const goal: RigGoal = reduceMotion || (dive && !closing) ? 'pov' : 'top';
-  const away = useRef(false);
+    if (still) dive.set(1);
+  }, [still, dive]);
+  // A flight home that never reports must not strand the viewer.
   useEffect(() => {
-    if (!closing) away.current = dive;
-  }, [closing, dive]);
+    if (tr.phase !== 'leaving') return;
+    const timer = setTimeout(() => send({ type: 'timeout' }), FLY_MS + 3000);
+    return () => clearTimeout(timer);
+  }, [tr.phase]);
 
-  const onArrive = useCallback(
-    (arrived: RigGoal) => {
-      if (arrived === 'pov') panel.set(withTiming(1, { duration: PANEL_MS }));
-    },
-    [panel],
-  );
+  const onArrive = useCallback((arrived: RigGoal) => {
+    if (arrived === 'pov') {
+      haptic.tap();
+      send({ type: 'landed' });
+    } else send({ type: 'landed-top' });
+  }, []);
 
-  // Leaving: panel away, fly back up to the 2D map's pose, crossfade back, hand the screen back.
-  const leaving = useRef(false);
-  const guard = useRef<ReturnType<typeof setTimeout> | null>(null);
-  const finish = useCallback(() => {
-    if (guard.current) clearTimeout(guard.current);
-    guard.current = null;
-    fade.set(
-      withTiming(0, { duration: FADE_MS }, (done) => {
-        'worklet';
-        if (done) scheduleOnRN(onClosed);
-      }),
-    );
-  }, [fade, onClosed]);
-  useEffect(
-    () => () => {
-      if (guard.current) clearTimeout(guard.current);
-    },
-    [],
-  );
-  useEffect(() => {
-    if (!closing || leaving.current) return;
-    leaving.current = true;
-    panel.set(withTiming(0, { duration: PANEL_MS / 2 }));
-    if (!fadedIn.current) {
-      // Never got to show: the 2D map is still all there is.
-      fade.set(0);
-      onClosed();
-    } else if (gl === 'ready' && away.current) {
-      // finish() runs when the camera lands; this only covers a flight that never reports.
-      guard.current = setTimeout(finish, FLY_MS + 3000);
-    } else {
-      finish();
-    }
-  }, [closing, gl, panel, fade, onClosed, finish]);
-  // The picture failed on the way back: nothing will fly, just leave.
-  useEffect(() => {
-    if (leaving.current && gl === 'failed') finish();
-  }, [gl, finish]);
-  const onArrived = useCallback(
-    (arrived: RigGoal) => {
-      onArrive(arrived);
-      if (arrived === 'top' && leaving.current) finish();
-    },
-    [onArrive, finish],
-  );
-
-  const fadeStyle = useAnimatedStyle(() => ({ opacity: fade.get() }));
-  const panelStyle = useAnimatedStyle(() => ({
-    opacity: panel.get(),
-    transform: [{ translateY: (1 - panel.get()) * PANEL_TRAVEL }],
-  }));
+  const fallback = tr.fallback;
+  const canvasStyle = useAnimatedStyle(() => ({ opacity: fade.get() }));
+  const fallbackStyle = useAnimatedStyle(() => ({ opacity: fallbackFade.get() }));
+  const panelStyle = useAnimatedStyle(() => {
+    const p = fallback
+      ? fallbackFade.get()
+      : still
+        ? fade.get()
+        : smoothstep(PANEL_FROM, 1, dive.get());
+    return { transform: [{ translateY: (1 - p) * PANEL_TRAVEL }] };
+  });
 
   const swipe = usePanGesture({
     runOnJS: true,
@@ -263,6 +257,8 @@ export function SeatViewOverlay({
     distance: stats.distanceM.toFixed(1),
     off: Math.round(stats.offCenterDeg),
   });
+  const live = panelLive(tr);
+  const cover = Math.max(0, rect.y + rect.h - (windowH - panelH));
 
   const chips =
     seats.length > 1 ? (
@@ -294,12 +290,55 @@ export function SeatViewOverlay({
       </ScrollView>
     ) : null;
 
-  const onPanelLayout = (e: LayoutChangeEvent) => setPanelH(e.nativeEvent.layout.height);
+  const showCanvas = !(fallback && tr.fallbackShown);
 
   return (
-    <>
-      <Animated.View style={[StyleSheet.absoluteFill, styles.root, fadeStyle]}>
-        {gl === 'failed' ? (
+    <View style={StyleSheet.absoluteFill} accessibilityViewIsModal>
+      {showCanvas ? (
+        <GestureDetector gesture={swipe}>
+          <Animated.View
+            style={[
+              styles.canvas,
+              { left: rect.x, top: rect.y, width: rect.w, height: rect.h },
+              canvasStyle,
+            ]}
+            accessible
+            accessibilityRole="image"
+            accessibilityLabel={a11y}
+          >
+            <GlBoundary
+              onError={(e) =>
+                machine.dispatch({ type: 'error', reason: `render/import error: ${String(e)}` })
+              }
+            >
+              <Suspense fallback={null}>
+                <Hall3D
+                  seats={map.seats}
+                  hall={map.hall}
+                  tone={tone}
+                  screen={screen}
+                  selectedIds={selectedIds}
+                  currentId={current.id}
+                  reduceMotion={still}
+                  topPose={topPose}
+                  goal={goalOf(tr)}
+                  dive={dive}
+                  cover={cover}
+                  onArrive={onArrive}
+                  onMount={machine.start}
+                  onDrew={onDrew}
+                  onFail={onFail}
+                />
+              </Suspense>
+            </GlBoundary>
+          </Animated.View>
+        </GestureDetector>
+      ) : null}
+      {fallback ? (
+        <Animated.View
+          style={[StyleSheet.absoluteFill, styles.fallback, fallbackStyle]}
+          pointerEvents="box-none"
+        >
           <ScrollView
             contentContainerStyle={{
               paddingTop: headerHeight + space.sm,
@@ -317,57 +356,26 @@ export function SeatViewOverlay({
               a11y={a11y}
             />
           </ScrollView>
-        ) : (
-          <GestureDetector gesture={swipe}>
-            <View
-              style={[styles.canvas, { left: rect.x, top: rect.y, width: rect.w, height: rect.h }]}
-              accessible
-              accessibilityRole="image"
-              accessibilityLabel={a11y}
-            >
-              <GlBoundary
-                onError={(e) =>
-                  machine.dispatch({ type: 'error', reason: `render/import error: ${String(e)}` })
-                }
-              >
-                <Suspense fallback={null}>
-                  <Hall3D
-                    seats={map.seats}
-                    hall={map.hall}
-                    tone={tone}
-                    screen={screen}
-                    selectedIds={selectedIds}
-                    currentId={current.id}
-                    reduceMotion={reduceMotion}
-                    topPose={topPose}
-                    goal={goal}
-                    onArrive={onArrived}
-                    onMount={machine.start}
-                    onDrew={onDrew}
-                    onFail={onFail}
-                  />
-                </Suspense>
-              </GlBoundary>
-            </View>
-          </GestureDetector>
-        )}
-      </Animated.View>
+        </Animated.View>
+      ) : null}
       <Animated.View
         style={[styles.panel, { paddingBottom: Math.max(insets.bottom, space.lg) }, panelStyle]}
-        pointerEvents={closing ? 'none' : 'auto'}
-        onLayout={onPanelLayout}
+        pointerEvents={live ? 'auto' : 'none'}
+        accessibilityElementsHidden={!live}
+        importantForAccessibility={live ? 'auto' : 'no-hide-descendants'}
+        onLayout={(e: LayoutChangeEvent) => setPanelH(e.nativeEvent.layout.height)}
       >
         {chips}
         <View style={styles.statsWrap}>
           <StatsCard seatLabel={seatLabel(current)} kind={current.kind} stats={stats} />
         </View>
       </Animated.View>
-    </>
+    </View>
   );
 }
 
 const styles = StyleSheet.create({
-  root: { backgroundColor: colors.canvas },
+  fallback: { backgroundColor: colors.canvas },
   canvas: { position: 'absolute', backgroundColor: colors.canvas, overflow: 'hidden' },
   panel: {
     position: 'absolute',

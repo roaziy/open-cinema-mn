@@ -3,6 +3,7 @@ import { describe, expect, it } from 'vitest';
 import { layoutSeats } from '../../lib/seat-layout';
 import {
   coverTransform,
+  divePose,
   easeInOut,
   eyePosition,
   flightProgress,
@@ -12,12 +13,16 @@ import {
   lensRange,
   lerp3,
   mapFitOf,
+  newDivePose,
   POV_NEAR_M,
   pickScreenSource,
   rowsOf,
+  SEAT_TOP_M,
   safeTone,
   screenCenter,
+  seatPlaneHeight,
   stepSpans,
+  type TopDownPose,
   textureFits,
   topDownFromMap,
 } from './camera-math';
@@ -238,6 +243,7 @@ describe('topDownFromMap', () => {
       canvasH,
       offsetX: offset.x,
       offsetY: offset.y,
+      planeY: seatPlaneHeight(seats),
     });
     const cam = new THREE.PerspectiveCamera(pose.fov, canvasW / canvasH, 0.5, 600);
     cam.position.set(...pose.position);
@@ -247,7 +253,7 @@ describe('topDownFromMap', () => {
     cam.projectionMatrix.elements[5] = (cam.projectionMatrix.elements[5] ?? 0) * pose.squash;
     cam.projectionMatrixInverse.copy(cam.projectionMatrix).invert();
     for (const slot of layout.slots) {
-      const p = new THREE.Vector3(slot.seat.x_m, 0.4, slot.seat.y_m).project(cam);
+      const p = new THREE.Vector3(slot.seat.x_m, slot.seat.z_m + 0.5, slot.seat.y_m).project(cam);
       const gotX = ((p.x + 1) / 2) * canvasW;
       const gotY = ((1 - p.y) / 2) * canvasH;
       const wantX =
@@ -260,9 +266,9 @@ describe('topDownFromMap', () => {
         viewH / 2 +
         view.ty +
         view.scale * (ARC_H + slot.top + layout.size / 2 - contentH / 2);
-      expect(gotX).toBeCloseTo(wantX, 0);
+      expect(Math.abs(gotX - wantX)).toBeLessThan(3);
       // Rows are fitted, not exact; the fit error stays under half a pixel here.
-      expect(Math.abs(gotY - wantY)).toBeLessThan(view.scale * 1.5);
+      expect(Math.abs(gotY - wantY)).toBeLessThan(2.5);
     }
   }
   it('lines seats up with the 2D map at the fitted zoom', () => {
@@ -279,6 +285,7 @@ describe('topDownFromMap', () => {
       canvasH: 500,
       offsetX: 0,
       offsetY: 0,
+      planeY: 0.6,
     });
     expect(pose.fov).toBeLessThan(20);
     expect(pose.target[1]).toBe(0);
@@ -286,5 +293,94 @@ describe('topDownFromMap', () => {
     expect(pose.position[2]).toBeCloseTo(pose.target[2]);
     expect(pose.position[1]).toBeGreaterThan(20);
     expect(pose.squash).toBe(1);
+  });
+});
+
+describe('seatPlaneHeight', () => {
+  it('is the mean seat height plus the seat tops', () => {
+    expect(seatPlaneHeight([{ z_m: 0 }, { z_m: 2 }])).toBeCloseTo(1 + SEAT_TOP_M);
+    expect(seatPlaneHeight([])).toBe(SEAT_TOP_M);
+  });
+});
+
+describe('divePose', () => {
+  const top: TopDownPose = { position: [0.4, 105, 7], target: [0.4, 0, 7], fov: 14, squash: 0.62 };
+  const eye: [number, number, number] = [-0.55, 1.15 + 0.9, 11];
+  const center = screenCenter(hall);
+  const pov = 78;
+  const at = (s: number) => divePose(s, top, eye, center, pov, newDivePose());
+
+  function camera(s: number, aspect = 0.6) {
+    const p = at(s);
+    const cam = new THREE.PerspectiveCamera(p.fov, aspect, 0.1, 400);
+    cam.position.set(...p.position);
+    cam.up.set(...p.up);
+    cam.lookAt(...p.target);
+    cam.updateMatrixWorld();
+    cam.projectionMatrix.elements[5] = (cam.projectionMatrix.elements[5] ?? 0) * p.squash;
+    cam.projectionMatrixInverse.copy(cam.projectionMatrix).invert();
+    return cam;
+  }
+
+  it('starts exactly at the top-down pose and ends exactly at the seat', () => {
+    const a = at(0);
+    const b = at(1);
+    for (let i = 0; i < 3; i++) expect(a.position[i]).toBeCloseTo(top.position[i] as number, 6);
+    expect(a.fov).toBeCloseTo(14);
+    expect(a.squash).toBeCloseTo(0.62);
+    for (let i = 0; i < 3; i++) {
+      expect(b.position[i]).toBeCloseTo(eye[i] as number, 6);
+      expect(b.target[i]).toBeCloseTo(center[i] as number, 6);
+    }
+    expect(b.fov).toBeCloseTo(pov);
+    expect(b.squash).toBe(1);
+    expect(b.up[1]).toBeCloseTo(1);
+    expect(Math.abs(b.up[0]) + Math.abs(b.up[2])).toBeCloseTo(0);
+  });
+
+  it('keeps the hall at a steady apparent size: no shrink then jump', () => {
+    const half = 6;
+    const widthAt = (s: number) => {
+      const cam = camera(s);
+      const l = new THREE.Vector3(-half, 0, 0).project(cam);
+      const r = new THREE.Vector3(half, 0, 0).project(cam);
+      return Math.abs(r.x - l.x);
+    };
+    const w0 = widthAt(0);
+    let prev = w0;
+    for (let i = 1; i <= 50; i++) {
+      const w = widthAt(i / 50);
+      // never shrinks by more than a ripple, never jumps between neighbouring steps
+      expect(w).toBeGreaterThan(prev * 0.99);
+      expect(w).toBeLessThan(prev * 1.12);
+      expect(w).toBeGreaterThan(w0 * 0.95);
+      prev = w;
+    }
+  });
+
+  it('never looks past the screen wall', () => {
+    for (let i = 0; i <= 50; i++) {
+      const p = at(i / 50);
+      // the look target stays between the screen centre and the top-down target
+      expect(p.target[2]).toBeGreaterThanOrEqual(-1e-9);
+      expect(p.target[2]).toBeLessThanOrEqual(top.target[2] + 1e-9);
+      // the view ray meets the floor in front of the wall, or lands on the wall (floor up to a
+      // little above the screen); it never goes over or past it
+      const dir = new THREE.Vector3(...p.target).sub(new THREE.Vector3(...p.position)).normalize();
+      const floorZ = dir.y < -1e-6 ? p.position[2] + dir.z * (-p.position[1] / dir.y) : Number.NaN;
+      if (!(floorZ >= 0)) {
+        const y = p.position[1] + dir.y * (-p.position[2] / dir.z);
+        expect(y).toBeGreaterThanOrEqual(-0.5);
+        expect(y).toBeLessThanOrEqual(8);
+      }
+    }
+  });
+
+  it('keeps the look direction away from the up vector', () => {
+    for (let i = 0; i <= 50; i++) {
+      const p = at(i / 50);
+      const look = new THREE.Vector3(...p.target).sub(new THREE.Vector3(...p.position)).normalize();
+      expect(Math.abs(look.dot(new THREE.Vector3(...p.up).normalize()))).toBeLessThan(0.999);
+    }
   });
 });

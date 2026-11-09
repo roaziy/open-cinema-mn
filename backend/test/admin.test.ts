@@ -737,7 +737,8 @@ describe('cancelling a showtime', () => {
     s.messages.sent.length = 0;
     await a('post', `/showtimes/${show.id}/cancel`).expect(200);
     expect((await bookingOf(booking)).status).toBe('cancelled');
-    expect((await paymentOf(booking)).status).toBe('paid');
+    // the refund runs detached from the response: wait for the failed attempt to settle
+    await vi.waitFor(async () => expect((await paymentOf(booking)).status).toBe('paid'));
     // the customer is still told, and the row says money is owed
     await vi.waitFor(() =>
       expect(s.messages.sent.filter((m) => m.channel === 'email')).toHaveLength(1),
