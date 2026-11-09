@@ -16,6 +16,7 @@ import {
   newDivePose,
   POV_NEAR_M,
   pickScreenSource,
+  povFov,
   rowsOf,
   SEAT_TOP_M,
   safeTone,
@@ -382,5 +383,24 @@ describe('divePose', () => {
       const look = new THREE.Vector3(...p.target).sub(new THREE.Vector3(...p.position)).normalize();
       expect(Math.abs(look.dot(new THREE.Vector3(...p.up).normalize()))).toBeLessThan(0.999);
     }
+  });
+});
+
+describe('povFov', () => {
+  const asp = 0.46;
+  it('shows the whole screen from the middle of the hall with a margin', () => {
+    const eye: [number, number, number] = [0, 3.3, 20];
+    const fov = povFov(eye, hall, asp);
+    // the screen's edge must be inside the horizontal half-angle
+    const halfH = Math.atan(Math.tan((fov * Math.PI) / 360) * asp);
+    expect(halfH).toBeGreaterThan(Math.atan(hall.screen_width_m / 2 / 20));
+    expect(fov).toBeLessThanOrEqual(100);
+  });
+  it('caps seats too close to see all of it at 100 degrees, and floors far seats at 50', () => {
+    expect(povFov([0, 1.9, 3], hall, asp)).toBe(100);
+    expect(povFov([0, 4, 30], hall, asp)).toBe(50);
+  });
+  it('widens as the seat moves toward the screen', () => {
+    expect(povFov([0, 2.1, 16], hall, 0.6)).toBeLessThanOrEqual(povFov([0, 2.1, 9], hall, 0.6));
   });
 });

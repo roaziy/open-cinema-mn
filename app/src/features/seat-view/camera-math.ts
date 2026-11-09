@@ -349,3 +349,42 @@ export function divePose(
   out.squash = top.squash + (1 - top.squash) * k;
   return out;
 }
+
+/**
+ * Vertical field of view for the view from a seat: wide enough to show the whole screen plus a
+ * margin (looking at its centre), but never fisheye (cap) or telephoto (floor). Seats close to
+ * the screen cannot see all of it within the cap and keep the true direction anyway.
+ */
+export function povFov(
+  eye: Vec3,
+  hall: HallDims,
+  aspect: number,
+  opts: { min?: number; max?: number; margin?: number } = {},
+): number {
+  const { min = 50, max = 100, margin = 1.1 } = opts;
+  const c = screenCenter(hall);
+  const fx = c[0] - eye[0];
+  const fy = c[1] - eye[1];
+  const fz = c[2] - eye[2];
+  const fl = Math.hypot(fx, fy, fz) || 1;
+  const f: Vec3 = [fx / fl, fy / fl, fz / fl];
+  // right = f x up(0,1,0), then up' = right x f
+  let r: Vec3 = [-f[2], 0, f[0]];
+  const rl = Math.hypot(r[0], r[1], r[2]) || 1;
+  r = [r[0] / rl, 0, r[2] / rl];
+  const u: Vec3 = [r[1] * f[2] - r[2] * f[1], r[2] * f[0] - r[0] * f[2], r[0] * f[1] - r[1] * f[0]];
+  let tanH = 0;
+  let tanV = 0;
+  for (const dx of [-0.5, 0.5]) {
+    for (const y of [SCREEN_BOTTOM_M, SCREEN_BOTTOM_M + hall.screen_height_m]) {
+      const q: Vec3 = [hall.screen_x_m + dx * hall.screen_width_m - eye[0], y - eye[1], -eye[2]];
+      const z = q[0] * f[0] + q[1] * f[1] + q[2] * f[2];
+      if (z <= 0.05) return max;
+      tanH = Math.max(tanH, Math.abs(q[0] * r[0] + q[1] * r[1] + q[2] * r[2]) / z);
+      tanV = Math.max(tanV, Math.abs(q[0] * u[0] + q[1] * u[1] + q[2] * u[2]) / z);
+    }
+  }
+  const need = Math.max(tanV, tanH / Math.max(aspect, 0.1)) * margin;
+  const deg = (2 * Math.atan(need) * 180) / Math.PI;
+  return Math.min(max, Math.max(min, deg));
+}
