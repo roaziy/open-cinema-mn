@@ -4,30 +4,20 @@ import { useEffect, useEffectEvent, useLayoutEffect, useRef } from 'react';
 import { AppState } from 'react-native';
 import type { SharedValue } from 'react-native-reanimated';
 import type * as THREE from 'three';
-import {
-  CLOSE_CAPS,
-  diveClock,
-  handOver,
-  type MoveClock,
-  OPEN_CAPS,
-  reversalMs,
-  shouldLead,
-  tauHermite,
-} from './camera-clock';
+import { divePace, shouldLead, turnBlendMs, turnRoundAt, turnRoundMs } from './camera-clock';
 import { hopDurationMs, hopFrame } from './camera-hop';
 import {
-  type AimWaypoint,
   type CamState,
   camOf,
   type DivePose,
   divePose,
-  easedAim,
   eyePosition,
+  fovForAspect,
   gridAlignmentPx,
   lensRange,
   newDivePose,
-  povFov,
   screenCenter,
+  seatView,
   type TopDownPose,
   type Vec3,
 } from './camera-math';
@@ -35,20 +25,6 @@ import { clearPosition, type Obstacles } from './room-layout';
 
 /** Dev only: how long the average frame time is sampled after a flight. */
 const MEASURE_MS = 3000;
-
-/** z of the front edge of the seat block, a little toward the screen: the close's aim waypoint. */
-function frontEdge(ob: Obstacles): number {
-  let z = Number.POSITIVE_INFINITY;
-  for (const s of ob.seats) z = Math.min(z, s.y_m);
-  return Number.isFinite(z) ? Math.max(0.5, z - 0.5) : 1;
-}
-
-/** The close's aim waypoint; eased (x and z together) in from the opening aim over 0.4 s when an open was turned round. */
-const wayNow: AimWaypoint = { x: 0, z: 0 };
-function frontNow(f: Flight, ob: Obstacles, now: number): AimWaypoint | number {
-  if (!f.turned) return frontEdge(ob);
-  return easedAim(f.center, f.eye, frontEdge(ob), now - f.startedAt, wayNow);
-}
 
 /** Height (m) of the points the grid alignment is measured on: about the seat tops. */
 const ALIGN_Y = 1;
@@ -85,17 +61,17 @@ type Flight = {
   durationMs: number;
   s0: number;
   s1: number;
-  /** The move's clock: linear time fraction to progress along the curve. */
-  clock: MoveClock | null;
-  /** Velocity at the start, per unit of the move's time (non-zero when it turns another move round). */
+  /** The dive's pace, progress per ms (negative when closing). */
+  pace: number;
+  /** The pace the camera had when this dive turned another round (0 when it started at rest)... */
   v0: number;
-  /** Latest measured velocity of the time fraction, per ms (for turning a move round smoothly). */
+  /** ...and how long the swing to the new pace takes, ms. */
+  blend: number;
+  /** Latest measured pace, progress per ms (for turning a dive round smoothly). */
   vel: number;
   lastTau: number;
   lastAt: number;
   eye: Vec3;
-  /** The move was turned round in flight (the close's aim eases in). */
-  turned: boolean;
   /** The lead-out signal of a closing flight has been sent. */
   leadSent: boolean;
   /** Per flight, not per frame: the screen's centre and the seat lenses. */
@@ -104,7 +80,6 @@ type Flight = {
   povB: number;
   from: Vec3;
   to: Vec3;
-  cur: Vec3;
   /** Dev only: performance.now() at which the frame-time window closes (0 = not sampling). */
   measureUntil: number;
   frames: number;
@@ -121,8 +96,6 @@ type Props = {
   goal: RigGoal;
   /** 0 over the map ... 1 at the seat; written every frame of a flight for the fades around it. */
   dive: SharedValue<number>;
-  /** Px the picture is lifted at the seat so the screen is centred between the status bar and the stats panel. */
-  cover: number;
   /** The room's solids: the camera stays out of them. */
   obstacles: Obstacles;
   /** A flight to `goal` finished. */
@@ -139,6 +112,7 @@ type Props = {
 
 const NO_SEAT: Vec3 = [0, 1.5, 6];
 const scratch: Vec3 = [0, 0, 0];
+const viewPt: Vec3 = [0, 0, 0];
 
 /**
  * Owns the camera (the dive from the top-down pose that matches the 2D map to the seat and back,
@@ -153,7 +127,6 @@ export function CameraRig({
   topPose,
   goal,
   dive,
-  cover,
   obstacles,
   onArrive,
   onLead,
@@ -180,20 +153,19 @@ export function CameraRig({
     durationMs: 1600,
     s0: 0,
     s1: 1,
-    clock: null,
+    pace: 0,
+    blend: 0,
     v0: 0,
     vel: 0,
     lastTau: 0,
     lastAt: 0,
     eye: [0, 0, 0],
     leadSent: false,
-    turned: false,
     center: [0, 0, 0],
     povA: 50,
     povB: 50,
     from: [0, 0, 0],
     to: [0, 0, 0],
-    cur: [0, 0, 0],
     measureUntil: 0,
     frames: 0,
     sumDelta: 0,
@@ -205,7 +177,6 @@ export function CameraRig({
     hall,
     topPose,
     goal,
-    cover,
     obstacles,
     onArrive,
     onLead,
@@ -219,7 +190,6 @@ export function CameraRig({
       hall,
       topPose,
       goal,
-      cover,
       obstacles,
       onArrive,
       onLead,
@@ -236,24 +206,22 @@ export function CameraRig({
   /** Put the camera on the dive curve at linear progress `tau`, with the lens that goes with it. */
   const placeAt = useEffectEvent((tau: number, eye: Vec3) => {
     const camera = get().camera as THREE.PerspectiveCamera;
-    const { topPose: top, hall: h, cover: c, obstacles: ob } = latest.current;
-    const k = tau;
+    const { topPose: top, hall: h, obstacles: ob } = latest.current;
     const p = divePose(
-      k,
+      tau,
       top,
       eye,
       screenCenter(h),
-      povFov(eye, h, camera.aspect),
+      fovForAspect(camera.aspect),
       pose.current,
       ob,
     );
-    clearPosition(p.position, eye, null, ob, scratch);
+    clearPosition(p.position, seatView(eye, screenCenter(h), ob, viewPt), null, ob, scratch);
     p.position[0] = scratch[0];
     p.position[1] = scratch[1];
     p.position[2] = scratch[2];
     applyPose(camera, p);
-    const height = Math.max(1, get().size.height);
-    lens.current = { fov: p.fov, squash: p.squash, shift: (c / height) * k };
+    lens.current = { fov: p.fov, squash: p.squash, shift: 0 };
     applyLens(camera, lens.current.fov, lens.current.squash, lens.current.shift);
     at.current = tau;
     cam.set(camOf(p, lens.current.shift, get().size.width, get().size.height));
@@ -261,14 +229,16 @@ export function CameraRig({
 
   /** Hand the current camera to the UI thread (the landmark layer projects through it). */
   const publishCam = (w: number, h: number) => {
-    cam.set(camOf(pose.current, lens.current.shift, w, h));
+    const now = camOf(pose.current, lens.current.shift, w, h);
+    cam.set(now);
+    return now;
   };
 
   const startFlight = useEffectEvent((want: RigGoal, hop: boolean) => {
     const f = flight.current;
     const camera = get().camera as THREE.PerspectiveCamera;
     const eye = eyeOf();
-    const { hall: h, obstacles: ob } = latest.current;
+    const { hall: h } = latest.current;
     f.startedAt = performance.now();
     f.measureUntil = 0;
     f.leadSent = false;
@@ -276,19 +246,18 @@ export function CameraRig({
     f.center[0] = c[0];
     f.center[1] = c[1];
     f.center[2] = c[2];
+    const turnedRound = f.active && f.kind === 'dive';
     if (hop) {
       f.kind = 'hop';
       f.from[0] = camera.position.x;
       f.from[1] = camera.position.y;
       f.from[2] = camera.position.z;
-      f.to[0] = eye[0];
-      f.to[1] = eye[1];
-      f.to[2] = eye[2];
+      // seat to seat: from the view over one seat's back to the next's
+      seatView(eye, c, latest.current.obstacles, f.to);
       f.povA = lens.current.fov;
-      f.povB = povFov(eye, h, camera.aspect);
+      f.povB = fovForAspect(camera.aspect);
       f.s0 = 0;
       f.s1 = 1;
-      f.clock = null;
       f.durationMs = hopDurationMs(f.from, f.to);
       f.v0 = 0;
     } else {
@@ -296,47 +265,20 @@ export function CameraRig({
       f.eye[0] = eye[0];
       f.eye[1] = eye[1];
       f.eye[2] = eye[2];
-      f.povB = povFov(eye, h, camera.aspect);
+      f.povB = fovForAspect(camera.aspect);
       const closing = want === 'top';
-      const turnedRound = f.active;
-      f.turned = turnedRound && closing;
-      const prev = f.clock;
-      f.clock = diveClock(
-        latest.current.topPose,
-        eye,
-        c,
-        f.povB,
-        ob,
-        closing ? CLOSE_CAPS : OPEN_CAPS,
-        closing ? frontEdge(ob) : null,
-      );
       f.s0 = at.current;
       f.s1 = closing ? 0 : 1;
-      let vel = f.vel;
-      if (turnedRound && prev) {
-        // The move being turned round was played on the other clock: carry its place and speed over.
-        const h = handOver(prev, f.clock, at.current, f.vel);
-        f.s0 = h.s0;
-        vel = h.vel;
-      }
-      const base = f.clock.ms * Math.max(0.4, Math.abs(f.s1 - f.s0));
-      f.durationMs = base;
+      f.pace = divePace(closing);
       f.v0 = 0;
-      if (turnedRound) {
-        // Turned round in flight: carry on at the speed the camera has, then change direction,
-        // taking as long as it needs to keep the turn under the cap.
-        const clock = f.clock;
-        const tp = latest.current.topPose;
-        f.durationMs = reversalMs(
-          (k, out) => divePose(k, tp, eye, c, f.povB, out, ob, closing ? frontEdge(ob) : null),
-          clock,
-          f.s0,
-          f.s1,
-          vel,
-          base,
-          closing ? CLOSE_CAPS.turnDegPerS : OPEN_CAPS.turnDegPerS,
-        );
-        f.v0 = vel * f.durationMs;
+      f.durationMs = Math.abs(f.s1 - f.s0) / Math.abs(f.pace);
+      if (turnedRound && f.vel !== 0) {
+        // Turned round in flight: the pace swings from the camera's to the new move's, then the
+        // rest plays exactly like the normal move. Timed from the frame `s0` was drawn at.
+        f.v0 = f.vel;
+        f.blend = turnBlendMs(f.s0, f.v0);
+        f.durationMs = turnRoundMs(f.s0, f.s1, f.v0, f.pace, f.blend);
+        if (f.lastAt > 0) f.startedAt = f.lastAt;
       }
     }
     f.active = true;
@@ -359,19 +301,6 @@ export function CameraRig({
     }
     invalidate();
   }, [size.width, size.height, get, invalidate]);
-
-  // The panel's height changed (it is measured after first layout): refit the lift while at rest.
-  // Only the lens lift is refitted: the camera must stay exactly where it is. (Re-placing it
-  // here snapped it to the NEW seat whenever a seat switch changed the panel's height, which
-  // turned the glide into a cut.)
-  useEffect(() => {
-    if (!placed.current || flight.current.active) return;
-    const camera = get().camera as THREE.PerspectiveCamera;
-    const height = Math.max(1, get().size.height);
-    lens.current = { ...lens.current, shift: (cover / height) * at.current };
-    applyLens(camera, lens.current.fov, lens.current.squash, lens.current.shift);
-    invalidate();
-  }, [cover, invalidate, get]);
 
   const seatId = eyeSeat?.id;
   useEffect(() => {
@@ -398,30 +327,20 @@ export function CameraRig({
       const camera = state.camera as THREE.PerspectiveCamera;
       const t = Math.min(1, (now - f.startedAt) / f.durationMs);
       const linear = latest.current.reduceMotion ? 1 : t;
-      const { topPose: top, cover: c, obstacles: ob } = latest.current;
-      const height = Math.max(1, state.size.height);
+      const { topPose: top, obstacles: ob } = latest.current;
       if (f.kind === 'dive') {
         const tau =
           f.v0 !== 0 && !latest.current.reduceMotion
-            ? tauHermite(linear, f.s0, f.s1, f.v0, 0)
+            ? Math.min(1, Math.max(0, turnRoundAt(now - f.startedAt, f.s0, f.v0, f.pace, f.blend)))
             : f.s0 + (f.s1 - f.s0) * linear;
-        const k = (f.clock as MoveClock).at(tau);
-        const p = divePose(
-          k,
-          top,
-          f.eye,
-          f.center,
-          f.povB,
-          pose.current,
-          ob,
-          f.s1 === 0 ? frontNow(f, ob, now) : null,
-        );
-        clearPosition(p.position, f.eye, null, ob, scratch);
+        const k = Math.min(1, Math.max(0, tau));
+        const p = divePose(k, top, f.eye, f.center, f.povB, pose.current, ob);
+        clearPosition(p.position, seatView(f.eye, f.center, ob, viewPt), null, ob, scratch);
         p.position[0] = scratch[0];
         p.position[1] = scratch[1];
         p.position[2] = scratch[2];
         applyPose(camera, p);
-        lens.current = { fov: p.fov, squash: p.squash, shift: (c / height) * k };
+        lens.current = { fov: p.fov, squash: p.squash, shift: 0 };
         const dtMs = now - f.lastAt;
         if (f.lastAt > 0 && dtMs > 0) f.vel = (tau - f.lastTau) / dtMs;
         f.lastTau = tau;
@@ -432,15 +351,15 @@ export function CameraRig({
         // Seat to seat: one curve that rises over the seat backs between the two.
         const p = hopFrame(linear, f.from, f.to, f.center, f.povA, f.povB, ob, pose.current);
         applyPose(camera, p);
-        lens.current = { fov: p.fov, squash: 1, shift: c / height };
+        lens.current = { fov: p.fov, squash: 1, shift: 0 };
       }
       applyLens(camera, lens.current.fov, lens.current.squash, lens.current.shift);
-      publishCam(state.size.width, state.size.height);
+      const drawn = publishCam(state.size.width, state.size.height);
       if (
         f.kind === 'dive' &&
         f.s1 === 0 &&
         !f.leadSent &&
-        shouldLead(gridAlignmentPx(cam.get(), latest.current.topPose, ALIGN_Y), true, false)
+        shouldLead(gridAlignmentPx(drawn, latest.current.topPose, ALIGN_Y), true, false)
       ) {
         f.leadSent = true;
         latest.current.onLead();

@@ -7,11 +7,13 @@ import {
   fovForAspect,
   hallDepth,
   hallExtents,
+  keyed,
   lensRange,
   mapFitOf,
   POV_NEAR_M,
   pickScreenSource,
-  povFov,
+  povLook,
+  projectToPx,
   rowsOf,
   SEAT_TOP_M,
   safeTone,
@@ -68,13 +70,19 @@ describe('screen texture fallback', () => {
 });
 
 describe('fovForAspect', () => {
-  it('widens for portrait canvases within 50..85 degrees', () => {
+  it('takes in about 46 degrees across, vertical clamped to 50..85', () => {
     expect(fovForAspect(0.46)).toBe(85);
+    expect(fovForAspect(0.75)).toBeCloseTo(59, 0);
     expect(fovForAspect(0.75)).toBeGreaterThan(fovForAspect(1.5));
     expect(fovForAspect(3)).toBe(50);
-    const mid = fovForAspect(1);
-    expect(mid).toBeGreaterThanOrEqual(50);
-    expect(mid).toBeLessThanOrEqual(85);
+    expect(fovForAspect(1)).toBe(50);
+  });
+  it('across the unclamped range the horizontal angle is 46 degrees', () => {
+    for (const a of [0.6, 0.75, 0.9]) {
+      const v = fovForAspect(a);
+      const across = (2 * Math.atan(Math.tan((v * Math.PI) / 360) * a) * 180) / Math.PI;
+      expect(across).toBeCloseTo(46, 9);
+    }
   });
 });
 
@@ -266,21 +274,120 @@ describe('seatPlaneHeight', () => {
   });
 });
 
-describe('povFov', () => {
-  const asp = 0.46;
-  it('shows the whole screen from the middle of the hall with a margin', () => {
-    const eye: [number, number, number] = [0, 3.3, 20];
-    const fov = povFov(eye, hall, asp);
-    // the screen's edge must be inside the horizontal half-angle
-    const halfH = Math.atan(Math.tan((fov * Math.PI) / 360) * asp);
-    expect(halfH).toBeGreaterThan(Math.atan(hall.screen_width_m / 2 / 20));
-    expect(fov).toBeLessThanOrEqual(100);
+describe('povLook', () => {
+  const center = screenCenter(hall);
+  const deg = (r: number) => (r * 180) / Math.PI;
+  const fov = 60;
+
+  it('turns toward the screen centre', () => {
+    const left = povLook([-4, 3, 12], center, fov);
+    const right = povLook([4, 3, 12], center, fov);
+    expect(left.yaw).toBeLessThan(0);
+    expect(right.yaw).toBeGreaterThan(0);
+    expect(left.yaw).toBeCloseTo(-right.yaw, 12);
+    expect(povLook([0, 3, 12], center, fov).yaw).toBeCloseTo(0, 12);
   });
-  it('caps seats too close to see all of it at 100 degrees, and floors far seats at 50', () => {
-    expect(povFov([0, 1.9, 3], hall, asp)).toBe(100);
-    expect(povFov([0, 4, 30], hall, asp)).toBe(50);
+
+  it('holds the front rows at +3 degrees even when the screen is far above the eye', () => {
+    expect(deg(povLook([0, 1.9, 3], center, fov).pitch)).toBeCloseTo(3, 9);
+    expect(deg(povLook([0, 1.9, 1], center, fov).pitch)).toBeCloseTo(3, 9);
   });
-  it('widens as the seat moves toward the screen', () => {
-    expect(povFov([0, 2.1, 16], hall, 0.6)).toBeLessThanOrEqual(povFov([0, 2.1, 9], hall, 0.6));
+
+  it('holds the back rows at -18 degrees or higher however far above the screen the eye is', () => {
+    expect(deg(povLook([0, 12, 30], center, fov).pitch)).toBeCloseTo(-18, 9);
+    for (const z of [15, 20, 25, 30, 40]) {
+      expect(deg(povLook([0, 9, z], center, fov).pitch)).toBeGreaterThanOrEqual(-18 - 1e-9);
+    }
+  });
+
+  it('never looks above +3 or below -18 degrees, whatever the seat', () => {
+    for (let y = 0.5; y < 14; y += 1.5) {
+      for (let z = 1; z < 40; z += 3) {
+        const d = deg(povLook([0, y, z], center, fov).pitch);
+        expect(d).toBeLessThanOrEqual(3 + 1e-9);
+        expect(d).toBeGreaterThanOrEqual(-18 - 1e-9);
+      }
+    }
+  });
+
+  it('puts the screen centre 0.38 up from the middle of the picture (31 percent from the top) when unclamped', () => {
+    const eye: [number, number, number] = [0, 2.6, 14];
+    const look = povLook(eye, center, fov);
+    expect(deg(look.pitch)).toBeGreaterThan(-18);
+    expect(deg(look.pitch)).toBeLessThan(3);
+    const cam = {
+      x: eye[0],
+      y: eye[1],
+      z: eye[2],
+      ...look,
+      fov,
+      squash: 1,
+      shift: 0,
+      w: 402,
+      h: 874,
+    };
+    const out: [number, number, number] = [0, 0, 0];
+    projectToPx(cam, center[0], center[1], center[2], out);
+    const ndcY = 1 - (out[1] / 874) * 2;
+    expect(ndcY).toBeCloseTo(0.38, 6);
+    expect(out[0]).toBeCloseTo(201, 6);
+  });
+});
+
+describe('keyed', () => {
+  const xs = [0, 0.2, 0.6, 1];
+
+  it('passes through its keys', () => {
+    const ys = [3, -1, 4, 0.5];
+    xs.forEach((x, i) => {
+      expect(keyed(x, xs, ys)).toBeCloseTo(ys[i] as number, 12);
+    });
+  });
+
+  it('is flat before the first key and after the last', () => {
+    const ys = [3, -1, 4, 0.5];
+    expect(keyed(-5, xs, ys)).toBe(3);
+    expect(keyed(0, xs, ys)).toBe(3);
+    expect(keyed(1, xs, ys)).toBe(0.5);
+    expect(keyed(7, xs, ys)).toBe(0.5);
+  });
+
+  it('is monotone between monotone keys and passes a middle key without stopping', () => {
+    const ys = [0, 1, 5, 6];
+    let prev = Number.NEGATIVE_INFINITY;
+    for (let i = 0; i <= 1000; i++) {
+      const v = keyed(i / 1000, xs, ys);
+      expect(v).toBeGreaterThanOrEqual(prev - 1e-12);
+      prev = v;
+    }
+    // the slope at the middle keys is not zero
+    expect(keyed(0.2 + 1e-4, xs, ys) - keyed(0.2 - 1e-4, xs, ys)).toBeGreaterThan(1e-4);
+    const down = [6, 5, 1, 0];
+    prev = Number.POSITIVE_INFINITY;
+    for (let i = 0; i <= 1000; i++) {
+      const v = keyed(i / 1000, xs, down);
+      expect(v).toBeLessThanOrEqual(prev + 1e-12);
+      prev = v;
+    }
+  });
+
+  it('never overshoots its keys (steep and flat stretches, a stop at a turning key)', () => {
+    for (const ys of [
+      [0, 0, 10, 10],
+      [0, 10, 10.5, 11],
+      [0, 8, 1, 9],
+      [2, 2, 2, 2],
+    ]) {
+      for (let i = 0; i < 3; i++) {
+        const lo = Math.min(ys[i] as number, ys[i + 1] as number) - 1e-9;
+        const hi = Math.max(ys[i] as number, ys[i + 1] as number) + 1e-9;
+        for (let j = 0; j <= 200; j++) {
+          const x = (xs[i] as number) + (((xs[i + 1] as number) - (xs[i] as number)) * j) / 200;
+          const v = keyed(x, xs, ys);
+          expect(v).toBeGreaterThanOrEqual(lo);
+          expect(v).toBeLessThanOrEqual(hi);
+        }
+      }
+    }
   });
 });

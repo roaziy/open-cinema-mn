@@ -282,8 +282,6 @@ export function SeatViewOverlay({
     off: Math.round(stats.offCenterDeg),
   });
   const live = panelLive(tr);
-  // The picture is lifted so the screen sits centred between the status bar and the panel.
-  const cover = Math.max(0, panelH - insets.top);
 
   const chips =
     seats.length > 1 ? (
@@ -347,7 +345,6 @@ export function SeatViewOverlay({
                   topPose={topPose}
                   goal={goalOf(tr)}
                   dive={dive}
-                  cover={cover}
                   onArrive={onArrive}
                   onLead={onLead}
                   closing={closingFlag}

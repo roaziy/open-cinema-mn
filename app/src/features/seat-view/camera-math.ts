@@ -190,13 +190,17 @@ export function safeTone(tone: string): string {
   return HEX.test(tone) ? tone : NEUTRAL_TONE;
 }
 
+/** Horizontal angle the view from a seat takes in. */
+export const POV_ACROSS_DEG = 46;
+
 /**
- * Vertical field of view that keeps a wide horizontal view on a portrait canvas: aim for
- * ~80 degrees across, but never fisheye (vertical capped at 85) or telephoto (floor at 50).
+ * The lens for the view from a seat: the same for every seat, about 46 degrees across (a
+ * natural eye; from the middle rows the screen fills it), vertical capped at 85 so a tall phone
+ * never goes fisheye and floored at 50 on wide canvases.
  */
 export function fovForAspect(aspect: number): number {
   const a = Math.max(aspect, 0.1);
-  const v = (2 * Math.atan(Math.tan((80 * Math.PI) / 360) / a) * 180) / Math.PI;
+  const v = (2 * Math.atan(Math.tan((POV_ACROSS_DEG * Math.PI) / 360) / a) * 180) / Math.PI;
   return Math.min(85, Math.max(50, v));
 }
 
@@ -336,77 +340,65 @@ export const tanLerpDeg = (aDeg: number, bDeg: number, t: number) => {
 
 export type Bounds = { half: number; depth: number };
 
-/** Progress at which the look target starts to climb from the floor to the screen centre. */
-export const B_FROM = 0.55;
-/** The foot of the screen, where the opening look target passes on its way up. */
-const SCREEN_FOOT_Z_M = 1;
+/** Where the screen's centre sits in the view from a seat: about 31 % down from the top. */
+const POV_LIFT_NDC = 0.38;
+/** The view from a seat is held near level: at most this far down (back rows)... */
+const POV_PITCH_MIN = (-18 * Math.PI) / 180;
+/** ...and at most this far up (front rows, which would otherwise crane up at the screen). */
+const POV_PITCH_MAX = (3 * Math.PI) / 180;
 
-/** The closing aim's floor waypoint: a bare z means "over the held seat" (x = the seat's x). */
-export type AimWaypoint = { x: number; z: number };
-
-/** Time the closing aim takes to ease in from the opening aim after an open was turned round. */
-export const AIM_EASE_MS = 400;
-
-/** The closing aim waypoint `ms` after a turn-round: x and z move together from the opening aim. */
-export function easedAim(
-  center: Vec3,
-  eye: Vec3,
-  front: number,
-  ms: number,
-  out: AimWaypoint,
-): AimWaypoint {
-  const t = Math.min(1, Math.max(0, ms / AIM_EASE_MS));
-  const w = t * t * (3 - 2 * t);
-  out.x = center[0] + (eye[0] - center[0]) * w;
-  out.z = SCREEN_FOOT_Z_M + (front - SCREEN_FOOT_Z_M) * w;
-  return out;
+/**
+ * Heading and elevation of the view from a seat: turned toward the screen's centre, but held
+ * near level, so verticals stay vertical (no keystone), the screen sits in the top third and the
+ * rows in front fill the rest. From the front rows the top of the screen may be cut off.
+ */
+export function povLook(eye: Vec3, center: Vec3, fovDeg: number): { yaw: number; pitch: number } {
+  const v = viewAngles(eye, center);
+  const lift = Math.atan(POV_LIFT_NDC * Math.tan((fovDeg * Math.PI) / 360));
+  return { yaw: v.yaw, pitch: Math.min(POV_PITCH_MAX, Math.max(POV_PITCH_MIN, v.pitch - lift)) };
 }
 
 /**
- * Orientation from where the camera is looking: the look target starts where the top-down
- * camera looks (on the floor), slides across the floor to the foot of the screen, and climbs to
- * the screen centre, arriving only as the camera reaches the eye. It always lies in the hall,
- * so the room stays in view the whole way; heading and elevation come from geometry (no roll).
+ * A smooth curve through keys (`xs` ascending), flat before the first and after the last, that
+ * never overshoots between them (monotone cubic with Fritsch-Butland tangents): one channel of
+ * the camera, keyed like an animation timeline. A key between two rising (or two falling) keys
+ * is passed through without stopping.
  */
-function aimAt(
-  k: number,
-  top: TopDownPose,
-  out: DivePose,
-  center: Vec3,
-  end: number,
-  eye: Vec3,
-  front: number | AimWaypoint | null,
-) {
-  const a = smooth(0, 0.75, k);
-  const b = smooth(B_FROM, 1, k);
-  // The target stays on the seat block (the held seat) until it climbs to the screen: no frame
-  // looks at the empty floor between the screen and the first row.
-  // The look target's floor waypoint: the foot of the screen when opening (the approved aim); when
-  // leaving, the front edge of the seat block over the held seat, so no frame is empty floor.
-  const gx = front === null ? center[0] : typeof front === 'number' ? eye[0] : front.x;
-  const gz = front === null ? SCREEN_FOOT_Z_M : typeof front === 'number' ? front : front.z;
-  const x0 = top.target[0] + (gx - top.target[0]) * a;
-  const z0 = top.target[2] + (gz - top.target[2]) * a;
-  const tx = x0 + (center[0] - x0) * b;
-  const ty = center[1] * b;
-  const tz = z0 + (center[2] - z0) * b;
-  const dx = tx - out.position[0];
-  const dy = ty - out.position[1];
-  const dz = tz - out.position[2];
-  const pitch = Math.asin(dy / (Math.hypot(dx, dy, dz) || 1));
-  // Looking almost straight down the heading is the picture spinning, and the geometric heading
-  // there can even point backwards (the target is behind a front seat): turn evenly from the
-  // start to the seat's final heading instead, finishing a little before the end.
-  out.yaw = end * smooth(0, 0.9, k);
-  out.pitch = pitch;
+export function keyed(x: number, xs: readonly number[], ys: readonly number[]): number {
+  const n = xs.length;
+  const xAt = (i: number) => xs[i] as number;
+  const yAt = (i: number) => ys[i] as number;
+  if (x <= xAt(0)) return yAt(0);
+  if (x >= xAt(n - 1)) return yAt(n - 1);
+  let i = 0;
+  while (x > xAt(i + 1)) i++;
+  const tangent = (j: number) => {
+    if (j === 0 || j === n - 1) return 0;
+    const h0 = xAt(j) - xAt(j - 1);
+    const h1 = xAt(j + 1) - xAt(j);
+    const d0 = (yAt(j) - yAt(j - 1)) / h0;
+    const d1 = (yAt(j + 1) - yAt(j)) / h1;
+    if (d0 * d1 <= 0) return 0;
+    const w0 = 2 * h1 + h0;
+    const w1 = h1 + 2 * h0;
+    return (w0 + w1) / (w0 / d0 + w1 / d1);
+  };
+  const h = xAt(i + 1) - xAt(i);
+  const t = (x - xAt(i)) / h;
+  const t2 = t * t;
+  const t3 = t2 * t;
+  return (
+    (2 * t3 - 3 * t2 + 1) * yAt(i) +
+    (t3 - 2 * t2 + t) * tangent(i) * h +
+    (-2 * t3 + 3 * t2) * yAt(i + 1) +
+    (t3 - t2) * tangent(i + 1) * h
+  );
 }
 
-/** Where the second control point of the final approach sits: behind and above the eye, inside the room. */
+/** A point behind and above an eye along a heading, inside the room (the seat-to-seat glide's control points). */
 export const APPROACH_BACK_M = 2;
 export const APPROACH_UP_M = 1.2;
 const WALL_INSET_M = 0.4;
-/** Share of the top-down altitude the curve's first control point keeps over the seat. */
-export const P1_ALT = 0.55;
 
 export function approachPoint(
   eye: Vec3,
@@ -438,17 +430,70 @@ export const bez = (a: number, b: number, c: number, d: number, t: number) => {
   return m * m * m * a + 3 * m * m * t * b + 3 * m * t * t * c + t * t * t * d;
 };
 
-const sP1: Vec3 = [0, 0, 0];
-const sP2: Vec3 = [0, 0, 0];
+/**
+ * The view from a seat is taken from just behind and above its eye, over the seat's own back
+ * (as the reference does): the camera never has to sink into a seat, and the arc in ends there.
+ */
+export const VIEW_BACK_M = 0.5;
+export const VIEW_UP_M = 0.35;
+
+/** How far behind (x, z) along heading `yaw` the walls leave room for. */
+function roomBehind(x: number, z: number, yaw: number, bounds: Bounds): number {
+  const bx = Math.sin(yaw);
+  const bz = Math.cos(yaw);
+  return Math.max(
+    0,
+    Math.min(
+      bz > 1e-3 ? (bounds.depth - WALL_INSET_M - z) / bz : Number.POSITIVE_INFINITY,
+      Math.abs(bx) > 1e-3
+        ? (bounds.half - WALL_INSET_M - Math.abs(x)) / Math.abs(bx)
+        : Number.POSITIVE_INFINITY,
+    ),
+  );
+}
+
+/** Where the camera stands for a seat: behind its eye, away from the screen's centre (short of the walls), and up. */
+export function seatView(eye: Vec3, center: Vec3, bounds: Bounds, out: Vec3): Vec3 {
+  const yaw = viewAngles(eye, center).yaw;
+  const back = Math.min(VIEW_BACK_M, roomBehind(eye[0], eye[2], yaw, bounds));
+  out[0] = eye[0] + Math.sin(yaw) * back;
+  out[1] = eye[1] + VIEW_UP_M;
+  out[2] = eye[2] + Math.cos(yaw) * back;
+  return out;
+}
+
+// The open, on the fraction of its time (the close plays it backwards): one arc around the
+// seat top, every part of it on the same ease so the camera never pauses between moves.
+/** The heading turns toward the screen while the camera swings (never while looking straight down). */
+const T_TURN_FROM = 0.28;
+const T_TURN = 0.9;
+/** The map's sideways offset from the seat is gone by here. */
+const T_CENTRED = 0.45;
+/** How close to a wall the arc starts to be held off it. */
+const WALL_SOFT_M = 0.6;
+/** The eye over the seat top. */
+const EYE_OVER_SEAT_M = EYE_HEIGHT_M - SEAT_TOP_M;
+const DOWN = -Math.PI / 2;
+/** Where the squash stops following the foreshortening exactly and eases into 1. */
+const SQUASH_KNEE = 0.85;
+
+const lnTan = (deg: number) => Math.log(Math.tan((deg * Math.PI) / 360));
+const degOfLnTan = (l: number) => (2 * Math.atan(Math.exp(l)) * 180) / Math.PI;
+const sView: Vec3 = [0, 0, 0];
 
 /**
- * One continuous move from the top-down pose over the map (p = 0) to the seat (p = 1), `p`
- * being the eased progress (`easeFlight`). Position is a cubic Bezier: it stays high and heads
- * for the point above the seat, then settles forward and down into the seat along the view
- * direction from behind and above the row behind (never sideways at seat height). The camera
- * turns evenly from looking down to looking at the screen (heading and elevation, so it never
- * rolls); the lens change is done by 60 % of the move. The reverse is the same curve with p
- * running down.
+ * The move from the top-down pose over the map (p = 0) to the seat's view (p = 1), `p` being
+ * the fraction of the move's time (the clock is linear: the ease is in the pose). One arc
+ * around the seat top, starting where the map's camera is: it closes in on the seat while
+ * swinging down behind it and tilting up from looking down to looking at the screen, and eases
+ * into the view over the seat's back, all on one ease, so the camera never pauses between
+ * moves (the lens opens no faster than the camera closes in: the picture only grows). The
+ * elevation is whatever keeps the seat sliding steadily down the picture from its place on the
+ * map to its place in the final view (it never drops out and comes back). Heading and
+ * elevation only (never a roll); the heading turns to the screen only during the swing. The
+ * projection's vertical squash (rows are packed tighter on the map) is undone as the tilt
+ * foreshortens the rows, so the hall never visibly stretches. The close is the same curve with
+ * p running down.
  */
 export function divePose(
   p: number,
@@ -458,66 +503,79 @@ export function divePose(
   povFovDeg: number,
   out: DivePose,
   bounds: Bounds,
-  /**
-   * null when opening; when leaving, z of the waypoint at the front edge of the seat block (over
-   * the held seat), or the waypoint {x, z} itself while it eases in from the opening aim.
-   */
-  front: number | AimWaypoint | null = null,
 ): DivePose {
   const k = Math.min(1, Math.max(0, p));
-  const end = viewAngles(eye, center);
-  const p1 = sP1;
-  p1[0] = eye[0];
-  p1[1] = Math.max(eye[1] + APPROACH_UP_M, top.position[1] * P1_ALT);
-  p1[2] = eye[2];
-  const p2 = approachPoint(eye, end.yaw, bounds, sP2);
-  out.position[0] = bez(top.position[0], p1[0], p2[0], eye[0], k);
-  out.position[1] = bez(top.position[1], p1[1], p2[1], eye[1], k);
-  out.position[2] = bez(top.position[2], p1[2], p2[2], eye[2], k);
-  aimAt(k, top, out, center, end.yaw, eye, front);
-  // The lens and the stretch of the seats move evenly with the curve: no burst of zoom.
-  out.fov = tanLerpDeg(top.fov, povFovDeg, k);
-  out.squash = top.squash + (1 - top.squash) * k;
-  return out;
-}
-
-/**
- * Vertical field of view for the view from a seat: wide enough to show the whole screen plus a
- * margin (looking at its centre), but never fisheye (cap) or telephoto (floor). Seats close to
- * the screen cannot see all of it within the cap and keep the true direction anyway.
- */
-export function povFov(
-  eye: Vec3,
-  hall: HallDims,
-  aspect: number,
-  opts: { min?: number; max?: number; margin?: number } = {},
-): number {
-  const { min = 50, max = 100, margin = 1.1 } = opts;
-  const c = screenCenter(hall);
-  const fx = c[0] - eye[0];
-  const fy = c[1] - eye[1];
-  const fz = c[2] - eye[2];
-  const fl = Math.hypot(fx, fy, fz) || 1;
-  const f: Vec3 = [fx / fl, fy / fl, fz / fl];
-  // right = f x up(0,1,0), then up' = right x f
-  let r: Vec3 = [-f[2], 0, f[0]];
-  const rl = Math.hypot(r[0], r[1], r[2]) || 1;
-  r = [r[0] / rl, 0, r[2] / rl];
-  const u: Vec3 = [r[1] * f[2] - r[2] * f[1], r[2] * f[0] - r[0] * f[2], r[0] * f[1] - r[1] * f[0]];
-  let tanH = 0;
-  let tanV = 0;
-  for (const dx of [-0.5, 0.5]) {
-    for (const y of [SCREEN_BOTTOM_M, SCREEN_BOTTOM_M + hall.screen_height_m]) {
-      const q: Vec3 = [hall.screen_x_m + dx * hall.screen_width_m - eye[0], y - eye[1], -eye[2]];
-      const z = q[0] * f[0] + q[1] * f[1] + q[2] * f[2];
-      if (z <= 0.05) return max;
-      tanH = Math.max(tanH, Math.abs(q[0] * r[0] + q[1] * r[1] + q[2] * r[2]) / z);
-      tanV = Math.max(tanV, Math.abs(q[0] * u[0] + q[1] * u[1] + q[2] * u[2]) / z);
-    }
+  const view = seatView(eye, center, bounds, sView);
+  const end = povLook(view, center, povFovDeg);
+  // The pivot (the seat top under the eye) and where the view and the map's camera sit around it.
+  const sx = eye[0];
+  const sy = eye[1] - EYE_OVER_SEAT_M;
+  const sz = eye[2];
+  const viewBack = Math.hypot(view[0] - sx, view[2] - sz);
+  const viewUp = view[1] - sy;
+  const rEnd = Math.hypot(viewBack, viewUp);
+  const swingEnd = Math.atan2(viewUp, viewBack);
+  const h0 = Math.max(top.position[1] - sy, 1e-3);
+  // The map's camera looks straight down with the screen at the top: behind the seat is +z.
+  const back0 = top.position[2] - sz;
+  const side0 = top.position[0] - sx;
+  const r0 = Math.hypot(h0, back0);
+  const swing0 = Math.atan2(h0, back0);
+  const t0 = lnTan(top.fov);
+  const t1 = lnTan(povFovDeg);
+  // One ease for the closing in (in proportion, so it reads as an even zoom), the swing and the
+  // seat's slide. Giving them their own timings (zooming first, tilting after, then settling,
+  // as the reference does) leaves lulls between them that read as separate moves.
+  const ease = keyed(k, [0, 1], [0, 1]);
+  const r = Math.exp(Math.log(r0) + (Math.log(rEnd) - Math.log(r0)) * ease);
+  // The lens opens from the map's near-orthographic one to the seat's, ahead of the closing in
+  // but never faster than 90 % of it (in proportion): the picture only ever zooms in. (Opening
+  // it on its own ease made the picture shrink first and then grow: a hidden second move.)
+  const pace = Math.max(1, (0.9 * Math.log(r0 / rEnd)) / Math.max(1e-6, t1 - t0));
+  const lens = t0 + (t1 - t0) * (1 - (1 - ease) ** pace);
+  const tanHalf = Math.exp(lens);
+  const swing = swing0 + (swingEnd - swing0) * ease;
+  out.yaw = keyed(k, [T_TURN_FROM, T_TURN], [0, end.yaw]);
+  // Behind the seat along the heading, never through the back or side walls: exact up to where
+  // the view stands, easing into the room that is left beyond it.
+  const room = roomBehind(sx, sz, out.yaw, bounds);
+  // The limit only acts within WALL_SOFT_M of a wall, so for nearly every seat it does nothing;
+  // where the map's camera itself starts there, the exact start fades into it over time.
+  const orbit = r * Math.cos(swing);
+  const above = r * Math.sin(swing);
+  const free = Math.max(viewBack, room - WALL_SOFT_M);
+  const slack = Math.max(1e-3, room - free);
+  const walled = orbit <= free ? orbit : free + slack * Math.tanh((orbit - free) / slack);
+  const behind = walled + (orbit - walled) * (1 - ease) ** 3;
+  // The map's sideways offset shrinks with the picture's scale (the seat keeps its place across
+  // the picture while zooming) and is gone while the camera is still high: never a sideways
+  // sweep low over the rows, however far the map was panned.
+  const side = side0 * keyed(k, [0, T_CENTRED], [1, 0]) * ((r * tanHalf) / (r0 * Math.exp(t0)));
+  const cy = Math.cos(out.yaw);
+  const sy_ = Math.sin(out.yaw);
+  out.position[0] = sx + side * cy + sy_ * behind;
+  out.position[1] = sy + above;
+  out.position[2] = sz - side * sy_ + cy * behind;
+  out.fov = degOfLnTan(lens);
+  // The seat is seen `dip` below the horizontal: aim so it sits at `seatNdc` (unsquashed), sliding
+  // steadily from its place on the map to its place in the final view (front rows, which end
+  // looking level, slide it out of the bottom on the way).
+  const dip = Math.atan2(above, behind);
+  const seatMap = Math.tan(Math.PI / 2 - swing0) / Math.exp(t0);
+  const seatEnd = Math.tan(-swingEnd - end.pitch) / Math.exp(t1);
+  const seatNdc = seatMap + (seatEnd - seatMap) * ease;
+  out.pitch = -dip - Math.atan(seatNdc * tanHalf);
+  const s0 = top.squash;
+  if (s0 < 1) {
+    // eased into 1 (no dead stop): exact below the knee, exponentially close above it
+    const q = s0 / Math.max(1e-3, -Math.sin(out.pitch));
+    const knee = Math.max(SQUASH_KNEE, s0);
+    out.squash = q <= knee ? q : 1 - (1 - knee) * Math.exp(-(q - knee) / (1 - knee));
+  } else {
+    const tilt = (out.pitch - DOWN) / Math.max(1e-6, end.pitch - DOWN);
+    out.squash = s0 + (1 - s0) * Math.min(1, Math.max(0, tilt));
   }
-  const need = Math.max(tanV, tanH / Math.max(aspect, 0.1)) * margin;
-  const deg = (2 * Math.atan(need) * 180) / Math.PI;
-  return Math.min(max, Math.max(min, deg));
+  return out;
 }
 
 /** A camera as plain numbers (readable from the UI thread): position, heading, elevation, lens, canvas size. */

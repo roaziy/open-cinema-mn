@@ -35,6 +35,8 @@ const TOP_LIGHT = 18;
 const FILL = 1.1;
 /** Seats are brightened toward the seat view so they read against the dark room. */
 const SEAT_LIFT = 2.4;
+/** The viewing seat's accent shell at the view over its back: just around the seat (no z-fighting). */
+const HELD_NEAR = 1.06;
 
 export type Hall3DProps = {
   seats: SeatState[];
@@ -52,8 +54,6 @@ export type Hall3DProps = {
   goal: RigGoal;
   /** 0 over the map ... 1 at the seat; the scene's lighting and shapes follow it. */
   dive: SharedValue<number>;
-  /** Px of the canvas's bottom covered by the stats panel. */
-  cover: number;
   /** A flight to `goal` finished. */
   onArrive: (goal: RigGoal) => void;
   /** A closing flight's drawn grid is aligned with the 2D map. */
@@ -114,7 +114,7 @@ export default function Hall3D(props: Hall3DProps) {
       }
     >
       <color attach="background" args={[palette.canvas]} />
-      <Scene {...props} cover={props.cover / ratio} />
+      <Scene {...props} />
     </Canvas>
   );
   return (
@@ -155,7 +155,6 @@ function Scene({
   topPose,
   goal,
   dive,
-  cover,
   onArrive,
   onLead,
   cam,
@@ -242,12 +241,6 @@ function Scene({
     [seats, selectedIds],
   );
 
-  const chosenIds = useMemo(() => new Set(chosen.map((s) => s.id)), [chosen]);
-
-  // The seat the camera is at (and the one it just left) shrinks away as the camera comes close:
-  // no geometry around the lens, no pop, and a seat stays in view as the blue landmark until then.
-  const previousId = useRef<string | null>(null);
-  const lastCurrent = useRef(currentId);
   const lastS = useRef(-1);
   const lastCam = useRef<Vec3>([0, 0, 0]);
   const ambientRef = useRef<THREE.AmbientLight>(null);
@@ -261,30 +254,27 @@ function Scene({
   /** Everything that follows the dive: seat footprint, own seat, lights, the screen's tilt. */
   const follow = useCallback(
     (s: number) => {
-      // Rows are drawn closer together on the 2D map: stretch each seat's depth by the same
-      // factor at the start so the footprints read as the map's squares, then settle to real.
+      // Rows are drawn closer together on the 2D map: the projection squashes the hall's depth
+      // until the tilt foreshortens it; each seat's depth is stretched by the inverse so its
+      // footprint reads as the map's square tile.
       const look = handoffLook(s, closing.get());
-      const g = (1 / Math.max(0.2, topPose.squash)) ** (1 - s);
-      const cam = get().camera.position;
-      /** 1 when far from the camera, 0 when it is at the seat. */
-      const reach = closing.get() >= 0 ? 4.5 : 2.2; // leaving: held seats shrink from further away
+      // (read off the camera itself: the rig has already set it this frame)
+      const camera = get().camera as THREE.PerspectiveCamera;
+      const squash = camera.projectionMatrix.elements[5] * Math.tan((camera.fov * Math.PI) / 360);
+      const g = 1 / Math.max(0.2, squash);
+      const pos = camera.position;
+      /** 1 when far from the camera, 0 at the view over the seat's back. */
       const near = (seat: SeatState) =>
         smoothstep(
-          0.5,
-          reach,
-          Math.hypot(cam.x - seat.x_m, cam.y - (seat.z_m + 0.6), cam.z - seat.y_m),
+          1,
+          2.2,
+          Math.hypot(pos.x - seat.x_m, pos.y - (seat.z_m + 0.6), pos.z - seat.y_m),
         );
-      // The seat the camera is at (and the one it left) shrinks as the camera nears it; leaving,
-      // so do all the held seats the camera rises past.
-      const leaving = closing.get() >= 0;
-      const own = (id: string) =>
-        id === currentId || id === previousId.current || (leaving && chosenIds.has(id));
       const seatMesh = seatsRef.current;
       if (seatMesh) {
         drawable.forEach((seat, i) => {
-          const k = own(seat.id) ? near(seat) : 1;
           dummy.position.set(seat.x_m, seat.z_m, seat.y_m);
-          dummy.scale.set(k * look.footprintX, k, k * g);
+          dummy.scale.set(look.footprintX, 1, g);
           dummy.updateMatrix();
           seatMesh.setMatrixAt(i, dummy.matrix);
         });
@@ -293,7 +283,10 @@ function Scene({
       const pickMesh = pickRef.current;
       if (pickMesh) {
         chosen.forEach((seat, i) => {
-          const k = heldScale(look.morph, seat.id === currentId) * (own(seat.id) ? near(seat) : 1);
+          // The seat the view is taken over: its oversized shell settles to just around the
+          // seat as the camera comes in behind it (the seat stays in view, as in the reference).
+          const held = heldScale(look.morph, seat.id === currentId);
+          const k = seat.id === currentId ? HELD_NEAR + (held - HELD_NEAR) * near(seat) : held;
           dummy.position.set(seat.x_m, seat.z_m, seat.y_m);
           dummy.scale.set(k * look.footprintX, k, k * g);
           dummy.updateMatrix();
@@ -327,17 +320,8 @@ function Scene({
         fogRef.current.far = 48 + 2e4 * (1 - t) ** 3;
       }
     },
-    [drawable, chosen, chosenIds, currentId, topPose.squash, seatMat, get, closing],
+    [drawable, chosen, currentId, seatMat, get, closing],
   );
-
-  // A new viewing seat: remember the one the camera is leaving.
-  useEffect(() => {
-    if (lastCurrent.current === currentId) return;
-    previousId.current = lastCurrent.current;
-    lastCurrent.current = currentId;
-    follow(dive.get());
-    invalidate();
-  }, [currentId, dive, invalidate, follow]);
 
   // Instances and lights are written whenever the data changes and while the dive moves.
   useLayoutEffect(() => {
@@ -421,7 +405,6 @@ function Scene({
         topPose={topPose}
         goal={goal}
         dive={dive}
-        cover={cover}
         obstacles={obstacles}
         onArrive={onArrive}
         onLead={onLead}
