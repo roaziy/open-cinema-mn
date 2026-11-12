@@ -8,9 +8,9 @@ import {
   movies,
   seats,
   showtimes,
+  staffAccounts,
   ticketScans,
   tickets,
-  users,
 } from '../db/schema';
 import { AppError, conflict, forbidden } from '../lib/errors';
 import { verifyCheckCode, verifyQr } from '../lib/sign';
@@ -89,9 +89,9 @@ async function ticketCard(
 async function previousOf(db: Reader, id: string | null): Promise<ScanResult['previous']> {
   if (!id) return null;
   const [r] = await db
-    .select({ at: ticketScans.createdAt, name: users.name, label: ticketScans.deviceLabel })
+    .select({ at: ticketScans.createdAt, name: staffAccounts.name, label: ticketScans.deviceLabel })
     .from(ticketScans)
-    .innerJoin(users, eq(users.id, ticketScans.staffId))
+    .innerJoin(staffAccounts, eq(staffAccounts.id, ticketScans.staffId))
     .where(eq(ticketScans.id, id));
   if (!r) return null;
   // Never the phone number: this text is shown on a door card in front of guests.
@@ -412,7 +412,7 @@ export async function adminScans(db: Db, q: AdminScanQuery): Promise<AdminScanPa
   const limit = q.limit ?? SCANS_DEFAULT_LIMIT;
   const cursor = q.cursor ? decodeCursor(q.cursor) : null;
   if (q.cursor && !cursor) throw new AppError(400, 'invalid_cursor');
-  const scanBranch = sql<string | null>`coalesce(${halls.branchId}, ${users.branchId})`;
+  const scanBranch = sql<string | null>`coalesce(${halls.branchId}, ${staffAccounts.branchId})`;
   const conds = [
     q.branchId ? sql`${scanBranch} = ${q.branchId}` : undefined,
     q.showtimeId ? eq(tickets.showtimeId, q.showtimeId) : undefined,
@@ -438,7 +438,7 @@ export async function adminScans(db: Db, q: AdminScanQuery): Promise<AdminScanPa
       at: ticketScans.createdAt,
       result: ticketScans.result,
       deviceLabel: ticketScans.deviceLabel,
-      staffName: users.name,
+      staffName: staffAccounts.name,
       undone: sql<boolean>`exists (select 1 from ticket_scans taken where taken.previous_scan_id = ticket_scans.id and taken.result = 'undone')`,
       branchId: scanBranch,
       branchName: sql<string | null>`(select b.name from branches b where b.id = ${scanBranch})`,
@@ -452,7 +452,7 @@ export async function adminScans(db: Db, q: AdminScanQuery): Promise<AdminScanPa
       startsAt: showtimes.startsAt,
     })
     .from(ticketScans)
-    .innerJoin(users, eq(users.id, ticketScans.staffId))
+    .innerJoin(staffAccounts, eq(staffAccounts.id, ticketScans.staffId))
     .leftJoin(tickets, eq(tickets.id, ticketScans.ticketId))
     .leftJoin(seats, eq(seats.id, tickets.seatId))
     .leftJoin(bookings, eq(bookings.id, tickets.bookingId))

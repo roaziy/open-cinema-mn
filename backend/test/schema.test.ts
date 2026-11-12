@@ -103,4 +103,37 @@ describe('schema constraints', () => {
       .catch((e) => e);
     expect(isUniqueViolation(dup)).toBe(true);
   });
+
+  it('keeps back-office roles out of users and gives each session exactly one owner', async () => {
+    const staffRole = await db
+      .insert(s.users)
+      .values({ role: 'staff' })
+      .catch((e) => e);
+    expect(String(staffRole.cause?.constraint ?? staffRole.constraint)).toBe('users_role_check');
+    const [u] = await db.insert(s.users).values({ role: 'guest' }).returning();
+    const [a] = await db.insert(s.staffAccounts).values({ role: 'admin' }).returning();
+    const base = { refreshTokenHash: 'h', expiresAt: new Date() };
+    const both = await db
+      .insert(s.sessions)
+      .values({ ...base, userId: u?.id, staffAccountId: a?.id })
+      .catch((e) => e);
+    const neither = await db
+      .insert(s.sessions)
+      .values({ ...base, refreshTokenHash: 'h2' })
+      .catch((e) => e);
+    for (const err of [both, neither]) {
+      expect(String(err.cause?.constraint ?? err.constraint)).toBe('sessions_account_check');
+    }
+    await db.insert(s.sessions).values({ ...base, refreshTokenHash: 'h3', staffAccountId: a?.id });
+  });
+
+  it('allows the same phone and email in users and staff_accounts but not twice in one', async () => {
+    await db.insert(s.users).values({ phone: '+97688000001', email: 'x@x.mn' });
+    await db.insert(s.staffAccounts).values({ phone: '+97688000001', email: 'x@x.mn' });
+    const dup = await db
+      .insert(s.staffAccounts)
+      .values({ phone: '+97688000001' })
+      .catch((e) => e);
+    expect(isUniqueViolation(dup)).toBe(true);
+  });
 });

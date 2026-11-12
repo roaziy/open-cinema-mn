@@ -7,7 +7,7 @@ import request from 'supertest';
 import { afterAll, beforeAll, beforeEach, describe, expect, it } from 'vitest';
 import { db } from '../src/db/client';
 import { runSeed } from '../src/db/run-seed';
-import { halls, movies, seats, showtimes, users } from '../src/db/schema';
+import { halls, movies, seats, showtimes, staffAccounts, users } from '../src/db/schema';
 import { formatUbTime, ubDate } from '../src/shared';
 import { LocalStorage } from '../src/storage/local';
 import { fixedClock, makeTestApp, resetDb } from './helpers';
@@ -65,7 +65,8 @@ describe('seed', () => {
     const second = await seed();
     expect(second).toEqual(first);
     expect(await db.select().from(movies)).toHaveLength(6);
-    expect(await db.select().from(users)).toHaveLength(3);
+    expect(await db.select().from(staffAccounts)).toHaveLength(3);
+    expect(await db.select().from(users)).toHaveLength(0);
   });
 
   it('refuses to run in production and leaves data alone', async () => {
@@ -76,10 +77,10 @@ describe('seed', () => {
 
   it('creates an admin with a verifiable password and two staff on the central branch', async () => {
     await seed();
-    const [admin] = await db.select().from(users).where(eq(users.role, 'admin'));
+    const [admin] = await db.select().from(staffAccounts).where(eq(staffAccounts.role, 'admin'));
     expect(admin?.email).toBe('admin@example.com');
     expect(await verify(admin?.passwordHash as string, 'seed-admin-pass')).toBe(true);
-    const staff = await db.select().from(users).where(eq(users.role, 'staff'));
+    const staff = await db.select().from(staffAccounts).where(eq(staffAccounts.role, 'staff'));
     expect(staff.map((s) => s.phone).sort()).toEqual(['+97688000001', '+97688000002']);
     expect(new Set(staff.map((s) => s.branchId)).size).toBe(1);
   });

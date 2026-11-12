@@ -6,7 +6,7 @@ import { BACKEND_ROOT } from '../lib/paths';
 import { generateSeats, type HallGenParams, ubDate, ubDayRange } from '../shared';
 import type { StorageProvider } from '../storage';
 import type { Db } from './client';
-import { branches, halls, movies, seats, showtimes, users } from './schema';
+import { branches, halls, movies, seats, showtimes, staffAccounts } from './schema';
 
 const MEDIA_DIR = path.join(BACKEND_ROOT, 'seed/media');
 const DAY_MS = 24 * 60 * 60 * 1000;
@@ -301,11 +301,10 @@ export async function runSeed(opts: SeedOptions): Promise<SeedSummary> {
     await tx.insert(showtimes).values(showtimeValues);
 
     const centralId = (branchRows[0] as { id: string }).id;
-    await tx.insert(users).values([
+    await tx.insert(staffAccounts).values([
       {
         role: 'admin',
         email: opts.adminEmail.trim().toLowerCase(),
-        emailVerifiedAt: opts.now,
         passwordHash: adminHash,
         name: 'Админ',
       },

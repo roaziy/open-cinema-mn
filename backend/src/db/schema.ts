@@ -21,7 +21,10 @@ const id = () => uuid('id').primaryKey().default(sql`gen_random_uuid()`);
 const ts = (name: string) => timestamp(name, { withTimezone: true });
 const createdAt = () => ts('created_at').notNull().defaultNow();
 
+// `staff` and `admin` are kept only for the old rows; app accounts are guest or customer (see the
+// users check) and back-office accounts live in `staff_accounts` with `staff_role`.
 export const userRole = pgEnum('user_role', ['guest', 'customer', 'staff', 'admin']);
+export const staffRole = pgEnum('staff_role', ['staff', 'admin']);
 // Same values as the shared contract so API and clients cannot drift apart.
 export const seatKind = pgEnum('seat_kind', SeatKindSchema.options as [SeatKind, ...SeatKind[]]);
 export const movieStatus = pgEnum('movie_status', ['now', 'soon', 'archived']);
@@ -64,6 +67,7 @@ export const branches = pgTable('branches', {
   createdAt: createdAt(),
 });
 
+/** App accounts: guests and customers. Back-office accounts are in `staffAccounts`. */
 export const users = pgTable(
   'users',
   {
@@ -72,6 +76,27 @@ export const users = pgTable(
     phone: text('phone'),
     email: text('email'),
     emailVerifiedAt: ts('email_verified_at'),
+    name: text('name'),
+    createdAt: createdAt(),
+  },
+  (t) => [
+    uniqueIndex('users_phone_unique').on(t.phone).where(sql`${t.phone} is not null`),
+    uniqueIndex('users_email_unique').on(t.email).where(sql`${t.email} is not null`),
+    check('users_role_check', sql`${t.role} in ('guest', 'customer')`),
+  ],
+);
+
+/**
+ * Back-office accounts: staff (sign in by SMS code) and admins (email + password). Independent of
+ * `users`, so the same phone or email may also be a customer.
+ */
+export const staffAccounts = pgTable(
+  'staff_accounts',
+  {
+    id: id(),
+    role: staffRole('role').notNull().default('staff'),
+    phone: text('phone'),
+    email: text('email'),
     passwordHash: text('password_hash'),
     name: text('name'),
     branchId: uuid('branch_id').references(() => branches.id, { onDelete: 'set null' }),
@@ -80,8 +105,8 @@ export const users = pgTable(
     createdAt: createdAt(),
   },
   (t) => [
-    uniqueIndex('users_phone_unique').on(t.phone).where(sql`${t.phone} is not null`),
-    uniqueIndex('users_email_unique').on(t.email).where(sql`${t.email} is not null`),
+    uniqueIndex('staff_accounts_phone_unique').on(t.phone).where(sql`${t.phone} is not null`),
+    uniqueIndex('staff_accounts_email_unique').on(t.email).where(sql`${t.email} is not null`),
   ],
 );
 
@@ -102,9 +127,11 @@ export const sessions = pgTable(
   'sessions',
   {
     id: id(),
-    userId: uuid('user_id')
-      .notNull()
-      .references(() => users.id, { onDelete: 'cascade' }),
+    // Exactly one of the two is set: an app account or a back-office account.
+    userId: uuid('user_id').references(() => users.id, { onDelete: 'cascade' }),
+    staffAccountId: uuid('staff_account_id').references(() => staffAccounts.id, {
+      onDelete: 'cascade',
+    }),
     refreshTokenHash: text('refresh_token_hash').notNull(),
     expiresAt: ts('expires_at').notNull(),
     revokedAt: ts('revoked_at'),
@@ -119,6 +146,8 @@ export const sessions = pgTable(
   (t) => [
     uniqueIndex('sessions_refresh_token_hash_unique').on(t.refreshTokenHash),
     index('sessions_user_idx').on(t.userId),
+    index('sessions_staff_account_idx').on(t.staffAccountId),
+    check('sessions_account_check', sql`num_nonnulls(${t.userId}, ${t.staffAccountId}) = 1`),
     check(
       'sessions_revoked_reason_check',
       sql`${t.revokedReason} in ('rotated', 'logout', 'revoked_all')`,
@@ -292,7 +321,7 @@ export const tickets = pgTable(
     status: ticketStatus('status').notNull().default('valid'),
     qrToken: text('qr_token').notNull(),
     usedAt: ts('used_at'),
-    usedBy: uuid('used_by').references(() => users.id, { onDelete: 'set null' }),
+    usedBy: uuid('used_by').references(() => staffAccounts.id, { onDelete: 'set null' }),
     createdAt: createdAt(),
   },
   (t) => [
@@ -312,7 +341,7 @@ export const ticketScans = pgTable(
     ticketId: uuid('ticket_id').references(() => tickets.id, { onDelete: 'set null' }),
     staffId: uuid('staff_id')
       .notNull()
-      .references(() => users.id, { onDelete: 'restrict' }),
+      .references(() => staffAccounts.id, { onDelete: 'restrict' }),
     deviceId: text('device_id').notNull(),
     // What the staff called this door when they scanned; shown on a later "already used" card.
     deviceLabel: text('device_label'),

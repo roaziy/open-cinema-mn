@@ -10,7 +10,7 @@ import { Empty } from '@/components/ui/Empty';
 import { Labeled, Select, TextInput } from '@/components/ui/Inputs';
 import { Notice } from '@/components/ui/Notice';
 import { PageHeader } from '@/components/ui/PageHeader';
-import { CallError, call, messageOf } from '@/lib/client-api';
+import { call, messageOf } from '@/lib/client-api';
 import { HUES, hueFor } from '@/lib/hues';
 import { type AdminStaff, normalizePhone } from '@/lib/shared';
 
@@ -23,7 +23,6 @@ export function StaffView({ staff, branches }: { staff: AdminStaff[]; branches: 
   const [phone, setPhone] = useState('');
   const [branchId, setBranchId] = useState(branches[0]?.id ?? '');
   const [error, setError] = useState<string | null>(null);
-  const [offerConvert, setOfferConvert] = useState(false);
   const [removing, setRemoving] = useState<string | null>(null);
   const [listError, setListError] = useState<string | null>(null);
   const [pending, start] = useTransition();
@@ -31,10 +30,9 @@ export function StaffView({ staff, branches }: { staff: AdminStaff[]; branches: 
   function close() {
     setOpen(false);
     setError(null);
-    setOfferConvert(false);
   }
 
-  function create(convert: boolean) {
+  function create() {
     if (!name.trim()) return setError('Нэрийг оруулна уу.');
     if (!normalizePhone(phone))
       return setError('Утасны дугаар буруу байна. 8 оронтой дугаар оруулна уу.');
@@ -46,20 +44,13 @@ export function StaffView({ staff, branches }: { staff: AdminStaff[]; branches: 
           name: name.trim(),
           phone,
           branchId,
-          ...(convert && { convert: true }),
         });
         setName('');
         setPhone('');
         close();
         router.refresh();
       } catch (err) {
-        if (err instanceof CallError && err.code === 'phone_in_use' && !convert) {
-          setOfferConvert(true);
-          setError(null);
-        } else {
-          setOfferConvert(false);
-          setError(messageOf(err));
-        }
+        setError(messageOf(err));
       }
     });
   }
@@ -172,7 +163,6 @@ export function StaffView({ staff, branches }: { staff: AdminStaff[]; branches: 
       <Drawer
         open={open}
         onClose={close}
-        step={offerConvert ? 'convert' : 'form'}
         title="Ажилтан нэмэх"
         subtitle="Утасны дугаараар нэвтрэх эрх олгоно"
         footer={
@@ -180,12 +170,7 @@ export function StaffView({ staff, branches }: { staff: AdminStaff[]; branches: 
             <Button variant="ghost" onClick={close}>
               Болих
             </Button>
-            <Button
-              type="submit"
-              form="staff-form"
-              variant="primary"
-              disabled={pending || offerConvert}
-            >
+            <Button type="submit" form="staff-form" variant="primary" disabled={pending}>
               {pending ? 'Нэмж байна…' : 'Нэмэх'}
             </Button>
           </>
@@ -196,7 +181,7 @@ export function StaffView({ staff, branches }: { staff: AdminStaff[]; branches: 
           className="space-y-4"
           onSubmit={(e) => {
             e.preventDefault();
-            create(false);
+            create();
           }}
         >
           <Labeled label="Нэр" htmlFor="s-name">
@@ -227,22 +212,6 @@ export function StaffView({ staff, branches }: { staff: AdminStaff[]; branches: 
               ))}
             </Select>
           </Labeled>
-          {offerConvert && (
-            <div className="space-y-3 rounded-card border border-hue-yellow/30 bg-hue-yellow/10 p-3.5 text-[13px] text-body">
-              <p>
-                Энэ дугаараар хэрэглэгчийн бүртгэл байна. Ажилтан болгож, сонгосон салбарт оноох уу?
-              </p>
-              <Button
-                size="sm"
-                variant="primary"
-                data-step-focus
-                onClick={() => create(true)}
-                disabled={pending}
-              >
-                Ажилтан болгох
-              </Button>
-            </div>
-          )}
           {error && <Notice>{error}</Notice>}
         </form>
       </Drawer>
