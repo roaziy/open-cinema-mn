@@ -176,10 +176,11 @@ reference for the steps below.
 means a variable or path is missing; a pass that downloads but will not open usually means the WWDR
 certificate, Team ID or Pass Type ID does not match.
 
-**Badge artwork.** The official "Add to Apple Wallet" badge is Apple's artwork and must be obtained
-under Apple's terms; it is never drawn here. Until you place it at
-`web-admin/public/wallet-badge-mn.svg` and set `WALLET_BADGE_FILE=1` in the admin web, the page shows a
-plain text button.
+**Badge artwork.** The official "Add to Apple Wallet" badge is Apple's artwork, downloaded from Apple
+under their licence; it is never drawn or committed here. Use your language's badge, or the English
+one when yours is missing. Host the SVG yourself (for example upload it to your R2 bucket) and set
+`WALLET_BADGE_URL` in the admin web; until then the guest ticket page shows a plain text button. In the
+mobile app the Wallet action stays a text button: Apple asks apps to use the system's own button.
 
 **Rotate.** Pass certificates expire after about a year. Create a new certificate for the same Pass
 Type ID, convert it, replace the files, restart. To revoke, revoke the certificate in the Apple
