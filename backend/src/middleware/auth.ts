@@ -1,4 +1,4 @@
-import { eq } from 'drizzle-orm';
+import { and, eq, isNotNull, or } from 'drizzle-orm';
 import type { RequestHandler } from 'express';
 import type { Db } from '../db/client';
 import { staffAccounts, users } from '../db/schema';
@@ -13,6 +13,13 @@ declare module 'express-serve-static-core' {
     user?: AuthUser;
   }
 }
+
+/**
+ * A removed staff member keeps the row (scan history points at it) but loses the phone: such an
+ * account is signed out at once, not only when its access token runs out. Admins sign in by email.
+ */
+export const activeStaffAccount = () =>
+  or(eq(staffAccounts.role, 'admin'), isNotNull(staffAccounts.phone));
 
 /**
  * Requires a valid access token. The account is re-read from the database on every request so a
@@ -34,7 +41,7 @@ export function requireAuth(deps: { db: Db; clock: () => Date }): RequestHandler
           branchId: staffAccounts.branchId,
         })
         .from(staffAccounts)
-        .where(eq(staffAccounts.id, claim.id))
+        .where(and(eq(staffAccounts.id, claim.id), activeStaffAccount()))
         .limit(1);
       if (!acct) throw unauthorized();
       req.user = { id: acct.id, role: acct.role, branchId: acct.branchId };
