@@ -452,7 +452,7 @@ describe('wallet pass', () => {
       expect(passJson).toMatchObject({
         logoText: 'Other Op',
         organizationName: 'Other Op',
-        description: 'Movie — тасалбар',
+        description: 'Movie ticket',
         relevantDate: '2026-11-08T11:00:00.000Z',
         locations: [{ latitude: 47.9, longitude: 106.9 }],
         relevantDates: [
