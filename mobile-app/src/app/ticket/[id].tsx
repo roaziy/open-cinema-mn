@@ -1,4 +1,3 @@
-import { Image } from 'expo-image';
 import { router, Stack, useLocalSearchParams } from 'expo-router';
 import { useHeaderHeight } from 'expo-router/react-navigation';
 import { CalendarPlus } from 'phosphor-react-native';
@@ -23,9 +22,12 @@ import { haptic } from '@/lib/haptics';
 import { offlineSince, useBooking, useTicket } from '@/lib/orders';
 import { addToCalendar, addToWallet } from '@/lib/ticket-actions';
 import { showToast } from '@/lib/toast';
-import { WALLET_BADGE_SOURCE } from '@/lib/wallet-badge';
 import { colors, radius, space } from '@/theme/tokens';
 import { type } from '@/theme/type';
+import { AddPassButton, canAddPasses } from '../../../modules/wallet-pass/src';
+
+/** Apple's own Wallet button, when this build has the module and the device can add passes. */
+const NativeWallet = AddPassButton && canAddPasses() ? AddPassButton : null;
 
 /** One ticket, or every ticket of a booking when opened right after paying (`?booking=`). */
 export default function TicketScreen() {
@@ -122,7 +124,9 @@ function TicketBlock({ id, index, total }: { id: string; index: number | null; t
       <TicketStub ticket={ticket} />
       {live ? (
         <View style={styles.actions}>
-          {process.env.EXPO_OS === 'ios' ? (
+          {NativeWallet ? (
+            <NativeWallet onPress={wallet} style={[styles.passButton, walletBusy && styles.busy]} />
+          ) : process.env.EXPO_OS === 'ios' ? (
             <Pressable
               style={[styles.action, styles.wallet, walletBusy && styles.busy]}
               onPress={wallet}
@@ -130,9 +134,7 @@ function TicketBlock({ id, index, total }: { id: string; index: number | null; t
               accessibilityRole="button"
               accessibilityLabel={t('ticket.wallet')}
             >
-              {WALLET_BADGE_SOURCE !== null ? (
-                <Image source={WALLET_BADGE_SOURCE} style={styles.badge} contentFit="contain" />
-              ) : walletBusy ? (
+              {walletBusy ? (
                 <ActivityIndicator color={colors.ink} />
               ) : (
                 <Text style={styles.actionText}>{t('ticket.wallet')}</Text>
@@ -169,6 +171,6 @@ const styles = StyleSheet.create({
   },
   wallet: { backgroundColor: colors.raised },
   busy: { opacity: 0.6 },
-  badge: { width: '100%', height: 48 },
+  passButton: { width: '100%', height: 50 },
   actionText: { ...type.headline, color: colors.ink },
 });

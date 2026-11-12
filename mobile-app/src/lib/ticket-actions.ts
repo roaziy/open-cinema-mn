@@ -2,6 +2,8 @@ import * as Calendar from 'expo-calendar';
 import { Linking } from 'react-native';
 import type { TKey } from '@/i18n';
 import type { TicketView } from '@/shared';
+import { addPassFromUrl, canAddPasses } from '../../modules/wallet-pass/src';
+import { mediaUrl } from './http';
 import { fetchTicket } from './orders';
 
 type T = (key: TKey, params?: Record<string, string | number>) => string;
@@ -15,14 +17,16 @@ export type ActionResult =
     };
 
 /**
- * Open the signed .pkpass link. The link is short-lived, so it is fetched fresh on every
- * press and never kept; Safari then shows Apple's own add-to-Wallet sheet.
+ * Add the ticket to Apple Wallet. The signed .pkpass link is short-lived, so it is fetched fresh on
+ * every press and never kept. Apple's add-pass sheet opens inside the app; a build without the
+ * Wallet module falls back to Safari, which shows the same sheet on a device.
  */
 export async function addToWallet(ticketId: string, t: T): Promise<ActionResult> {
   try {
     const fresh = await fetchTicket(ticketId);
     if (!fresh.passUrl) return { ok: false, message: t('ticket.walletOff') };
-    await Linking.openURL(fresh.passUrl);
+    if (canAddPasses()) await addPassFromUrl(mediaUrl(fresh.passUrl));
+    else await Linking.openURL(fresh.passUrl);
     return { ok: true };
   } catch {
     return { ok: false, message: t('ticket.walletFail') };
