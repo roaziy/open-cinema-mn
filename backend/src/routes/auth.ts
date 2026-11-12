@@ -111,6 +111,8 @@ export function createAuthRouter(deps: AppDeps, limiters: Limiters): Router {
     let user = await findUser(column, target);
     // Staff sign-in never creates an account; only an existing staff member gets in.
     if (as === 'staff' && user?.role !== 'staff') throw new AppError(403, 'not_staff');
+    // ...and staff only sign in through the staff path, so its scope is their only code budget.
+    if (as !== 'staff' && user?.role === 'staff') throw forbidden();
     if (!user) {
       try {
         [user] = await db
