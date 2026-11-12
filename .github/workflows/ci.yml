@@ -43,7 +43,7 @@ jobs:
           cache-dependency-path: |
             backend/package-lock.json
             web-admin/package-lock.json
-            app/package-lock.json
+            mobile-app/package-lock.json
       - name: Shared copies are identical
         run: npm run check:shared
       - name: Install (backend)
@@ -52,8 +52,8 @@ jobs:
       - name: Install (web-admin)
         working-directory: web-admin
         run: npm ci
-      - name: Install (app)
-        working-directory: app
+      - name: Install (mobile-app)
+        working-directory: mobile-app
         run: npm ci
       - name: Typecheck (backend)
         working-directory: backend
@@ -73,14 +73,14 @@ jobs:
       - name: Tests (web-admin)
         working-directory: web-admin
         run: npm test
-      - name: Typecheck (app)
-        working-directory: app
+      - name: Typecheck (mobile-app)
+        working-directory: mobile-app
         run: npm run typecheck
-      - name: Lint (app, biome + expo)
-        working-directory: app
+      - name: Lint (mobile-app, biome + expo)
+        working-directory: mobile-app
         run: npm run lint
-      - name: Tests (app)
-        working-directory: app
+      - name: Tests (mobile-app)
+        working-directory: mobile-app
         run: npm test
       - name: Backend production build
         working-directory: backend

@@ -70,7 +70,7 @@ Next.js (admin+staff) ┼──> Express API (TypeScript) ──> PostgreSQL (Su
 app     Expo SDK 58, expo-router
 web-admin      Next.js (App Router), admin + staff, PWA
 backend        Express + TypeScript
-zod schemas + inferred types: source in backend/src/shared, copied unchanged into app/src/shared and
+zod schemas + inferred types: source in backend/src/shared, copied unchanged into mobile-app/src/shared and
 web-admin/lib/shared (npm run sync:shared); each package is standalone
 ```
 
