@@ -22,7 +22,7 @@ const FIELD_LABEL: Record<string, string> = {
   ageRating: 'Насны ангилал',
   genres: 'Төрөл',
   posterUrl: 'Постер',
-  backdropUrl: 'Арын зураг',
+  backdropUrl: 'Баннер',
   trailerUrl: 'Трейлер холбоос',
   tone: 'Өнгө',
   releaseDate: 'Гарах огноо',
