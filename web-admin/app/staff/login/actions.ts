@@ -15,8 +15,11 @@ export type VerifyState = { error?: string };
 /** The API allows a new code 60 s after the last one. */
 const RESEND_AFTER_S = 60;
 
+const NOT_STAFF = 'Энэ дугаар ажилтнаар бүртгэгдээгүй байна. Админтай холбогдоно уу.';
+
 const REQUEST_ERRORS: Record<string, string> = {
   invalid_target: 'Утасны дугаараа шалгана уу.',
+  not_staff: NOT_STAFF,
   resend_too_soon: 'Шинэ код авахаас өмнө түр хүлээнэ үү.',
   too_many_requests: 'Хэт олон код хүссэн байна. Нэг цагийн дараа дахин оролдоно уу.',
   rate_limited: 'Хэт олон оролдлого. Түр хүлээгээд дахин оролдоно уу.',
@@ -29,6 +32,7 @@ const VERIFY_ERRORS: Record<string, string> = {
   too_many_attempts: 'Хэт олон буруу оролдлого. Шинэ код авна уу.',
   rate_limited: 'Хэт олон оролдлого. Түр хүлээгээд дахин оролдоно уу.',
   forbidden: 'Энэ дугаараар ажилтны эрх олгогдоогүй байна.',
+  not_staff: NOT_STAFF,
   unreachable: 'Серверт холбогдож чадсангүй. Дахин оролдоно уу.',
 };
 
@@ -36,7 +40,8 @@ export async function requestOtp(_prev: RequestState, form: FormData): Promise<R
   const phone = normalizePhone(String(form.get('phone') ?? ''));
   if (!phone) return { error: REQUEST_ERRORS.invalid_target };
 
-  const out = await postJson('/auth/otp/request', { channel: 'sms', target: phone });
+  // `as: 'staff'`: the API sends no code to a number that is not a staff account.
+  const out = await postJson('/auth/otp/request', { channel: 'sms', target: phone, as: 'staff' });
   if (!out.ok) {
     return { phone, error: REQUEST_ERRORS[out.code] ?? 'Код илгээж чадсангүй. Дахин оролдоно уу.' };
   }
@@ -48,6 +53,7 @@ export async function verifyOtp(_prev: VerifyState, form: FormData): Promise<Ver
     channel: 'sms',
     target: String(form.get('phone') ?? ''),
     code: String(form.get('code') ?? ''),
+    as: 'staff',
   });
   if (!parsed.success) return { error: VERIFY_ERRORS.invalid_code };
 
@@ -56,9 +62,9 @@ export async function verifyOtp(_prev: VerifyState, form: FormData): Promise<Ver
 
   const { accessToken, refreshToken, user } = out.data;
   if (user.role !== 'staff') {
-    // The API creates a customer for an unknown number. Staff accounts are made by an admin.
+    // The API already refuses non-staff here; kept as a second guard.
     await postJson('/auth/logout', { refreshToken });
-    return { error: 'Энэ дугаар ажилтнаар бүртгэгдээгүй байна. Админтай холбогдоно уу.' };
+    return { error: NOT_STAFF };
   }
   setAuthCookies(await cookies(), { accessToken, refreshToken }, readClaims(accessToken)?.exp);
   redirect(safeNext(form.get('next'), '/staff'), RedirectType.replace);

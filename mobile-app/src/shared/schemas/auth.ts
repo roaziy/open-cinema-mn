@@ -24,9 +24,13 @@ export type AuthTokens = z.infer<typeof AuthTokensSchema>;
 export const OtpChannelSchema = z.enum(['sms', 'email']);
 export type OtpChannel = z.infer<typeof OtpChannelSchema>;
 
+/** `as: 'staff'` is the staff sign-in: only an existing staff account gets a code. */
+const OtpAs = z.literal('staff').optional();
+
 export const OtpRequestBody = z.object({
   channel: OtpChannelSchema,
   target: z.string().min(1).max(254),
+  as: OtpAs,
 });
 export type OtpRequestBody = z.infer<typeof OtpRequestBody>;
 
@@ -34,6 +38,7 @@ export const OtpVerifyBody = z.object({
   channel: OtpChannelSchema,
   target: z.string().min(1).max(254),
   code: z.string().regex(/^\d{6}$/),
+  as: OtpAs,
 });
 export type OtpVerifyBody = z.infer<typeof OtpVerifyBody>;
 
