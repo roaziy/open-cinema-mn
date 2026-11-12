@@ -106,7 +106,7 @@ cd backend
 cp .env.example .env            # defaults work locally: codes are logged, files stay on disk
 npm run db:migrate              # create the tables
 npm run db:seed                 # demo cinemas, films, an admin and two staff accounts
-npm run dev                     # http://localhost:8080, restarts when you save a file
+npm run dev                     # http://localhost:8080, restarts when you save a file or .env
 ```
 
 Check it from another terminal: `curl http://localhost:8080/v1/health`. While
