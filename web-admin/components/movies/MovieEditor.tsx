@@ -109,14 +109,20 @@ export function MovieEditor({ movie }: { movie: AdminMovie | null }) {
               onBusy={onBusy}
             />
             <div className="space-y-4">
-              <ImagePicker
-                label="Арын зураг (заавал биш)"
-                url={f.backdropUrl || null}
-                aspect="aspect-[16/7]"
-                onUploaded={(url) => set('backdropUrl', url)}
-                onError={(m) => setErrors([m])}
-                onBusy={onBusy}
-              />
+              <div className="space-y-1.5">
+                <ImagePicker
+                  label="Баннер (заавал биш)"
+                  url={f.backdropUrl || null}
+                  aspect="aspect-[16/7]"
+                  onUploaded={(url) => set('backdropUrl', url)}
+                  onError={(m) => setErrors([m])}
+                  onBusy={onBusy}
+                />
+                <p className="text-[13px] text-muted">
+                  Хэвтээ зураг, 1920×840 орчим. Apple Wallet тасалбарын дээд хэсэг болон апп-ын арын
+                  зурагт харагдана. Байхгүй бол постерыг ашиглана.
+                </p>
+              </div>
               <ToneField
                 value={f.tone}
                 suggested={toneSuggested}
