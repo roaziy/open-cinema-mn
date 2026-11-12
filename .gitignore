@@ -9,6 +9,7 @@ dist/
 .next/
 .expo/
 ios/
+!mobile-app/modules/*/ios/
 android/
 backend/uploads/
 **/fonts/private/*
