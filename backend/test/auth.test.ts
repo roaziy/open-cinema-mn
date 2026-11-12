@@ -821,17 +821,21 @@ describe('trusted BFF client ip', () => {
 describe('staff sign-in by code', () => {
   beforeEach(resetDb);
 
-  it('sends no code to a number that is not a staff account', async () => {
+  it('sends no code to a non-staff number, with the same reply as for staff', async () => {
     const { app, messages } = setup();
     await db.insert(users).values({ role: 'customer', phone: '+97699112045' });
     for (const target of ['99112045', '95049990']) {
-      const res = await request(app)
+      await request(app)
         .post('/v1/auth/otp/request')
-        .send({ channel: 'sms', target, as: 'staff' });
-      expect(res.status).toBe(403);
-      expect(res.body.error).toBe('not_staff');
+        .send({ channel: 'sms', target, as: 'staff' })
+        .expect(204);
     }
     expect(messages.sent).toHaveLength(0);
+    const res = await request(app)
+      .post('/v1/auth/otp/verify')
+      .send({ channel: 'sms', target: '95049990', code: '123456', as: 'staff' });
+    expect(res.status).toBe(400);
+    expect(res.body.error).toBe('invalid_code');
   });
 
   it('signs a staff member in', async () => {

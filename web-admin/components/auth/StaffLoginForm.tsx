@@ -92,7 +92,7 @@ export function StaffLoginForm({ next, notice }: { next: string; notice?: string
         {verifyError && <Notice>{verifyError}</Notice>}
         <div>
           <p className="mb-2.5 text-[13px] font-medium text-body">
-            <span className="tabular-nums">{sent.phone}</span> дугаарт очсон код
+            <span className="tabular-nums">{sent.phone}</span> ажилтны бүртгэлтэй бол код илгээсэн
           </p>
           <OtpInput name="code" resetKey={checked} />
         </div>

@@ -19,7 +19,6 @@ const NOT_STAFF = 'Энэ дугаар ажилтнаар бүртгэгдээг
 
 const REQUEST_ERRORS: Record<string, string> = {
   invalid_target: 'Утасны дугаараа шалгана уу.',
-  not_staff: NOT_STAFF,
   resend_too_soon: 'Шинэ код авахаас өмнө түр хүлээнэ үү.',
   too_many_requests: 'Хэт олон код хүссэн байна. Нэг цагийн дараа дахин оролдоно уу.',
   rate_limited: 'Хэт олон оролдлого. Түр хүлээгээд дахин оролдоно уу.',
@@ -40,7 +39,7 @@ export async function requestOtp(_prev: RequestState, form: FormData): Promise<R
   const phone = normalizePhone(String(form.get('phone') ?? ''));
   if (!phone) return { error: REQUEST_ERRORS.invalid_target };
 
-  // `as: 'staff'`: the API sends no code to a number that is not a staff account.
+  // `as: 'staff'`: the API only sends a code to a staff number (and answers the same either way).
   const out = await postJson('/auth/otp/request', { channel: 'sms', target: phone, as: 'staff' });
   if (!out.ok) {
     return { phone, error: REQUEST_ERRORS[out.code] ?? 'Код илгээж чадсангүй. Дахин оролдоно уу.' };
