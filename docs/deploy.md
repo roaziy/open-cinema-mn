@@ -35,7 +35,7 @@ nvm install 24 && nvm alias default 24
 
 npm install -g pm2
 
-git clone https://github.com/<owner>/open-cinema-mn.git ~/open-cinema
+git clone https://github.com/roaziy/open-cinema-mn.git ~/open-cinema
 cd ~/open-cinema/backend
 mkdir -p logs
 npm ci

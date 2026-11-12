@@ -86,7 +86,7 @@ at the repository root; CI fails (`npm run check:shared`) when the copies differ
 You need Node 24 and a local Postgres 17.
 
 ```bash
-git clone https://github.com/<owner>/open-cinema-mn.git
+git clone https://github.com/roaziy/open-cinema-mn.git
 cd open-cinema-mn
 npm run install:all             # npm ci in backend/, web-admin/ and mobile-app/
 
