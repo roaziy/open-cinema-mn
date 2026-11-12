@@ -740,16 +740,21 @@ describe('profile and roles', () => {
         res.status(e.status).json({ error: e.code });
       },
     );
-    const login = async (phone: string) => {
-      await request(api).post('/v1/auth/otp/request').send({ channel: 'sms', target: phone });
+    const login = async (phone: string, as?: 'staff') => {
+      const before = messages.sent.length;
+      await request(api).post('/v1/auth/otp/request').send({ channel: 'sms', target: phone, as });
+      // staff codes go out in the background
+      await vi.waitFor(() => expect(messages.sent.length).toBe(before + 1));
       const code = messages.sent.at(-1)?.body.match(/\d{6}/)?.[0];
       return (
-        await request(api).post('/v1/auth/otp/verify').send({ channel: 'sms', target: phone, code })
+        await request(api)
+          .post('/v1/auth/otp/verify')
+          .send({ channel: 'sms', target: phone, code, as })
       ).body;
     };
     await db.insert(users).values({ role: 'staff', phone: '+97688000001' });
     const customer = await login('99112045');
-    const staff = await login('88000001');
+    const staff = await login('88000001', 'staff');
     const denied = await request(probe)
       .get('/staff')
       .set('Authorization', `Bearer ${customer.accessToken}`);
