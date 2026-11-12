@@ -78,12 +78,18 @@ export function createAuthRouter(deps: AppDeps, limiters: Limiters): Router {
     const { channel, target: raw, as } = req.body as OtpRequestBody;
     const target = normalizeTarget(channel, raw);
     if (!target) throw badRequest('invalid_target');
-    // Staff sign-in: a number that is not a staff account gets no code (and no SMS), but the same
-    // reply, so the endpoint cannot be used to find out which numbers belong to staff.
-    if (
-      as === 'staff' &&
-      (channel !== 'sms' || (await findUser('phone', target))?.role !== 'staff')
-    ) {
+    // Staff sign-in answers 204 at once for any number, so neither the reply nor its timing tells
+    // which numbers belong to staff. Only a staff number gets a code; its cooldown, hourly cap and
+    // delivery failures are handled quietly (the page already waits 60 s before offering a resend).
+    if (as === 'staff') {
+      const staff = channel === 'sms' && (await findUser('phone', target))?.role === 'staff';
+      if (staff) {
+        void issueOtp(db, clock(), target, { exact: target })
+          .then((code) => sendCode(channel, target, code))
+          .catch((err) => {
+            if (!(err instanceof AppError)) console.error('staff sign-in code not sent', err);
+          });
+      }
       res.status(204).end();
       return;
     }
