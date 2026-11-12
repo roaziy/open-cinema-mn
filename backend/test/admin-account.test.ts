@@ -1,7 +1,7 @@
 import { eq } from 'drizzle-orm';
 import { beforeEach, describe, expect, it } from 'vitest';
 import { db } from '../src/db/client';
-import { sessions, users } from '../src/db/schema';
+import { sessions, staffAccounts, users } from '../src/db/schema';
 import { verifyPassword } from '../src/lib/password';
 import { issueTokens } from '../src/lib/tokens';
 import { AdminAccountError, createAdmin } from '../src/services/admin-account';
@@ -9,7 +9,7 @@ import { resetDb } from './helpers';
 
 const now = new Date('2026-11-08T03:00:00Z');
 const find = async (email: string) =>
-  (await db.select().from(users).where(eq(users.email, email)))[0];
+  (await db.select().from(staffAccounts).where(eq(staffAccounts.email, email)))[0];
 
 describe('createAdmin', () => {
   beforeEach(resetDb);
@@ -27,7 +27,8 @@ describe('createAdmin', () => {
   it('does not touch other data', async () => {
     await db.insert(users).values({ role: 'customer', phone: '+97699112045' });
     await createAdmin(db, { email: 'boss@example.com', password: 'long-enough-1', now });
-    expect(await db.select().from(users)).toHaveLength(2);
+    expect(await db.select().from(users)).toHaveLength(1);
+    expect(await db.select().from(staffAccounts)).toHaveLength(1);
   });
 
   it('refuses to overwrite an existing admin without reset', async () => {
@@ -41,7 +42,9 @@ describe('createAdmin', () => {
 
   it('resets the password and clears a lockout with reset', async () => {
     await createAdmin(db, { email: 'boss@example.com', password: 'long-enough-1', now });
-    await db.update(users).set({ failedLogins: 3, lockedUntil: new Date(now.getTime() + 1000) });
+    await db
+      .update(staffAccounts)
+      .set({ failedLogins: 3, lockedUntil: new Date(now.getTime() + 1000) });
     expect(
       await createAdmin(db, {
         email: 'boss@example.com',
@@ -71,22 +74,35 @@ describe('createAdmin', () => {
       now,
     });
     const rows = await db.select().from(sessions);
-    const of = (id: string) => rows.filter((r) => r.userId === id);
+    const of = (id: string) => rows.filter((r) => r.staffAccountId === id);
     expect(of(boss.id)).toHaveLength(2);
     expect(of(boss.id).every((r) => r.revokedAt !== null)).toBe(true);
     expect(of(other.id).every((r) => r.revokedAt === null)).toBe(true);
   });
 
-  it('rejects bad input and non-admin owners of the email', async () => {
+  it('rejects bad input and a staff member who owns the email', async () => {
     await expect(
       createAdmin(db, { email: 'nope', password: 'long-enough-1', now }),
     ).rejects.toBeInstanceOf(AdminAccountError);
     await expect(
       createAdmin(db, { email: 'a@b.mn', password: 'short', now }),
     ).rejects.toMatchObject({ code: 'weak_password' });
-    await db.insert(users).values({ role: 'customer', email: 'c@b.mn' });
+    await db.insert(staffAccounts).values({ role: 'staff', email: 'c@b.mn' });
     await expect(
       createAdmin(db, { email: 'c@b.mn', password: 'long-enough-1', resetPassword: true, now }),
     ).rejects.toMatchObject({ code: 'not_admin' });
+  });
+
+  it('is not blocked by a customer with the same email, which stays a separate account', async () => {
+    const [customer] = await db
+      .insert(users)
+      .values({ role: 'customer', email: 'c@b.mn' })
+      .returning();
+    expect(await createAdmin(db, { email: 'c@b.mn', password: 'long-enough-1', now })).toBe(
+      'created',
+    );
+    const admin = await find('c@b.mn');
+    expect(admin?.id).not.toBe(customer?.id);
+    expect(await db.select().from(users)).toHaveLength(1);
   });
 });

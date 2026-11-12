@@ -3,10 +3,10 @@ import express from 'express';
 import request from 'supertest';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { db } from '../src/db/client';
-import { sessions, users } from '../src/db/schema';
+import { sessions, staffAccounts, users } from '../src/db/schema';
 import type { AppError } from '../src/lib/errors';
 import { hashPassword } from '../src/lib/password';
-import { issueTokens, sha256 } from '../src/lib/tokens';
+import { issueTokens, sha256, signAccessToken } from '../src/lib/tokens';
 import type { Messages } from '../src/messages';
 import { requireAuth, requireRole } from '../src/middleware/auth';
 import { fakeMessages, fixedClock, makeTestApp, resetDb } from './helpers';
@@ -162,12 +162,18 @@ describe('otp login', () => {
     expect(await db.query.users.findMany()).toHaveLength(1);
   });
 
-  it('refuses a staff phone on the customer path, without creating a customer', async () => {
+  it('treats a staff phone on the customer path as a separate customer', async () => {
     const { otpLogin } = setup();
-    await db.insert(users).values({ role: 'staff', phone: '+97688000001' });
+    const [staff] = await db
+      .insert(staffAccounts)
+      .values({ role: 'staff', phone: '+97688000001' })
+      .returning();
     const res = await otpLogin('sms', '88000001');
-    expect(res.status).toBe(403);
+    expect(res.status).toBe(200);
+    expect(res.body.user).toMatchObject({ role: 'customer', phone: '+97688000001' });
+    expect(res.body.user.id).not.toBe(staff?.id);
     expect(await db.query.users.findMany()).toHaveLength(1);
+    expect(await db.query.staffAccounts.findMany()).toHaveLength(1);
   });
 
   it('email login sets emailVerified and treats spellings as one email', async () => {
@@ -179,11 +185,16 @@ describe('otp login', () => {
     expect(second.body.user.id).toBe(first.body.user.id);
   });
 
-  it('refuses email login for staff accounts', async () => {
+  it('email login never reaches a back-office account with the same email', async () => {
     const { otpLogin } = setup();
-    await db.insert(users).values({ role: 'staff', phone: '+97688000001', email: 's@mail.mn' });
+    const [staff] = await db
+      .insert(staffAccounts)
+      .values({ role: 'staff', phone: '+97688000001', email: 's@mail.mn' })
+      .returning();
     const res = await otpLogin('email', 's@mail.mn');
-    expect(res.status).toBe(403);
+    expect(res.status).toBe(200);
+    expect(res.body.user).toMatchObject({ role: 'customer', email: 's@mail.mn' });
+    expect(res.body.user.id).not.toBe(staff?.id);
   });
 
   it('returns 502 sms_failed but keeps the code so a resend works', async () => {
@@ -254,11 +265,16 @@ describe('otp hardening', () => {
     await request(app).post('/v1/me/email/verify').set(auth).send({ code: real }).expect(200);
   });
 
-  it('phone login refuses an admin that has a phone', async () => {
-    const { otpLogin } = setup();
-    await db.insert(users).values({ role: 'admin', phone: '+97688000009', email: 'a@x.mn' });
-    const res = await otpLogin('sms', '88000009');
-    expect(res.status).toBe(403);
+  it('the staff path refuses an admin that has a phone, with no code sent', async () => {
+    const { app, messages } = setup();
+    await db
+      .insert(staffAccounts)
+      .values({ role: 'admin', phone: '+97688000009', email: 'a@x.mn' });
+    await request(app)
+      .post('/v1/auth/otp/request')
+      .send({ channel: 'sms', target: '88000009', as: 'staff' })
+      .expect(204);
+    expect(messages.sent).toHaveLength(0);
   });
 });
 
@@ -507,7 +523,7 @@ describe('admin login', () => {
   beforeEach(resetDb);
 
   async function seedAdmin() {
-    await db.insert(users).values({
+    await db.insert(staffAccounts).values({
       role: 'admin',
       email: 'admin@example.com',
       passwordHash: await hashPassword('correct-horse'),
@@ -535,12 +551,17 @@ describe('admin login', () => {
     expect(a.body).toEqual(b.body);
   });
 
-  it('refuses non-admin accounts', async () => {
-    await db.insert(users).values({
-      role: 'customer',
+  it('refuses staff accounts', async () => {
+    await db.insert(staffAccounts).values({
+      role: 'staff',
       email: 'c@example.com',
       passwordHash: await hashPassword('correct-horse'),
     });
+    expect((await login(setup().app, 'correct-horse', 'c@example.com')).status).toBe(401);
+  });
+
+  it('does not look at customers: a customer with that email gets no password login', async () => {
+    await db.insert(users).values({ role: 'customer', email: 'c@example.com' });
     expect((await login(setup().app, 'correct-horse', 'c@example.com')).status).toBe(401);
   });
 
@@ -555,7 +576,10 @@ describe('admin login', () => {
     expect((await login(app, 'correct-horse')).status).toBe(429);
     clock.advance(1 * MIN + 1000);
     expect((await login(app, 'correct-horse')).status).toBe(200);
-    const [row] = await db.select().from(users).where(eq(users.email, 'admin@example.com'));
+    const [row] = await db
+      .select()
+      .from(staffAccounts)
+      .where(eq(staffAccounts.email, 'admin@example.com'));
     expect(row).toMatchObject({ failedLogins: 0, lockedUntil: null });
   });
 
@@ -589,7 +613,7 @@ describe('admin password change', () => {
 
   async function adminSession() {
     const [row] = await db
-      .insert(users)
+      .insert(staffAccounts)
       .values({
         role: 'admin',
         email: 'admin@example.com',
@@ -752,7 +776,7 @@ describe('profile and roles', () => {
           .send({ channel: 'sms', target: phone, code, as })
       ).body;
     };
-    await db.insert(users).values({ role: 'staff', phone: '+97688000001' });
+    await db.insert(staffAccounts).values({ role: 'staff', phone: '+97688000001' });
     const customer = await login('99112045');
     const staff = await login('88000001', 'staff');
     const denied = await request(probe)
@@ -842,7 +866,7 @@ describe('staff sign-in by code', () => {
 
   it('signs a staff member in', async () => {
     const { app, lastCode } = setup();
-    await db.insert(users).values({ role: 'staff', phone: '+97688000001' });
+    await db.insert(staffAccounts).values({ role: 'staff', phone: '+97688000001' });
     const body = { channel: 'sms', target: '88000001', as: 'staff' };
     await request(app).post('/v1/auth/otp/request').send(body).expect(204);
     // the code goes out in the background
@@ -856,7 +880,7 @@ describe('staff sign-in by code', () => {
 
   it('answers a repeat request the same way for staff and non-staff numbers', async () => {
     const { app } = setup();
-    await db.insert(users).values({ role: 'staff', phone: '+97688000001' });
+    await db.insert(staffAccounts).values({ role: 'staff', phone: '+97688000001' });
     for (const target of ['88000001', '95049990']) {
       for (let i = 0; i < 3; i++) {
         await request(app)
@@ -869,7 +893,7 @@ describe('staff sign-in by code', () => {
 
   it('keeps staff and customer codes apart', async () => {
     const { app, lastCode, messages } = setup();
-    await db.insert(users).values({ role: 'staff', phone: '+97688000001' });
+    await db.insert(staffAccounts).values({ role: 'staff', phone: '+97688000001' });
     await request(app)
       .post('/v1/auth/otp/request')
       .send({ channel: 'sms', target: '88000001', as: 'staff' })
@@ -895,5 +919,138 @@ describe('staff sign-in by code', () => {
     expect(res.status).toBe(400);
     const found = await db.select().from(users).where(eq(users.phone, '+97695049990'));
     expect(found).toHaveLength(0);
+  });
+});
+
+describe('one person, a customer and a back-office account', () => {
+  beforeEach(resetDb);
+
+  const staffLogin = async (ctx: ReturnType<typeof setup>, phone: string) => {
+    const body = { channel: 'sms', target: phone, as: 'staff' };
+    const before = ctx.messages.sent.length;
+    await request(ctx.app).post('/v1/auth/otp/request').send(body).expect(204);
+    // the staff code goes out in the background
+    await vi.waitFor(() => expect(ctx.messages.sent.length).toBe(before + 1));
+    return request(ctx.app)
+      .post('/v1/auth/otp/verify')
+      .send({ ...body, code: ctx.lastCode() });
+  };
+
+  it('the same email is a customer by code and an admin by password, as two accounts', async () => {
+    const ctx = setup();
+    await db.insert(staffAccounts).values({
+      role: 'admin',
+      email: 'both@example.com',
+      passwordHash: await hashPassword('correct-horse'),
+    });
+    const admin = await request(ctx.app)
+      .post('/v1/auth/admin/login')
+      .send({ email: 'both@example.com', password: 'correct-horse' })
+      .expect(200);
+    const customer = await ctx.otpLogin('email', 'both@example.com');
+    expect(customer.status).toBe(200);
+    expect(admin.body.user).toMatchObject({ role: 'admin', email: 'both@example.com' });
+    expect(customer.body.user).toMatchObject({ role: 'customer', email: 'both@example.com' });
+    expect(customer.body.user.id).not.toBe(admin.body.user.id);
+    expect(await db.query.users.findMany()).toHaveLength(1);
+    expect(await db.query.staffAccounts.findMany()).toHaveLength(1);
+    // each token reads its own account
+    const meAdmin = await request(ctx.app)
+      .get('/v1/me')
+      .set('Authorization', `Bearer ${admin.body.accessToken}`)
+      .expect(200);
+    const meCustomer = await request(ctx.app)
+      .get('/v1/me')
+      .set('Authorization', `Bearer ${customer.body.accessToken}`)
+      .expect(200);
+    expect(meAdmin.body).toMatchObject({ id: admin.body.user.id, role: 'admin' });
+    expect(meCustomer.body).toMatchObject({ id: customer.body.user.id, role: 'customer' });
+  });
+
+  it('the same phone signs in a customer on the customer path and staff on the staff path', async () => {
+    const ctx = setup();
+    await db.insert(staffAccounts).values({ role: 'staff', phone: '+97688000001', name: 'Door' });
+    const customer = await ctx.otpLogin('sms', '88000001');
+    expect(customer.body.user).toMatchObject({ role: 'customer', phone: '+97688000001' });
+    ctx.clock.advance(61_000);
+    const staff = await staffLogin(ctx, '88000001');
+    expect(staff.status).toBe(200);
+    expect(staff.body.user).toMatchObject({ role: 'staff', phone: '+97688000001', name: 'Door' });
+    expect(staff.body.user.id).not.toBe(customer.body.user.id);
+    expect(await db.query.users.findMany()).toHaveLength(1);
+    expect(await db.query.staffAccounts.findMany()).toHaveLength(1);
+  });
+
+  it('refreshes and logs out a staff session and a customer session independently', async () => {
+    const ctx = setup();
+    const { app } = ctx;
+    await db.insert(staffAccounts).values({ role: 'staff', phone: '+97688000001' });
+    const customer = (await ctx.otpLogin('sms', '88000001')).body;
+    ctx.clock.advance(61_000);
+    const staff = (await staffLogin(ctx, '88000001')).body;
+    const sessionsOf = await db.select().from(sessions);
+    expect(sessionsOf.filter((s) => s.userId && !s.staffAccountId)).toHaveLength(1);
+    expect(sessionsOf.filter((s) => s.staffAccountId && !s.userId)).toHaveLength(1);
+
+    const staffNext = await request(app)
+      .post('/v1/auth/refresh')
+      .send({ refreshToken: staff.refreshToken })
+      .expect(200);
+    expect(staffNext.body.user).toMatchObject({ id: staff.user.id, role: 'staff' });
+    const customerNext = await request(app)
+      .post('/v1/auth/refresh')
+      .send({ refreshToken: customer.refreshToken })
+      .expect(200);
+    expect(customerNext.body.user).toMatchObject({ id: customer.user.id, role: 'customer' });
+
+    await request(app)
+      .post('/v1/auth/logout')
+      .send({ refreshToken: staffNext.body.refreshToken })
+      .expect(204);
+    await request(app)
+      .post('/v1/auth/refresh')
+      .send({ refreshToken: staffNext.body.refreshToken })
+      .expect(401);
+    // a replayed staff token ends the staff sessions only; the customer's stay
+    await request(app)
+      .post('/v1/auth/refresh')
+      .send({ refreshToken: customerNext.body.refreshToken })
+      .expect(200);
+  });
+
+  it('serves and renames the signed-in staff account, and keeps email linking for customers', async () => {
+    const ctx = setup();
+    const { app } = ctx;
+    await db.insert(staffAccounts).values({ role: 'staff', phone: '+97688000001', name: 'Old' });
+    const staff = (await staffLogin(ctx, '88000001')).body;
+    const auth = { Authorization: `Bearer ${staff.accessToken}` };
+    const renamed = await request(app).patch('/v1/me').set(auth).send({ name: 'New' }).expect(200);
+    expect(renamed.body).toMatchObject({ id: staff.user.id, role: 'staff', name: 'New' });
+    const [row] = await db.select().from(staffAccounts);
+    expect(row?.name).toBe('New');
+    await request(app).post('/v1/me/email').set(auth).send({ email: 'x@mail.mn' }).expect(403);
+  });
+
+  it('refuses a token whose role names the other table', async () => {
+    const ctx = setup();
+    const [staff] = await db
+      .insert(staffAccounts)
+      .values({ role: 'staff', phone: '+97688000001' })
+      .returning();
+    const [customer] = await db.insert(users).values({ role: 'customer' }).returning();
+    const forge = async (id: string, role: 'staff' | 'customer') =>
+      `Bearer ${await signAccessToken({ id, role }, ctx.clock())}`;
+    await request(ctx.app)
+      .get('/v1/me')
+      .set('Authorization', await forge(staff?.id as string, 'customer'))
+      .expect(401);
+    await request(ctx.app)
+      .get('/v1/me')
+      .set('Authorization', await forge(customer?.id as string, 'staff'))
+      .expect(401);
+    await request(ctx.app)
+      .get('/v1/me')
+      .set('Authorization', await forge(staff?.id as string, 'staff'))
+      .expect(200);
   });
 });

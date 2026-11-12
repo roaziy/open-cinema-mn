@@ -10,7 +10,9 @@ import {
   payments,
   seatHolds,
   seats,
+  sessions,
   showtimes,
+  staffAccounts,
   tickets,
   users,
 } from '../src/db/schema';
@@ -115,7 +117,14 @@ async function fixture() {
     hall,
     movie,
     seatId: (n: number) => one(seatRows.find((s) => s.number === n)).id,
-    admin: await user({ role: 'admin', name: 'Admin', email: 'admin@x.mn' }),
+    admin: one(
+      (
+        await db
+          .insert(staffAccounts)
+          .values({ role: 'admin', name: 'Admin', email: 'admin@x.mn' })
+          .returning()
+      )[0],
+    ),
     alice: await user({
       role: 'customer',
       phone: '+97699000001',
@@ -200,7 +209,7 @@ describe('admin access', () => {
     const door = one(
       (
         await db
-          .insert(users)
+          .insert(staffAccounts)
           .values({ role: 'staff', phone: '+97688000001', branchId: f.branch.id })
           .returning()
       )[0],
@@ -783,7 +792,7 @@ describe('cancelling a showtime', () => {
 });
 
 describe('staff', () => {
-  it('creates staff from a normalised phone, lists them and demotes on delete', async () => {
+  it('creates staff from a normalised phone, lists them and removes the sign-in on delete', async () => {
     const s = setup();
     const f = await fixture();
     const a = await api(s, f);
@@ -802,35 +811,48 @@ describe('staff', () => {
     await a('post', '/staff')
       .send({ name: 'Bad', phone: '123', branchId: f.branch.id })
       .expect(400);
+    await db.insert(sessions).values({
+      staffAccountId: made.body.id,
+      refreshTokenHash: 'h',
+      expiresAt: new Date('2027-01-01'),
+    });
     await a('delete', `/staff/${made.body.id}`).expect(204);
-    const [row] = await db.select().from(users).where(eq(users.id, made.body.id));
-    expect(row).toMatchObject({ role: 'customer', branchId: null, phone: '+97699112045' });
+    // the account stays for scan history, without a phone or branch, and its sessions end
+    const [row] = await db.select().from(staffAccounts).where(eq(staffAccounts.id, made.body.id));
+    expect(row).toMatchObject({ role: 'staff', name: 'Door A', branchId: null, phone: null });
+    const [session] = await db
+      .select()
+      .from(sessions)
+      .where(eq(sessions.staffAccountId, made.body.id));
+    expect(session?.revokedAt).not.toBeNull();
     expect((await a('get', '/staff').expect(200)).body).toHaveLength(0);
+    await a('delete', `/staff/${made.body.id}`).expect(404);
+    // the phone can be given to a new staff member
+    await a('post', '/staff')
+      .send({ name: 'Door B', phone: '99112045', branchId: f.branch.id })
+      .expect(201);
     // delete only touches staff
     await a('delete', `/staff/${f.admin.id}`).expect(404);
-    expect(one((await db.select().from(users).where(eq(users.id, f.admin.id)))[0]).role).toBe(
-      'admin',
-    );
+    expect(
+      one((await db.select().from(staffAccounts).where(eq(staffAccounts.id, f.admin.id)))[0]).role,
+    ).toBe('admin');
   });
 
-  it('needs convert:true to promote a customer who already has that phone', async () => {
+  it('lets a customer phone become a staff phone as a separate account', async () => {
     const s = setup();
     const f = await fixture();
     const a = await api(s, f);
-    const send = { name: 'Bob', phone: '99000002', branchId: f.branch.id };
-    expect((await a('post', '/staff').send(send).expect(409)).body.error).toBe('phone_in_use');
-    const done = await a('post', '/staff')
-      .send({ ...send, convert: true })
+    const made = await a('post', '/staff')
+      .send({ name: 'Bob', phone: '99000002', branchId: f.branch.id })
       .expect(201);
-    expect(done.body.id).toBe(f.bob.id);
+    expect(made.body.id).not.toBe(f.bob.id);
     expect(one((await db.select().from(users).where(eq(users.id, f.bob.id)))[0])).toMatchObject({
-      role: 'staff',
-      branchId: f.branch.id,
+      role: 'customer',
+      phone: '+97699000002',
     });
-    // an admin's phone is never convertible
-    await db.update(users).set({ phone: '+97688000009' }).where(eq(users.id, f.admin.id));
+    // a staff phone is still unique among staff
     await a('post', '/staff')
-      .send({ name: 'A', phone: '88000009', branchId: f.branch.id, convert: true })
+      .send({ name: 'Bob 2', phone: '99000002', branchId: f.branch.id })
       .expect(409);
   });
 });

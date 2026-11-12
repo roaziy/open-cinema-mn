@@ -1,6 +1,6 @@
 import { eq } from 'drizzle-orm';
 import type { Db } from '../db/client';
-import { users } from '../db/schema';
+import { staffAccounts } from '../db/schema';
 import { hashPassword } from '../lib/password';
 import { revokeAllSessions } from '../lib/tokens';
 import { ADMIN_PASSWORD_MIN, normalizeEmail } from '../shared';
@@ -33,18 +33,22 @@ export async function createAdmin(
     );
   }
   const passwordHash = await hashPassword(opts.password);
-  const [existing] = await db.select().from(users).where(eq(users.email, email)).limit(1);
+  const [existing] = await db
+    .select()
+    .from(staffAccounts)
+    .where(eq(staffAccounts.email, email))
+    .limit(1);
   if (!existing) {
-    await db.insert(users).values({
+    await db.insert(staffAccounts).values({
       role: 'admin',
       email,
-      emailVerifiedAt: opts.now,
       passwordHash,
       name: opts.name ?? null,
       createdAt: opts.now,
     });
     return 'created';
   }
+  // A customer with this email is a different account; only a back-office one can clash.
   if (existing.role !== 'admin') {
     throw new AdminAccountError('not_admin', `${email} belongs to a ${existing.role} account`);
   }
@@ -52,14 +56,14 @@ export async function createAdmin(
     throw new AdminAccountError('exists', `${email} is already an admin (use --reset-password)`);
   }
   await db
-    .update(users)
+    .update(staffAccounts)
     .set({
       passwordHash,
       failedLogins: 0,
       lockedUntil: null,
       ...(opts.name !== undefined && { name: opts.name }),
     })
-    .where(eq(users.id, existing.id));
-  await revokeAllSessions(db, existing.id, opts.now);
+    .where(eq(staffAccounts.id, existing.id));
+  await revokeAllSessions(db, { staffAccountId: existing.id }, opts.now);
   return 'password_reset';
 }

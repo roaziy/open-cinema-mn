@@ -2,9 +2,9 @@ import { createHash, randomBytes } from 'node:crypto';
 import { eq } from 'drizzle-orm';
 import { jwtVerify, SignJWT } from 'jose';
 import type { Db } from '../db/client';
-import { sessions, type users } from '../db/schema';
+import { sessions, type staffAccounts, type users } from '../db/schema';
 import { env } from '../env';
-import type { AuthTokens, PublicUser, Role } from '../shared';
+import { type AuthTokens, type PublicUser, type Role, RoleSchema } from '../shared';
 
 export const ACCESS_TTL_S = 15 * 60;
 /** A just-rotated refresh token replayed within this window is a lost response, not theft. */
@@ -28,48 +28,77 @@ export async function signAccessToken(
     .sign(key());
 }
 
-/** Returns the user id when the token is valid, else null. Expiry is checked against `now`. */
-export async function verifyAccessToken(token: string, now: Date): Promise<string | null> {
+/** Returns the account id and role when the token is valid, else null. Expiry is checked against `now`. */
+export async function verifyAccessToken(
+  token: string,
+  now: Date,
+): Promise<{ id: string; role: Role } | null> {
   try {
     const { payload } = await jwtVerify(token, key(), {
       algorithms: ['HS256'],
       currentDate: now,
     });
-    return typeof payload.sub === 'string' ? payload.sub : null;
+    const role = RoleSchema.safeParse(payload.role);
+    if (typeof payload.sub !== 'string' || !role.success) return null;
+    return { id: payload.sub, role: role.data };
   } catch {
     return null;
   }
 }
 
 type UserRow = typeof users.$inferSelect;
+type StaffRow = typeof staffAccounts.$inferSelect;
+/** Either kind of account; `role` says which table it came from. */
+export type AccountRow = UserRow | StaffRow;
 
-export function toPublicUser(u: UserRow): PublicUser {
+/** Staff and admins live in `staff_accounts`, guests and customers in `users`. */
+export const isStaffRole = (role: Role): role is 'staff' | 'admin' =>
+  role === 'staff' || role === 'admin';
+const isStaffRow = (a: AccountRow): a is StaffRow => isStaffRole(a.role);
+
+export function toPublicUser(a: AccountRow): PublicUser {
   return {
-    id: u.id,
-    role: u.role,
-    phone: u.phone,
-    email: u.email,
-    emailVerified: u.emailVerifiedAt !== null,
-    name: u.name,
-    branchId: u.branchId,
+    id: a.id,
+    role: a.role,
+    phone: a.phone,
+    email: a.email,
+    // Back-office emails are set by an operator, never by a code the person had to receive.
+    emailVerified: isStaffRow(a) ? a.email !== null : a.emailVerifiedAt !== null,
+    name: a.name,
+    branchId: isStaffRow(a) ? a.branchId : null,
   };
 }
 
+/** The column of `sessions` that owns a session. */
+export type SessionOwner = { userId: string } | { staffAccountId: string };
+
+export const ownerOf = (a: { id: string; role: Role }): SessionOwner =>
+  isStaffRole(a.role) ? { staffAccountId: a.id } : { userId: a.id };
+
+export const ownerOfSession = (s: typeof sessions.$inferSelect): SessionOwner | null =>
+  s.staffAccountId ? { staffAccountId: s.staffAccountId } : s.userId ? { userId: s.userId } : null;
+
 /** Creates a session and returns the token pair. The refresh token is stored only as a hash. */
-export async function issueTokens(db: Db, user: UserRow, now: Date): Promise<AuthTokens> {
+export async function issueTokens(db: Db, account: AccountRow, now: Date): Promise<AuthTokens> {
   const refreshToken = randomBytes(32).toString('base64url');
   await db.insert(sessions).values({
-    userId: user.id,
+    ...ownerOf(account),
     refreshTokenHash: sha256(refreshToken),
     expiresAt: new Date(now.getTime() + REFRESH_TTL_MS),
     createdAt: now,
   });
-  return { accessToken: await signAccessToken(user, now), refreshToken, user: toPublicUser(user) };
+  return {
+    accessToken: await signAccessToken(account, now),
+    refreshToken,
+    user: toPublicUser(account),
+  };
 }
 
-export async function revokeAllSessions(db: Db, userId: string, now: Date): Promise<void> {
+export async function revokeAllSessions(db: Db, owner: SessionOwner, now: Date): Promise<void> {
+  const column = 'userId' in owner ? sessions.userId : sessions.staffAccountId;
+  const id = 'userId' in owner ? owner.userId : owner.staffAccountId;
   await db
     .update(sessions)
     .set({ revokedAt: now, revokedReason: 'revoked_all' })
-    .where(eq(sessions.userId, userId));
+    .where(eq(column, id));
 }

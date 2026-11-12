@@ -2,14 +2,17 @@ import { and, eq, sql } from 'drizzle-orm';
 import { type Request, Router } from 'express';
 import { z } from 'zod';
 import type { AppDeps } from '../app';
-import { sessions, users } from '../db/schema';
+import { sessions, staffAccounts, users } from '../db/schema';
 import { AppError, badRequest, forbidden, isUniqueViolation, unauthorized } from '../lib/errors';
 import { validate } from '../lib/http';
 import { consumeOtp, issueOtp, type Scope } from '../lib/otp';
 import { hashPassword, verifyDummy, verifyPassword } from '../lib/password';
 import { clientIp, type Limiters } from '../lib/rate-limit';
 import {
+  type AccountRow,
+  isStaffRole,
   issueTokens,
+  ownerOfSession,
   REFRESH_GRACE_MS,
   revokeAllSessions,
   sha256,
@@ -27,6 +30,7 @@ import {
   OtpRequestBody,
   OtpVerifyBody,
   RefreshBody,
+  type Role,
 } from '../shared';
 
 const LOCK_MS = 15 * 60 * 1000;
@@ -74,6 +78,26 @@ export function createAuthRouter(deps: AppDeps, limiters: Limiters): Router {
     return u;
   }
 
+  /** Staff sign in by phone only, and only a `staff` account (admins use a password). */
+  async function findStaffByPhone(phone: string) {
+    const [a] = await db
+      .select()
+      .from(staffAccounts)
+      .where(and(eq(staffAccounts.phone, phone), eq(staffAccounts.role, 'staff')))
+      .limit(1);
+    return a;
+  }
+
+  /** Loads the signed-in account from the table its role belongs to. */
+  async function loadAccount(who: { id: string; role: Role }): Promise<AccountRow | undefined> {
+    if (isStaffRole(who.role)) {
+      const [a] = await db.select().from(staffAccounts).where(eq(staffAccounts.id, who.id));
+      return a;
+    }
+    const [u] = await db.select().from(users).where(eq(users.id, who.id));
+    return u;
+  }
+
   r.post('/auth/otp/request', limiters.otp, validate(OtpRequestBody), async (req, res) => {
     const { channel, target: raw, as } = req.body as OtpRequestBody;
     const target = normalizeTarget(channel, raw);
@@ -82,7 +106,7 @@ export function createAuthRouter(deps: AppDeps, limiters: Limiters): Router {
     // which numbers belong to staff. Only a staff number gets a code; its cooldown, hourly cap and
     // delivery failures are handled quietly (the page already waits 60 s before offering a resend).
     if (as === 'staff') {
-      const staff = channel === 'sms' && (await findUser('phone', target))?.role === 'staff';
+      const staff = channel === 'sms' && (await findStaffByPhone(target)) !== undefined;
       if (staff) {
         // Its own scope: a staff code never shares a cooldown or record with the customer path.
         const key = `staff:${target}`;
@@ -107,12 +131,17 @@ export function createAuthRouter(deps: AppDeps, limiters: Limiters): Router {
     const now = clock();
     await consumeOtp(db, now, { exact: as === 'staff' ? `staff:${target}` : target }, code);
 
+    // Staff sign-in looks only in staff_accounts and never creates an account; only an existing
+    // staff member gets in. Customers and staff with the same phone are different people.
+    if (as === 'staff') {
+      const staff = channel === 'sms' ? await findStaffByPhone(target) : undefined;
+      if (!staff) throw new AppError(403, 'not_staff');
+      res.json(await issueTokens(db, staff, now));
+      return;
+    }
+
     const column = channel === 'sms' ? 'phone' : 'email';
     let user = await findUser(column, target);
-    // Staff sign-in never creates an account; only an existing staff member gets in.
-    if (as === 'staff' && user?.role !== 'staff') throw new AppError(403, 'not_staff');
-    // ...and staff only sign in through the staff path, so its scope is their only code budget.
-    if (as !== 'staff' && user?.role === 'staff') throw forbidden();
     if (!user) {
       try {
         [user] = await db
@@ -130,18 +159,12 @@ export function createAuthRouter(deps: AppDeps, limiters: Limiters): Router {
       }
     }
     if (!user) throw new AppError(500, 'internal_error');
-    // Admins sign in with a password only, never by code.
-    if (user.role === 'admin') throw forbidden();
-    if (channel === 'email') {
-      // Staff sign in by phone only.
-      if (user.role === 'staff') throw forbidden();
-      if (!user.emailVerifiedAt) {
-        [user] = await db
-          .update(users)
-          .set({ emailVerifiedAt: now })
-          .where(eq(users.id, user.id))
-          .returning();
-      }
+    if (channel === 'email' && !user.emailVerifiedAt) {
+      [user] = await db
+        .update(users)
+        .set({ emailVerifiedAt: now })
+        .where(eq(users.id, user.id))
+        .returning();
     }
     res.json(await issueTokens(db, one(user), now));
   });
@@ -176,7 +199,8 @@ export function createAuthRouter(deps: AppDeps, limiters: Limiters): Router {
     ) {
       throw unauthorized('refresh_superseded');
     }
-    await revokeAllSessions(db, session.userId, now);
+    const owner = ownerOfSession(session);
+    if (owner) await revokeAllSessions(db, owner, now);
     throw unauthorized('invalid_refresh');
   }
 
@@ -207,9 +231,16 @@ export function createAuthRouter(deps: AppDeps, limiters: Limiters): Router {
       const [fresh] = await db.select().from(sessions).where(eq(sessions.id, session.id));
       await rejectReplay(fresh ?? session, now, fp);
     }
-    const [user] = await db.select().from(users).where(eq(users.id, session.userId)).limit(1);
-    if (!user) throw unauthorized('invalid_refresh');
-    res.json(await issueTokens(db, user, now));
+    const owner = ownerOfSession(session);
+    const account = owner
+      ? 'staffAccountId' in owner
+        ? (
+            await db.select().from(staffAccounts).where(eq(staffAccounts.id, owner.staffAccountId))
+          )[0]
+        : (await db.select().from(users).where(eq(users.id, owner.userId)))[0]
+      : undefined;
+    if (!account) throw unauthorized('invalid_refresh');
+    res.json(await issueTokens(db, account, now));
   });
 
   r.post('/auth/logout', limiters.refresh, validate(RefreshBody), async (req, res) => {
@@ -232,26 +263,30 @@ export function createAuthRouter(deps: AppDeps, limiters: Limiters): Router {
    */
   async function checkAdminPassword(adminId: string, password: string, now: Date) {
     return db.transaction(async (tx) => {
-      const [row] = await tx.select().from(users).where(eq(users.id, adminId)).for('update');
+      const [row] = await tx
+        .select()
+        .from(staffAccounts)
+        .where(and(eq(staffAccounts.id, adminId), eq(staffAccounts.role, 'admin')))
+        .for('update');
       if (!row?.passwordHash) return { kind: 'invalid' as const };
       if (row.lockedUntil && row.lockedUntil > now) return { kind: 'locked' as const };
       if (await verifyPassword(row.passwordHash, password)) {
         const [fresh] = await tx
-          .update(users)
+          .update(staffAccounts)
           .set({ failedLogins: 0, lockedUntil: null })
-          .where(eq(users.id, adminId))
+          .where(eq(staffAccounts.id, adminId))
           .returning();
         return { kind: 'ok' as const, user: one(fresh) };
       }
       const failed = row.failedLogins + 1;
       await tx
-        .update(users)
+        .update(staffAccounts)
         .set(
           failed >= MAX_FAILED_LOGINS
             ? { failedLogins: 0, lockedUntil: new Date(now.getTime() + LOCK_MS) }
             : { failedLogins: failed },
         )
-        .where(eq(users.id, adminId));
+        .where(eq(staffAccounts.id, adminId));
       return { kind: 'invalid' as const };
     });
   }
@@ -261,9 +296,13 @@ export function createAuthRouter(deps: AppDeps, limiters: Limiters): Router {
     const now = clock();
     const email = normalizeEmail(body.email);
     const [user] = email
-      ? await db.select().from(users).where(eq(users.email, email)).limit(1)
+      ? await db
+          .select()
+          .from(staffAccounts)
+          .where(and(eq(staffAccounts.email, email), eq(staffAccounts.role, 'admin')))
+          .limit(1)
       : [];
-    if (user?.role !== 'admin' || !user.passwordHash) {
+    if (!user?.passwordHash) {
       await verifyDummy(body.password);
       throw unauthorized('invalid_credentials');
     }
@@ -292,39 +331,34 @@ export function createAuthRouter(deps: AppDeps, limiters: Limiters): Router {
       if (outcome.kind === 'invalid') throw badRequest('wrong_password');
       const passwordHash = await hashPassword(next);
       const [user] = await db
-        .update(users)
+        .update(staffAccounts)
         .set({ passwordHash })
-        .where(eq(users.id, outcome.user.id))
+        .where(eq(staffAccounts.id, outcome.user.id))
         .returning();
-      await revokeAllSessions(db, outcome.user.id, now);
+      await revokeAllSessions(db, { staffAccountId: outcome.user.id }, now);
       res.json(await issueTokens(db, one(user), now));
     },
   );
 
   r.get('/me', auth, async (req, res) => {
-    const [user] = await db
-      .select()
-      .from(users)
-      .where(eq(users.id, me(req).id))
-      .limit(1);
-    res.json(toPublicUser(one(user)));
+    res.json(toPublicUser(one(await loadAccount(me(req)))));
   });
 
   r.patch('/me', auth, validate(NameBody), async (req, res) => {
     const { name } = req.body as z.infer<typeof NameBody>;
-    const [user] = await db
-      .update(users)
-      .set({ name })
-      .where(eq(users.id, me(req).id))
-      .returning();
-    res.json(toPublicUser(one(user)));
+    const who = me(req);
+    const [account] = isStaffRole(who.role)
+      ? await db.update(staffAccounts).set({ name }).where(eq(staffAccounts.id, who.id)).returning()
+      : await db.update(users).set({ name }).where(eq(users.id, who.id)).returning();
+    res.json(toPublicUser(one(account)));
   });
 
   // Adding an email: the pending address lives in the OTP target, so no extra column is needed.
   const linkPrefix = (userId: string) => `link:${userId}:`;
 
   r.post('/me/email', auth, limiters.otp, validate(EmailBody), async (req, res) => {
-    if (me(req).role === 'guest') throw forbidden();
+    // Only customers link an email; staff accounts are managed by an admin.
+    if (me(req).role !== 'customer') throw forbidden();
     const email = normalizeEmail((req.body as z.infer<typeof EmailBody>).email);
     if (!email) throw badRequest('invalid_target');
     const taken = await findUser('email', email);

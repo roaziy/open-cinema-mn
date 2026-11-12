@@ -244,8 +244,6 @@ export const AdminStaffBody = z.object({
   phone: z.string().min(1).max(30),
   name: z.string().trim().min(1).max(120),
   branchId: Uuid,
-  /** Promote an existing customer with this phone instead of failing with `phone_in_use`. */
-  convert: z.boolean().optional(),
 });
 export type AdminStaffBody = z.infer<typeof AdminStaffBody>;
 

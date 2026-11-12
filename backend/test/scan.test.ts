@@ -9,6 +9,7 @@ import {
   movies,
   seats,
   showtimes,
+  staffAccounts,
   ticketScans,
   tickets,
   users,
@@ -91,29 +92,31 @@ async function fixture() {
     );
   const user = async (v: Partial<typeof users.$inferInsert>) =>
     one((await db.insert(users).values(v).returning())[0]);
+  const staff = async (v: Partial<typeof staffAccounts.$inferInsert>) =>
+    one((await db.insert(staffAccounts).values(v).returning())[0]);
   return {
     show,
     seatId: (n: number) => one(seatRows.find((s) => s.number === n)).id,
     alice: await user({ role: 'customer', phone: '+97699000001' }),
-    staffA: await user({
+    staffA: await staff({
       role: 'staff',
       name: 'Staff A',
       phone: '+97688000001',
       branchId: one(b1).id,
     }),
-    staffB: await user({
+    staffB: await staff({
       role: 'staff',
       name: 'Staff B',
       phone: '+97688000002',
       branchId: one(b1).id,
     }),
-    staffC: await user({
+    staffC: await staff({
       role: 'staff',
       name: 'Staff C',
       phone: '+97688000003',
       branchId: one(b2).id,
     }),
-    admin: await user({ role: 'admin', name: 'Admin', email: 'a@x.mn' }),
+    admin: await staff({ role: 'admin', name: 'Admin', email: 'a@x.mn' }),
   };
 }
 
@@ -281,7 +284,10 @@ describe('scan', () => {
     expect(rej.body.previous.staffName).toBe('Staff A');
     await db.update(movies).set({ posterUrl: 'new.jpg', title: 'Renamed', tone: '#ffffff' });
     await db.update(halls).set({ name: 'Hall 9' });
-    await db.update(users).set({ name: 'Renamed Staff' }).where(eq(users.id, f.staffA.id));
+    await db
+      .update(staffAccounts)
+      .set({ name: 'Renamed Staff' })
+      .where(eq(staffAccounts.id, f.staffA.id));
     await db.update(tickets).set({ status: 'cancelled' }).where(eq(tickets.id, other.id));
     await db.update(showtimes).set({ status: 'cancelled' });
     const again = await scan(s, f.staffA, t.qrToken, { scanId });
@@ -408,7 +414,7 @@ describe('scan', () => {
   it('never shows a phone number as the staff name', async () => {
     const s = setup();
     const f = await fixture();
-    await db.update(users).set({ name: null }).where(eq(users.id, f.staffA.id));
+    await db.update(staffAccounts).set({ name: null }).where(eq(staffAccounts.id, f.staffA.id));
     const show = await f.show('2026-11-08T11:00:00Z');
     const [t] = await buy(s, f, show.id, 1);
     await scan(s, f.staffA, one(t).qrToken, { deviceId: DEV_A });
@@ -464,7 +470,7 @@ describe('scan', () => {
     const lost = one(
       (
         await db
-          .insert(users)
+          .insert(staffAccounts)
           .values({ role: 'staff', name: 'Lost', phone: '+97688000009' })
           .returning()
       )[0],
