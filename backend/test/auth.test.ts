@@ -162,14 +162,11 @@ describe('otp login', () => {
     expect(await db.query.users.findMany()).toHaveLength(1);
   });
 
-  it('logs in an existing staff phone without creating a customer', async () => {
+  it('refuses a staff phone on the customer path, without creating a customer', async () => {
     const { otpLogin } = setup();
-    const [staff] = await db
-      .insert(users)
-      .values({ role: 'staff', phone: '+97688000001' })
-      .returning();
+    await db.insert(users).values({ role: 'staff', phone: '+97688000001' });
     const res = await otpLogin('sms', '88000001');
-    expect(res.body.user).toMatchObject({ id: staff?.id, role: 'staff' });
+    expect(res.status).toBe(403);
     expect(await db.query.users.findMany()).toHaveLength(1);
   });
 
