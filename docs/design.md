@@ -20,7 +20,7 @@ Why it exists:
 3. The seat map updates live while someone is choosing.
 4. A **3D view from the seat**, with real numbers: distance to the screen, how much of the view the screen fills, and an off-center angle.
 5. The ticket is a QR code, plus an Apple Wallet pass and an Add to Calendar action with a 30-minute alarm.
-6. Transactional email through wesend.mn: booking confirmation and showtime cancellation, sent to customers who added and verified an email.
+6. Transactional email through the configured messages provider: booking confirmation and showtime cancellation, sent to customers who added and verified an email.
 7. An admin can run a cinema end to end: branches, halls with seat geometry, movies, showtimes, prices and sales reports.
 8. Staff validate tickets at the door from a phone browser (PWA).
 9. Production habits throughout: typed contracts shared by all apps, migrations in the repo, tests on the booking path, CI, no secrets in git, and a one-command self-host.
@@ -33,9 +33,9 @@ Why it exists:
 - Subscriptions, food and drink ordering, split payments, seat change after booking.
 - Redis, queues, microservices, Kubernetes.
 - Multi-tenant SaaS. One deployment = one cinema operator with many branches (see 1) **(owner)**.
-- App Store or TestFlight release. v1 runs as development builds on the owner's devices **(owner)**.
+- App Store or TestFlight release. v1 runs as development builds on the developer's own devices **(owner)**.
 - Customers cancelling their own bookings. Only an admin cancelling a showtime triggers refunds (see 8.7) **(builder call)**.
-- Demo logins or OTP bypasses. Demos use real SMS to the owner's phones **(builder call)**.
+- Demo logins or OTP bypasses. Demos use real SMS to the developer's own phones **(builder call)**.
 
 ## 4. Anti-goals (failure even if it "works")
 
@@ -59,15 +59,15 @@ Admin and staff share one Next.js app with role-based routes **(builder call)**.
 
 ```
 Expo app (customer) ──┐
-Next.js (admin+staff) ┼──> Express API (TypeScript) ──> PostgreSQL (Supabase)
-                      │          ├──> wesend.mn (SMS OTP + email)
+Next.js (admin+staff) ┼──> Express API (TypeScript) ──> PostgreSQL (any)
+                      │          ├──> Messages (SMS OTP + email; dev log or optional adapter)
                       │          ├──> Payment provider (mock → QPay)
                       │          └──> passkit-generator (Wallet .pkpass)
 ```
 
 **Repository layout** **(owner: stack; builder call: layout)**
 ```
-app     Expo SDK 58, expo-router
+mobile-app     Expo SDK 58, expo-router
 web-admin      Next.js (App Router), admin + staff, PWA
 backend        Express + TypeScript
 zod schemas + inferred types: source in backend/src/shared, copied unchanged into mobile-app/src/shared and
@@ -81,8 +81,8 @@ web-admin/lib/shared (npm run sync:shared); each package is standalone
 | Mobile | Expo SDK 58, expo-router. iOS: NativeTabs, glass effects, `@expo/ui` (liquid glass). Android: plain JS `.tsx` components **(owner)**. Reanimated, react-three-fiber + expo-gl (3D), expo-calendar, expo-secure-store |
 | Web | Next.js App Router, PWA manifest + service worker, `barcode-detector` polyfill for QR scanning (iOS Safari ships the native API disabled) |
 | API | Express + TypeScript **(owner)**, zod request validation, Drizzle ORM **(builder call)**, Server-Sent Events for live seats, `passkit-generator` |
-| DB | PostgreSQL hosted on Supabase **(owner)**, used as a plain database (no Supabase Auth, Realtime or RLS). The API connects through the Supavisor **session pooler** (IPv4). Migrations live in the repo. |
-| Hosting | **Backend** on a VPS the owner can use but does not administer (no database there): run with **pm2** (no Docker): `backend` is bundled with esbuild into `dist/index.js` (its own code, including `src/shared`, bundled) and pm2 runs `node dist/index.js`, behind the VPS's existing reverse proxy, domain `cinema-api.roaziy.cloud`. **web-admin** on Vercel (project root `web-admin/`), domain `cinema.roaziy.cloud`. **App** runs as a development build on the owner's devices. The database is Supabase only; backups use Supabase's own or a scheduled GitHub Action `pg_dump`, not the VPS **(owner)**. |
+| DB | Any PostgreSQL the API can reach (local, self-hosted or managed), used as a plain database. Migrations live in the repo. |
+| Hosting | **Backend**: anywhere Node 24 runs, as a single process (the live seat hub keeps state in memory). `backend` is bundled with esbuild into `dist/index.js` and run with `node`; docs/deploy.md shows one worked example (Linux server, pm2, reverse proxy). **web-admin**: any host that runs Next.js (`next start` on a server, or a platform such as Vercel). **App**: development build or EAS build pointing at the API with `EXPO_PUBLIC_API_URL`. Backups: the database host's own, or a scheduled `pg_dump` kept off the API server **(owner)**. |
 | CI | GitHub Actions: typecheck, lint, tests, gitleaks |
 
 Package manager and test runner are left to the builder.
@@ -108,12 +108,12 @@ ticket_scans   id, ticket_id?, staff_id, device_id, scan_id UNIQUE, result(admit
 
 Seat geometry is in meters, with the screen on the line y = 0 and x across the hall. `z_m` is the stepped floor height; the generator defaults to a rise of 0.15 m per row **(builder call)**. A hall's seats cannot be regenerated while any future showtime in it has valid tickets.
 
-Posters and backdrops are uploaded by the admin to Supabase Storage (public bucket), and the URLs are stored on `movies` **(builder call)**. Storage is not covered by `pg_dump`; seeds can recreate demo media. The admin hall editor **generates** seats from rows, columns, seat pitch, row spacing and aisle gaps, then allows per-seat kind changes. It is not a freeform drag editor **(builder call)**.
+Posters and backdrops are uploaded by the admin to the configured storage provider (`local` disk by default, or an optional hosted adapter), and the URLs are stored on `movies` **(builder call)**. Storage is not covered by `pg_dump` (back up `backend/uploads/` for `local`); seeds can recreate demo media. The admin hall editor **generates** seats from rows, columns, seat pitch, row spacing and aisle gaps, then allows per-seat kind changes. It is not a freeform drag editor **(builder call)**.
 
 ## 8. Key flows
 
 ### 8.1 OTP login (customer, staff)
-- Customers log in with **a phone (code by SMS) or an email (code by email)**, both sent through wesend.mn **(owner)**. Email is for visitors without a Mongolian number. A successful email login sets `email_verified_at`. Phone and email are each unique across users. Staff log in by phone only.
+- Customers log in with **a phone (code by SMS) or an email (code by email)**, both sent through the configured messages provider **(owner)**. Email is for visitors without a Mongolian number. A successful email login sets `email_verified_at`. Phone and email are each unique across users. Staff log in by phone only.
 - 6-digit code, stored hashed, valid for 5 minutes, at most 5 attempts.
 - Resend after 60 s. Rate limit: 5 codes per phone per hour, plus a per-IP limit.
 - The dev SMS provider logs the code instead of sending it.
@@ -174,13 +174,13 @@ interface PaymentProvider {
 - A different operator can rebuild everything with their own `.env`.
 - The Wallet button only opens the pass URL; iOS shows the Add Pass sheet, so no native module is needed.
 
-### 8.9 Email (wesend.mn)
+### 8.9 Email (wesend adapter)
 - Sent with `POST https://api.wesend.mn/v1/email` (`to`, `subject`, `html` + `text`, `from_name`, `reply_to`), using the same API key as SMS **(owner)**. `from_name` and `reply_to` come from env, so each operator sends under its own name.
 - **Adding an email:** optional, in Profile. It is verified with a 6-digit code sent by email, using the same rules as the phone OTP (8.1). A profile email receives nothing until verified. Exceptions: login codes, and a guest's `contact_email`, which receives only that booking's receipt and ticket link.
 - **Emails in v1:** login codes, booking confirmation (order number, movie, branch, hall, seats, time, total, and a ticket link; for guests this is the `/t/:token` page) and showtime cancellation with the refund notice. The QR stays in the app and Wallet; the email is a receipt **(builder call)**.
 - Sent only after the booking or cancellation transaction commits. A failed send is logged and never rolls back or blocks a booking; the ticket is always in the app. No outbox table in v1 **(builder call)**.
-- All SMS and email go through one `messages` module with two senders: a dev sender that logs instead of sending, and the wesend sender. Push notifications can be added later as another channel in this module.
-- Limits to know: wesend sends from its shared domain unless the operator buys the custom-domain add-on; HTML is sanitized (no scripts, forms or iframes), so templates use simple tables with inline styles; no attachments; HTML plus text must stay under 256 KB. A wesend sandbox key sends only to the owner's own verified phone and email.
+- All SMS and email go through one `messages` module with two senders: a dev sender that logs instead of sending, and an optional wesend sender. Push notifications can be added later as another channel in this module.
+- Limits to know: wesend sends from its shared domain unless the operator buys the custom-domain add-on; HTML is sanitized (no scripts, forms or iframes), so templates use simple tables with inline styles; no attachments; HTML plus text must stay under 256 KB. A wesend sandbox key sends only to the account's own verified phone and email.
 
 ## 9. 3D view from seat
 
@@ -251,7 +251,7 @@ Reference: the "view from seat" concept at x.com/oiharshit/status/21183695502953
 4. Checkout (mock pay), tickets, QR, staff scan PWA, email (profile verification, confirmation, cancellation).
 5. 3D view from seat (built on the phase 0 spike).
 6. Wallet pass, Add to Calendar with alarm.
-7. Admin sales and occupancy reports (per day, movie and hall). Deploy (VPS, Compose, reverse proxy), CI, README with screenshots. Check whether the VPS already runs a reverse proxy on ports 80/443; if so, add routes to it instead of adding Caddy.
+7. Admin sales and occupancy reports (per day, movie and hall). Deploy docs (single-process API behind a reverse proxy, admin web, app), CI, README with screenshots.
 
 Figma design for the customer app happens before phase 3's UI work.
 

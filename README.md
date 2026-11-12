@@ -53,22 +53,23 @@ the screen, how much of your view it fills, and how far off-center you sit.
 
 - zod-validated requests, Drizzle ORM migrations, role checks on every route
 - OTP rate limits, admin lockout, hashed refresh tokens with rotation
-- Provider interfaces for messages (wesend.mn), storage (local or Supabase) and payments (mock only in v1: anyone can mark an order paid, so production refuses to start unless `ALLOW_MOCK_PAYMENTS=1`)
+- Provider interfaces for messages (dev log or an optional SMS/email adapter), storage (local disk or an optional hosted adapter) and payments (mock only in v1: anyone can mark an order paid, so production refuses to start unless `ALLOW_MOCK_PAYMENTS=1`)
 
 ## Architecture
 
 ```
 Expo app (customer) ──┐
-                      ├──> Express API ──> PostgreSQL (Supabase)
-Next.js (admin+staff) ┘     (pm2)   │
-        on Vercel                   ├──> wesend.mn   SMS + email
-                                    ├──> payment provider (mock today)
-                                    └──> passkit-generator  Apple Wallet .pkpass
+                      ├──> Express API ──> PostgreSQL (any)
+Next.js (admin+staff) ┘     (1 process)  │
+                                         ├──> messages    dev log or optional adapter
+                                         ├──> storage     local disk or optional adapter
+                                         ├──> payment provider (mock today)
+                                         └──> passkit-generator  Apple Wallet .pkpass (optional)
 ```
 
 | Folder       | Contents                                                          |
 | ------------ | ----------------------------------------------------------------- |
-| `mobile-app/`       | Customer app: Expo SDK 58, expo-router                            |
+| `mobile-app/` | Customer app: Expo SDK 58, expo-router                            |
 | `web-admin/` | Admin and staff web app: Next.js                                  |
 | `backend/`   | API: Express, Drizzle, tests against a real Postgres              |
 | `docs/`      | Design, deployment runbook, credentials guide, screenshots        |
@@ -142,13 +143,14 @@ The images live in [`docs/screenshots/`](docs/screenshots/).
 
 ## Self-hosting
 
-Open Cinema needs a Node 24 host for the API (managed with pm2, no Docker), a Postgres database
-(Supabase works well, and nothing runs on the API host), and Vercel or any Node host for the admin web.
+Open Cinema needs a Node 24 host for the API (one process), any PostgreSQL the API can reach, and a
+host that runs Next.js for the admin web. Every external service (file storage, login-code messages,
+Apple Wallet) is optional.
 
-- [`docs/deploy.md`](docs/deploy.md): step-by-step runbook (build, migrate, pm2, reverse proxy for
-  Server-Sent Events, updates and rollback, admin web on Vercel)
-- [`docs/credentials.md`](docs/credentials.md): every credential, where it goes, how to get it, how to
-  verify and rotate it
+- [`docs/deploy.md`](docs/deploy.md): how to run each part (build, migrate, a pm2 and reverse proxy
+  example that is safe for Server-Sent Events, updates, rollback, backups)
+- [`docs/credentials.md`](docs/credentials.md): app secrets and the optional services, with how to
+  verify and rotate them
 - [`docs/design.md`](docs/design.md): product and architecture design
 
 ## License

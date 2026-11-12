@@ -1,95 +1,127 @@
-# Credentials guide
+# Secrets and optional services
 
-In development Open Cinema runs with no credentials at all (`MESSAGES_PROVIDER=dev`, `STORAGE_PROVIDER=local`,
-`PAYMENT_PROVIDER=mock`, Wallet disabled). This guide covers what to create when you go live.
-Every value goes into the server's `.env` (`backend/.env` on the VPS, `chmod 600 .env`), never into
-git. Variable names below are exactly those in `backend/.env.example` and `web-admin/.env.example`.
+In development Open Cinema needs no credentials: `MESSAGES_PROVIDER=dev`, `STORAGE_PROVIDER=local`,
+`PAYMENT_PROVIDER=mock`, Wallet off. This guide covers what to set when you go live. Only the app
+secrets and a database are required; every external service is optional and you choose your own.
 
-After editing `.env`, restart: `pm2 reload open-cinema-api --update-env`.
+Values go into `backend/.env` on the API host (`chmod 600`) and, for the admin web, into that host's
+environment settings. Never commit them. Variable names are exactly those in `backend/.env.example`
+and `web-admin/.env.example`. Restart the API after editing (with the pm2 example in
+[`deploy.md`](deploy.md): `pm2 reload open-cinema-api --update-env`).
 
-## 1. Supabase (database and image storage)
+## 1. Required: app secrets
 
-**What it is.** A hosted Postgres database, plus a public storage bucket for posters and images. The
-API uses it as a plain database (no Supabase Auth, Realtime or RLS).
+Random strings the API uses to sign things. Use a different value for each:
 
-**Where it goes.**
-
-| Variable | Value |
-|---|---|
-| `DATABASE_URL` | session pooler connection string, port **5432** |
-| `DATABASE_SSL` | `verify` (recommended); the default `require` skips the identity check |
-| `DATABASE_CA_FILE` | path to Supabase's CA certificate (for `verify`) |
-| `STORAGE_PROVIDER` | `supabase` |
-| `SUPABASE_URL` | `https://<project-ref>.supabase.co` |
-| `SUPABASE_SERVICE_ROLE_KEY` | the `service_role` key (server only) |
-| `SUPABASE_BUCKET` | bucket name, e.g. `open-cinema` |
-
-**Obtain.**
-1. Create a project at supabase.com. Save the database password.
-2. Project, Connect, **Session pooler**: copy the URI
-   `postgresql://postgres.<ref>:<password>@<pooler-host>:5432/postgres`. Use the session pooler
-   (IPv4, port 5432), not the transaction pooler (6543) and not the direct host. URL-encode special
-   characters in the password.
-3. Project Settings, Database, SSL configuration: switch on "Enforce SSL on incoming connections" and
-   download the certificate. Save it on the VPS (for example `~/secrets/supabase-ca.crt`, mode 600),
-   set `DATABASE_CA_FILE` to its path and `DATABASE_SSL=verify`. The default `require` also encrypts but
-   does not check the server's identity (the API warns at start); `sslmode=verify-full` in the URL
-   is honoured too. A `DATABASE_SSL` weaker than the URL's `sslmode` refuses to start.
-4. Storage, New bucket, name it, switch **Public bucket** on.
-5. Project Settings, API: copy the project URL and the `service_role` key.
-
-**Verify.**
 ```bash
+openssl rand -base64 48
+```
+
+| Variable | Used for |
+|---|---|
+| `JWT_SECRET` | access tokens |
+| `QR_SECRET` | ticket QR codes and their short manual-entry check codes |
+| `LINK_SECRET` | public ticket links and pass URLs |
+| `BFF_SECRET` | trust between the admin web server and the API; the admin web gets the same value |
+
+With `NODE_ENV=production` the API refuses to start if any of the four is shorter than 32 characters.
+
+**Rotate.** Changing `JWT_SECRET` signs everybody out. Changing `QR_SECRET` invalidates saved QR codes
+(the app fetches fresh ones) and changes the manual-entry codes, so do it when no show is about to
+start. Changing `LINK_SECRET` breaks already shared ticket and pass links. Changing `BFF_SECRET` means
+updating the API and the admin web together, then restarting both. If you suspect a leak, rotate all
+four.
+
+## 2. Required: database
+
+Any PostgreSQL the API can reach: local, self-hosted or managed. Set `DATABASE_URL`. TLS is set with
+`DATABASE_SSL` (`off`, `require`, `verify`) and, for `verify`, `DATABASE_CA_FILE`, the PEM file of your
+provider's CA certificate. The three modes are explained in [`deploy.md`](deploy.md) 1.2.1; a managed
+provider documents where to download its CA certificate. Special characters in the password must be
+URL-encoded in `DATABASE_URL`.
+
+```bash
+cd backend
 psql "$DATABASE_URL" -c 'select 1'
-npm -w @open-cinema/backend run db:migrate:prod
+npm run db:migrate:prod
 curl -s http://127.0.0.1:4000/v1/health        # {"ok":true,"db":true}
 ```
-Upload a poster through the admin app and open the returned URL in a browser; it must load without
-signing in.
 
-**Rotate / revoke.** Database password: Project Settings, Database, reset password, update
-`DATABASE_URL`, reload. Service role key: Project Settings, API, regenerate, update
-`SUPABASE_SERVICE_ROLE_KEY`, reload. The service role key bypasses all access rules: never put it in
-the app, the admin web project or git.
+**Rotate.** Change the database password in your provider, update `DATABASE_URL`, restart.
 
-## 2. wesend.mn (SMS codes and email)
+## 3. First admin
 
-**What it is.** The messaging provider for login codes (SMS) and email.
+A script creates the first administrator and never touches other data. After the migrations:
 
-**Where it goes.**
+```bash
+cd backend
+npm run admin:create:prod -- --email you@example.com --name "Your Name"
+```
+
+It asks for the password without echoing it (for a scripted setup set `ADMIN_PASSWORD`) and refuses to
+overwrite an existing admin. Sign in to the admin web with it and change the password under the gear
+icon next to your name (this signs out other devices). Lost password: run the command again with
+`--reset-password`. The demo seed (`db:seed`) is development only and refuses to run in production.
+
+## 4. Optional: file storage
+
+Posters and images. `STORAGE_PROVIDER` is:
+
+- `local` (default): files are written under `backend/uploads/` and served by the API. Back that
+  folder up; it is not part of a database dump.
+- `supabase`: an optional adapter that uses a public bucket of a hosted object store.
 
 | Variable | Value |
 |---|---|
-| `MESSAGES_PROVIDER` | `wesend` (required in production; see the note below) |
-| `WESEND_API_KEY` | the API key |
-| `WESEND_FROM_NAME` | sender name shown on email, e.g. `Open Cinema` |
+| `STORAGE_PROVIDER` | `local` or `supabase` |
+| `SUPABASE_URL` | project URL (only for `supabase`) |
+| `SUPABASE_SERVICE_ROLE_KEY` | service key, server only (only for `supabase`) |
+| `SUPABASE_BUCKET` | public bucket name (only for `supabase`) |
+
+**Verify.** Upload a poster in the admin app and open the returned URL in a browser; it must load
+without signing in. The service key bypasses all access rules: never put it in the app, the admin web
+or git. Rotate it in the provider, update the variable, restart.
+
+## 5. Optional: login-code messages (SMS and email)
+
+`MESSAGES_PROVIDER` is:
+
+- `dev` (default): codes are written to the API log. With `NODE_ENV=production` it deliberately logs
+  only the recipient, so nobody can receive a code and OTP login cannot complete.
+- `wesend`: an optional adapter for a messaging service.
+
+| Variable | Value |
+|---|---|
+| `MESSAGES_PROVIDER` | `dev` or `wesend` |
+| `WESEND_API_KEY` | API key (required for `wesend`) |
+| `WESEND_FROM_NAME` | sender name shown on email |
 | `WESEND_REPLY_TO` | optional reply-to address |
 
-**Obtain.** Create an account at wesend.mn and an API key in its dashboard. Keys starting with
-`ws_test_` are sandbox keys and deliver only to contacts you have verified in the dashboard; keys
-for real traffic are live keys. Use a sandbox key first, then switch. SMS needs account credit;
-Cyrillic text is 65 characters per segment, so code messages are kept short.
+A real deployment therefore needs a real messages provider. To use a different service, add a sender
+next to `backend/src/messages/wesend.ts` that implements the `Messages` interface in
+`backend/src/messages/index.ts` and select it there.
 
-**Verify.** Set the sandbox key and `MESSAGES_PROVIDER=wesend`, reload, then request a login code in
-the app for a verified phone number or email. It must arrive, and `pm2 logs open-cinema-api` must show no
-provider error. Typical failures: `402` no credit, `422` unsupported number, `429` rate limited.
-With the provider set to `dev` in development, codes appear in the API log instead. In production
-(`NODE_ENV=production`) the `dev` provider deliberately hides the message content and logs only the
-recipient, so no one can receive a code and OTP login cannot complete. Production needs wesend.
+**Verify.** Set the provider, restart, request a login code in the app for a test phone or email; it
+must arrive and the API log must show no provider error. **Rotate.** Create a new key, update the
+variable, restart, delete the old key.
 
-**Rotate / revoke.** Create a new key in the dashboard, put it in `WESEND_API_KEY`, reload, then
-delete the old key.
+## 6. Payments
 
-## 3. Apple Wallet passes
+`mock` is the only provider today (`PAYMENT_PROVIDER=mock`): anyone can mark an order paid. Production
+refuses to start with it unless `ALLOW_MOCK_PAYMENTS=1`, which is only right for a demo. A real
+provider means implementing the `PaymentProvider` interface in `backend/src/payments/provider.ts`
+(`createInvoice`, `checkPayment`, an idempotent `refund`) and selecting it in `createPayments`.
 
-**What it is.** Signed `.pkpass` tickets for "Add to Apple Wallet". Without these variables the
-Wallet endpoint answers `503 {"error":"wallet_not_configured"}` and everything else works.
+## 7. Optional: Apple Wallet passes
 
-**Where it goes.**
+Signed `.pkpass` tickets for "Add to Apple Wallet". Wallet is disabled when `WALLET_PASS_TYPE_ID` is
+unset: the endpoint answers `503 {"error":"wallet_not_configured"}` and everything else works. It
+needs a paid Apple Developer account; Apple's own documentation (Wallet, "Building a pass") is the
+reference for the steps below.
 
 | Variable | Value |
 |---|---|
-| `WALLET_PASS_TYPE_ID` | Pass Type ID, e.g. `pass.cloud.roaziy.opencinema` |
+| `WALLET_PASS_TYPE_ID` | Pass Type ID, e.g. `pass.com.example.opencinema` |
 | `WALLET_TEAM_ID` | Apple developer Team ID (10 characters) |
 | `WALLET_ORG_NAME` | name shown on the pass |
 | `WALLET_SIGNER_CERT_PATH` | absolute path to the signer certificate PEM |
@@ -97,113 +129,59 @@ Wallet endpoint answers `503 {"error":"wallet_not_configured"}` and everything e
 | `WALLET_SIGNER_KEY_PASSPHRASE` | key passphrase, if you set one |
 | `WALLET_WWDR_PATH` | absolute path to the Apple WWDR G4 certificate PEM |
 
-**Obtain.** Needs a paid Apple Developer account.
-1. developer.apple.com, Certificates, Identifiers & Profiles, Identifiers: add a **Pass Type ID**
-   (`pass.<your reverse domain>.opencinema`). The Team ID is under Membership.
-2. Create a certificate for that Pass Type ID. Apple asks for a CSR; create one with Keychain Access
-   (Certificate Assistant, Request a Certificate from a Certificate Authority) or with openssl:
+**Obtain.**
+1. In the Apple developer portal (Certificates, Identifiers & Profiles) add a **Pass Type ID**, e.g.
+   `pass.<your reverse domain>.opencinema`. The Team ID is under Membership.
+2. Create a certificate for it. Apple asks for a CSR; make one with Keychain Access or openssl:
    ```bash
    openssl req -new -newkey rsa:2048 -nodes -keyout pass.key -out pass.csr -subj "/CN=Open Cinema Pass"
    ```
-   Upload the CSR and download `pass.cer`. If you used Keychain Access, export the certificate with
-   its key from Keychain as `pass.p12` and skip to the p12 commands.
-3. Convert to PEM files.
-   - From a `.p12` (Keychain export):
+   Upload it and download `pass.cer`. If you used Keychain Access, export the certificate with its key
+   as `pass.p12` instead.
+3. Convert to PEM.
+   - From a `.p12` (add `-legacy` on OpenSSL 3 if you get a MAC or algorithm error):
      ```bash
      openssl pkcs12 -in pass.p12 -clcerts -nokeys -out signerCert.pem
      openssl pkcs12 -in pass.p12 -nocerts -out signerKey.pem        # asks for a passphrase
      ```
-     (OpenSSL 3 and old p12 files: add `-legacy` if you get a MAC or algorithm error.)
    - From the openssl CSR flow:
      ```bash
      openssl x509 -inform DER -in pass.cer -out signerCert.pem
      cp pass.key signerKey.pem        # or: openssl rsa -aes256 -in pass.key -out signerKey.pem
      ```
-4. Download **Apple WWDR G4** from apple.com/certificateauthority (Worldwide Developer Relations,
-   G4) and convert:
+4. Download **Apple WWDR G4** from Apple's certificate authority page and convert:
    ```bash
    openssl x509 -inform DER -in AppleWWDRCAG4.cer -out wwdr.pem
    ```
-5. Copy the three PEMs to the server, outside the repository, e.g. `~/secrets/wallet/`:
-   ```bash
-   mkdir -p ~/secrets/wallet && chmod 700 ~/secrets/wallet
-   chmod 600 ~/secrets/wallet/*.pem
-   ```
-   Point the `WALLET_*_PATH` variables there. `*.pem` and `*.p12` are in `.gitignore`; still never
-   commit or share them, and delete the `.p12` and `.key` files from your downloads after copying.
+5. Store the PEMs outside the repository (for example `~/secrets/wallet/`, directory `700`, files
+   `600`) and point the `WALLET_*_PATH` variables there. `*.pem` and `*.p12` are in `.gitignore`;
+   still never commit them, and delete the `.p12` and `.key` downloads.
 
-**Verify.** Reload the API, buy a mock booking, open its ticket and request the pass; the response
-must be `Content-Type: application/vnd.apple.pkpass`, and opening it on an iPhone must offer
-"Add". `wallet_not_configured` means a variable or path is missing; a pass that downloads but will
-not open usually means the WWDR certificate, Team ID or Pass Type ID does not match.
+**Verify.** Restart, buy a mock booking, open its ticket and request the pass: the response must be
+`Content-Type: application/vnd.apple.pkpass` and an iPhone must offer "Add". `wallet_not_configured`
+means a variable or path is missing; a pass that downloads but will not open usually means the WWDR
+certificate, Team ID or Pass Type ID does not match.
 
-**Rotate / revoke.** Pass certificates expire after about a year. Create a new certificate for the
-same Pass Type ID, convert it as above, replace the files, reload. To revoke, revoke the certificate
-in the Apple developer portal.
+**Badge artwork.** The official "Add to Apple Wallet" badge is Apple's artwork and must be obtained
+under Apple's terms; it is never drawn here. Until you place it at
+`web-admin/public/wallet-badge-mn.svg` and set `WALLET_BADGE_FILE=1` in the admin web, the page shows a
+plain text button.
 
-## 4. Application secrets
-
-**What they are.** Random strings the API uses to sign tokens.
-
-| Variable | Used for |
-|---|---|
-| `JWT_SECRET` | access tokens |
-| `QR_SECRET` | ticket QR codes |
-| `LINK_SECRET` | public ticket links and pass URLs |
-| `BFF_SECRET` | trust between the admin web server and the API (also set on Vercel) |
-
-Use a different value for each:
-```bash
-openssl rand -base64 48
-```
-In production the API refuses to start unless `JWT_SECRET`, `QR_SECRET`, `LINK_SECRET` and
-`BFF_SECRET` are at least 32 characters; `openssl rand -base64 48` gives 64.
-
-**Verify.** `pm2 logs open-cinema-api` shows a validation error if a secret is missing or too short. After setting them, sign in
-to the admin web app and scan a test ticket.
-
-**Rotate / revoke.** Changing `JWT_SECRET` signs everybody out. Changing `QR_SECRET` invalidates
-printed or saved QR codes (the app fetches fresh ones; do it when no show is about to start). It also
-derives the short check codes used for manual entry, so those change too.
-Changing `LINK_SECRET` breaks already shared ticket and pass links. Changing `BFF_SECRET` means
-updating the VPS and the Vercel project together, then redeploying both.
-
-## 5. First admin
-
-**What it is.** The first administrator, created by a script that never touches other data.
-
-**Obtain.** On the VPS, after the migrations:
-```bash
-npm -w @open-cinema/backend run admin:create:prod -- --email you@example.com --name "Your Name"
-```
-It asks for the password twice without echoing it. For a scripted setup set `ADMIN_PASSWORD`
-instead. It refuses to overwrite an existing admin. The demo seed (`db:seed`) is for development
-only and refuses to run in production.
-
-**Verify.** Sign in to the admin web app with that email and password.
-
-**Rotate / revoke.** Change the password in the admin app (gear icon next to your name); this signs
-out every other device. A lost password: run the command again with `--reset-password`.
+**Rotate.** Pass certificates expire after about a year. Create a new certificate for the same Pass
+Type ID, convert it, replace the files, restart. To revoke, revoke the certificate in the Apple
+developer portal.
 
 ## Go-live checklist
 
-- [ ] `NODE_ENV=production`, `API_PUBLIC_URL`, `WEB_PUBLIC_URL`, `CORS_ORIGINS` use the real https domains
-- [ ] `DATABASE_URL` is the Supabase session pooler (port 5432); `DATABASE_SSL=verify` with the CA file; migrations applied
-- [ ] `JWT_SECRET`, `QR_SECRET`, `LINK_SECRET`, `BFF_SECRET` are four different random values
-- [ ] Same `BFF_SECRET` and `API_INTERNAL_URL` set in the Vercel project
-- [ ] `TRUST_PROXY=1` behind the reverse proxy and `HOST` unset (binds `127.0.0.1`); port 4000 is not reachable from outside; no startup warning in the log
-- [ ] `MESSAGES_PROVIDER=wesend` with a live key; a real code was received
-- [ ] `STORAGE_PROVIDER=supabase`; a poster upload loads from its public URL
-- [ ] Wallet certificates in `~/secrets/wallet` with mode 600 (or Wallet intentionally off)
-- [ ] First admin created with `admin:create:prod`, signed in, password changed
-- [ ] `.env` is mode 600 and not in git; `git log -p -- .env` is empty
-- [ ] `pm2 save` done, boot start verified (`pm2 startup` or the `@reboot` crontab)
-- [ ] `https://cinema-api.roaziy.cloud/v1/health` answers; live seat updates work through the proxy
-- [ ] Supabase backups enabled
-
-## Teardown
-
-To retire a deployment, revoke or rotate each credential: delete the wesend API key, revoke the
-Apple Pass Type ID certificate, reset the Supabase database password and regenerate the service role
-key (or delete the project), regenerate all four application secrets, and remove the server `.env`
-and the wallet PEM files.
+- [ ] `NODE_ENV=production`; `API_PUBLIC_URL`, `WEB_PUBLIC_URL`, `CORS_ORIGINS` are the real https URLs
+- [ ] Four different random app secrets; the admin web has the same `BFF_SECRET` and an `API_INTERNAL_URL` that reaches the API
+- [ ] Database reachable, `DATABASE_SSL=verify` with the CA file (or a conscious `require`), migrations applied
+- [ ] `TRUST_PROXY` matches the proxies in front, `HOST` unset, the API port closed to the outside, no startup warning
+- [ ] A real messages provider is configured and a real login code was received
+- [ ] Storage: `local` with `backend/uploads/` backed up, or an adapter; an uploaded poster loads
+- [ ] Payments: mock accepted knowingly (`ALLOW_MOCK_PAYMENTS=1`) or a real provider implemented
+- [ ] Wallet certificates stored with restrictive permissions, or Wallet intentionally off
+- [ ] First admin created and the password changed
+- [ ] `backend/.env` is mode 600 and not in git
+- [ ] The API restarts on boot; backups of the database (and uploads) exist
+- [ ] `https://api.example.com/v1/health` (your API URL) answers and live seat updates work through the proxy

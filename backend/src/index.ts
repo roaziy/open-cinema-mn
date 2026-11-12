@@ -23,7 +23,7 @@ if (
 
 if (env.NODE_ENV === 'production' && dbTls.level === 'require') {
   console.warn(
-    'WARNING: database TLS is encrypted but the server identity is NOT verified (DATABASE_SSL=require). Download the Supabase CA certificate and set DATABASE_SSL=verify and DATABASE_CA_FILE (docs/deploy.md 1.2.1).',
+    'WARNING: database TLS is encrypted but the server identity is NOT verified (DATABASE_SSL=require). Download the CA certificate of your database provider and set DATABASE_SSL=verify and DATABASE_CA_FILE (docs/deploy.md 1.2.1).',
   );
 }
 if (env.NODE_ENV === 'production' && dbTls.level === 'off') {
