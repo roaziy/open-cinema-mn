@@ -53,7 +53,7 @@ the screen, how much of your view it fills, and how far off-center you sit.
 
 - zod-validated requests, Drizzle ORM migrations, role checks on every route
 - OTP rate limits, admin lockout, hashed refresh tokens with rotation
-- Provider interfaces for messages (dev log or an optional SMS/email adapter), storage (local disk or an optional hosted adapter) and payments (mock only in v1: anyone can mark an order paid, so production refuses to start unless `ALLOW_MOCK_PAYMENTS=1`)
+- Provider interfaces for messages (dev log or an optional SMS/email adapter), storage (local disk or Cloudflare R2) and payments (mock only in v1: anyone can mark an order paid, so production refuses to start unless `ALLOW_MOCK_PAYMENTS=1`)
 
 ## Architecture
 
@@ -62,7 +62,7 @@ Expo app (customer) ──┐
                       ├──> Express API ──> PostgreSQL (any)
 Next.js (admin+staff) ┘     (1 process)  │
                                          ├──> messages    dev log or optional adapter
-                                         ├──> storage     local disk or optional adapter
+                                         ├──> storage     local disk or Cloudflare R2
                                          ├──> payment provider (mock today)
                                          └──> passkit-generator  Apple Wallet .pkpass (optional)
 ```

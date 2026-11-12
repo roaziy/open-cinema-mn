@@ -38,10 +38,13 @@ const EnvSchema = z
     WESEND_API_KEY: optional(z.string()),
     WESEND_FROM_NAME: z.string().default('Open Cinema'),
     WESEND_REPLY_TO: optional(z.string()),
-    STORAGE_PROVIDER: z.enum(['local', 'supabase']).default('local'),
-    SUPABASE_URL: optional(z.string()),
-    SUPABASE_SERVICE_ROLE_KEY: optional(z.string()),
-    SUPABASE_BUCKET: optional(z.string()),
+    STORAGE_PROVIDER: z.enum(['local', 'r2']).default('local'),
+    // Cloudflare R2 bucket, only for STORAGE_PROVIDER=r2.
+    R2_ACCOUNT_ID: optional(z.string().regex(/^[0-9a-f]{32}$/, 'is the 32-character account ID')),
+    R2_BUCKET: optional(z.string()),
+    R2_ACCESS_KEY_ID: optional(z.string()),
+    R2_SECRET_ACCESS_KEY: optional(z.string()),
+    R2_PUBLIC_URL: optional(z.url()),
     PAYMENT_PROVIDER: z.enum(['mock']).default('mock'),
     // Production refuses the mock provider (anyone can mark an order paid) unless this is set.
     ALLOW_MOCK_PAYMENTS: flag.default(false),
