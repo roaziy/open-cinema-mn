@@ -78,12 +78,14 @@ export function createAuthRouter(deps: AppDeps, limiters: Limiters): Router {
     const { channel, target: raw, as } = req.body as OtpRequestBody;
     const target = normalizeTarget(channel, raw);
     if (!target) throw badRequest('invalid_target');
-    // Staff sign-in: no code (and no SMS) for a number that is not a staff account.
+    // Staff sign-in: a number that is not a staff account gets no code (and no SMS), but the same
+    // reply, so the endpoint cannot be used to find out which numbers belong to staff.
     if (
       as === 'staff' &&
       (channel !== 'sms' || (await findUser('phone', target))?.role !== 'staff')
     ) {
-      throw new AppError(403, 'not_staff');
+      res.status(204).end();
+      return;
     }
     const code = await issueOtp(db, clock(), target, { exact: target });
     await sendCode(channel, target, code);
