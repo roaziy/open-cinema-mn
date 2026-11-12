@@ -9,7 +9,7 @@ function devServerHostUri(): string | undefined {
 }
 
 const API_ORIGIN = resolveApiOrigin(
-  (process.env.EXPO_PUBLIC_API_URL ?? 'http://localhost:4000').replace(/\/+$/, ''),
+  (process.env.EXPO_PUBLIC_API_URL ?? 'http://localhost:8080').replace(/\/+$/, ''),
   { dev: __DEV__, hostUri: devServerHostUri() },
 );
 

@@ -44,7 +44,7 @@ URL-encoded in `DATABASE_URL`.
 cd backend
 psql "$DATABASE_URL" -c 'select 1'
 npm run db:migrate:prod
-curl -s http://127.0.0.1:4000/v1/health        # {"ok":true,"db":true}
+curl -s http://127.0.0.1:8080/v1/health        # {"ok":true,"db":true}
 ```
 
 **Rotate.** Change the database password in your provider, update `DATABASE_URL`, restart.

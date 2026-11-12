@@ -15,7 +15,7 @@ const EnvSchema = z
     // Interface to bind. Unset: loopback in production (the reverse proxy is the only way in, so
     // `x-forwarded-for` cannot be forged by direct clients); otherwise Node's default (all interfaces).
     HOST: optional(z.string()),
-    PORT: z.coerce.number().int().min(1).max(65535).default(4000),
+    PORT: z.coerce.number().int().min(1).max(65535).default(8080),
     DATABASE_URL: z.string().min(1),
     // Database TLS: off | require (encrypted, server identity NOT checked) | verify (checked against
     // DATABASE_CA_FILE, or the system store without it). A verifying sslmode in the URL counts as verify.
@@ -26,7 +26,7 @@ const EnvSchema = z
     JWT_SECRET: z.string().min(8),
     QR_SECRET: z.string().min(8),
     LINK_SECRET: z.string().min(8),
-    API_PUBLIC_URL: z.string().default('http://localhost:4000').transform(noSlash),
+    API_PUBLIC_URL: z.string().default('http://localhost:8080').transform(noSlash),
     WEB_PUBLIC_URL: z.string().default('http://localhost:3000').transform(noSlash),
     // Shared with the web BFF: requests carrying it in `x-oc-bff-secret` may name the real
     // client in `x-oc-client-ip`, which the per-IP rate limits then use.

@@ -10,7 +10,7 @@ export function apiUrl(): string {
   const value = process.env.API_INTERNAL_URL;
   if (!value) {
     if (IS_PROD) throw new Error('API_INTERNAL_URL is not set');
-    return 'http://localhost:4000';
+    return 'http://localhost:8080';
   }
   return value.replace(/\/$/, '');
 }
