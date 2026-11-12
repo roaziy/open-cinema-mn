@@ -3,7 +3,8 @@ import path from 'node:path';
 import { PKPass } from 'passkit-generator';
 import { type Env, env } from '../env';
 import { BACKEND_ROOT } from '../lib/paths';
-import { formatUbTime, type TicketView, ubDate } from '../shared';
+import { avoidOrange, type TicketView, UB_OFFSET_MS } from '../shared';
+import { walletStrip } from './strip';
 
 const MODEL = path.join(BACKEND_ROOT, 'src/wallet/model/OpenCinema.pass');
 
@@ -88,6 +89,50 @@ function loadTemplate(cfg: WalletConfig): Promise<PKPass> {
   return cached;
 }
 
+/** sRGB channel (0..255) to linear light, for WCAG luminance. */
+const linear = (c: number) => {
+  const v = c / 255;
+  return v <= 0.03928 ? v / 12.92 : ((v + 0.055) / 1.055) ** 2.4;
+};
+
+/** Darkest the film colour may be before white text loses its punch; darker reads as cinema. */
+const MAX_LUMINANCE = 0.035;
+
+/**
+ * Pass colours from the film's tone: the tone (never orange) darkened until white text reads
+ * well on it, with labels in a soft tint of the same colour.
+ */
+export function passColours(tone: string): { background: string; label: string; hex: string } {
+  const safe = avoidOrange(tone).replace('#', '');
+  let [r, g, b] = [0, 2, 4].map((i) => Number.parseInt(safe.slice(i, i + 2), 16)) as [
+    number,
+    number,
+    number,
+  ];
+  const lum = () => 0.2126 * linear(r) + 0.7152 * linear(g) + 0.0722 * linear(b);
+  // Whole channel values throughout, so the check sees the exact colour that ships.
+  while (lum() > MAX_LUMINANCE)
+    [r, g, b] = [r, g, b].map((c) => Math.floor(c * 0.92)) as [number, number, number];
+  const mix = (c: number) => Math.round(c + (255 - c) * 0.6);
+  const hex = `#${[r, g, b].map((c) => c.toString(16).padStart(2, '0')).join('')}`;
+  return {
+    background: `rgb(${r}, ${g}, ${b})`,
+    label: `rgb(${mix(r)}, ${mix(g)}, ${mix(b)})`,
+    hex,
+  };
+}
+
+/** An instant as Ulaanbaatar wall-clock time with its offset, e.g. 2026-11-12T14:45:00+08:00. */
+export const ubIso = (instant: string): string =>
+  `${new Date(Date.parse(instant) + UB_OFFSET_MS).toISOString().slice(0, 19)}+08:00`;
+
+/** "12.11 · 14:45": day.month and 24-hour time in Ulaanbaatar, for the pass header. */
+export const headerTime = (instant: string): string => {
+  const [date, time] = ubIso(instant).split('T') as [string, string];
+  const [, month, day] = date.split('-');
+  return `${day}.${month} · ${time.slice(0, 5)}`;
+};
+
 export async function buildPass(cfg: WalletConfig, t: TicketView): Promise<Buffer> {
   let template: PKPass;
   try {
@@ -96,33 +141,54 @@ export async function buildPass(cfg: WalletConfig, t: TicketView): Promise<Buffe
     console.error('wallet certificates or model could not be loaded', err);
     throw new WalletUnavailableError();
   }
+  const colours = passColours(t.movie.tone);
   const pass = await PKPass.from(template, {
     serialNumber: t.id,
-    description: `${t.movie.title} — тасалбар`,
+    description: `${t.movie.title} ticket`,
+    backgroundColor: colours.background,
+    foregroundColor: 'rgb(255, 255, 255)',
+    labelColor: colours.label,
   });
-  pass.primaryFields.push({ key: 'movie', label: 'Кино', value: t.movie.title });
-  pass.secondaryFields.push(
-    { key: 'hall', label: 'Танхим', value: t.hallName },
-    { key: 'row', label: 'Эгнээ', value: t.seat.rowLabel },
-    { key: 'seat', label: 'Суудал', value: t.seat.number },
-  );
+  // The banner (else the poster) under the header, blurring into the pass colour.
+  const strip = await walletStrip(t.movie.backdropUrl ?? t.movie.posterUrl, colours.hex);
+  if (strip) {
+    pass.addBuffer('strip.png', strip.x1);
+    pass.addBuffer('strip@2x.png', strip.x2);
+    pass.addBuffer('strip@3x.png', strip.x3);
+  }
+  // Compact 24-hour Ulaanbaatar time: a locale-formatted date and time does not fit beside the logo.
+  pass.headerFields.push({
+    key: 'when',
+    label: 'Showtime',
+    value: headerTime(t.showtime.startsAt),
+    textAlignment: 'PKTextAlignmentRight',
+  });
+  pass.secondaryFields.push({
+    key: 'movie',
+    label: `Movie · ${t.showtime.format}`,
+    value: t.movie.title,
+  });
   pass.auxiliaryFields.push(
+    { key: 'branch', label: 'Branch', value: t.branch.name },
+    { key: 'hall', label: 'Hall', value: t.hallName },
     {
-      key: 'time',
-      label: 'Цаг',
-      value: `${ubDate(t.showtime.startsAt)} ${formatUbTime(t.showtime.startsAt)}`,
+      key: 'seat',
+      label: 'Seat',
+      value: `${t.seat.rowLabel}${t.seat.number}`,
+      textAlignment: 'PKTextAlignmentRight',
     },
-    { key: 'branch', label: 'Салбар', value: t.branch.name },
   );
   // Wallet-only holders can still be admitted by hand: the door types the order number and code.
   pass.backFields.push(
-    { key: 'order', label: 'Захиалгын дугаар', value: t.orderNo },
-    { key: 'checkCode', label: 'Шалгах код', value: t.checkCode },
+    { key: 'order', label: 'Order number', value: t.orderNo },
+    { key: 'checkCode', label: 'Check code', value: t.checkCode },
+    { key: 'address', label: 'Address', value: t.branch.address },
   );
   pass.setBarcodes({
     message: t.qrToken,
     format: 'PKBarcodeFormatQR',
     messageEncoding: 'iso-8859-1',
+    altText: `Code ${t.checkCode}`,
   });
   const start = new Date(t.showtime.startsAt);
   pass.setRelevantDate(start);
