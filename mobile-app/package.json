@@ -1,5 +1,5 @@
 {
-  "name": "@open-cinema/app",
+  "name": "@open-cinema/mobile-app",
   "version": "1.0.0",
   "main": "expo-router/entry",
   "dependencies": {
@@ -27,6 +27,7 @@
     "expo-system-ui": "~58.0.7",
     "phosphor-react-native": "^3.0.6",
     "react": "19.3.0",
+    "react-dom": "19.3.0",
     "react-native": "0.88.1",
     "react-native-gesture-handler": "~3.3.0",
     "react-native-qrcode-svg": "^6.3.54",

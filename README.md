@@ -68,16 +68,16 @@ Next.js (admin+staff) ┘     (pm2)   │
 
 | Folder       | Contents                                                          |
 | ------------ | ----------------------------------------------------------------- |
-| `app/`       | Customer app: Expo SDK 58, expo-router                            |
+| `mobile-app/`       | Customer app: Expo SDK 58, expo-router                            |
 | `web-admin/` | Admin and staff web app: Next.js                                  |
 | `backend/`   | API: Express, Drizzle, tests against a real Postgres              |
 | `docs/`      | Design, deployment runbook, credentials guide, screenshots        |
 | `.github/`   | CI workflow, gitleaks config                                      |
 
-Each of `app/`, `backend/` and `web-admin/` is a standalone package: its own `package.json`,
+Each of `mobile-app/`, `backend/` and `web-admin/` is a standalone package: its own `package.json`,
 `package-lock.json`, `node_modules`, `tsconfig.json`, `biome.json` and `.env`. The zod schemas, types
 and seat/3D math that all three use live in `backend/src/shared/` and are copied unchanged to
-`app/src/shared/` and `web-admin/lib/shared/`. Edit the backend copy, then run `npm run sync:shared`
+`mobile-app/src/shared/` and `web-admin/lib/shared/`. Edit the backend copy, then run `npm run sync:shared`
 at the repository root; CI fails (`npm run check:shared`) when the copies differ.
 
 ## Quick start
@@ -87,7 +87,7 @@ You need Node 24 and a local Postgres 17.
 ```bash
 git clone https://github.com/<owner>/open-cinema-mn.git
 cd open-cinema-mn
-npm run install:all             # npm ci in backend/, web-admin/ and app/
+npm run install:all             # npm ci in backend/, web-admin/ and mobile-app/
 
 createdb open_cinema_dev
 createdb open_cinema_test
@@ -106,12 +106,12 @@ Login codes are printed in the API log while `MESSAGES_PROVIDER=dev`.
 **Customer app** on the iOS simulator (development build, not Expo Go):
 
 ```bash
-cd app
+cd mobile-app
 cp .env.example .env
 npx expo run:ios
 ```
 
-A physical phone on the same Wi-Fi works without editing `app/.env`: in development the app replaces `localhost` in `EXPO_PUBLIC_API_URL` with the Metro host's LAN address (the API listens on all interfaces). On iOS, allow "Local Network" access when prompted. Fonts are also loaded at runtime, so Expo Go shows the brand font too.
+A physical phone on the same Wi-Fi works without editing `mobile-app/.env`: in development the app replaces `localhost` in `EXPO_PUBLIC_API_URL` with the Metro host's LAN address (the API listens on all interfaces). On iOS, allow "Local Network" access when prompted. Fonts are also loaded at runtime, so Expo Go shows the brand font too.
 
 **Admin web:**
 
@@ -123,7 +123,7 @@ npm run dev                       # http://localhost:3000 (from the repo root: n
 
 Sign in with `SEED_ADMIN_EMAIL` / `SEED_ADMIN_PASSWORD` from `backend/.env` (development only). On a real deployment create the first admin with `npm run admin:create:prod` in `backend/`; see [`docs/deploy.md`](docs/deploy.md).
 
-**Checks**, in each of `backend/`, `web-admin/` and `app/`:
+**Checks**, in each of `backend/`, `web-admin/` and `mobile-app/`:
 
 ```bash
 npm run typecheck && npm run lint && npm test

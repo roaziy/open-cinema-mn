@@ -4,11 +4,11 @@
   "version": "0.1.0",
   "license": "MIT",
   "scripts": {
-    "install:all": "npm --prefix backend ci && npm --prefix web-admin ci && npm --prefix app ci",
+    "install:all": "npm --prefix backend ci && npm --prefix web-admin ci && npm --prefix mobile-app ci",
     "dev:backend": "npm --prefix backend run dev",
     "dev:admin": "npm --prefix web-admin run dev",
-    "dev:app": "npm --prefix app run start",
-    "sync:shared": "rm -rf app/src/shared web-admin/lib/shared && cp -R backend/src/shared app/src/shared && cp -R backend/src/shared web-admin/lib/shared",
-    "check:shared": "diff -r backend/src/shared app/src/shared && diff -r backend/src/shared web-admin/lib/shared"
+    "dev:mobile": "npm --prefix mobile-app run start",
+    "sync:shared": "rm -rf mobile-app/src/shared web-admin/lib/shared && cp -R backend/src/shared mobile-app/src/shared && cp -R backend/src/shared web-admin/lib/shared",
+    "check:shared": "diff -r backend/src/shared mobile-app/src/shared && diff -r backend/src/shared web-admin/lib/shared"
   }
 }
