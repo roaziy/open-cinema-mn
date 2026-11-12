@@ -817,3 +817,47 @@ describe('trusted BFF client ip', () => {
     await guest(app, { 'x-oc-bff-secret': 'wrong', 'x-oc-client-ip': '198.51.100.10' }).expect(429);
   });
 });
+
+describe('staff sign-in by code', () => {
+  beforeEach(resetDb);
+
+  it('sends no code to a number that is not a staff account', async () => {
+    const { app, messages } = setup();
+    await db.insert(users).values({ role: 'customer', phone: '+97699112045' });
+    for (const target of ['99112045', '95049990']) {
+      const res = await request(app)
+        .post('/v1/auth/otp/request')
+        .send({ channel: 'sms', target, as: 'staff' });
+      expect(res.status).toBe(403);
+      expect(res.body.error).toBe('not_staff');
+    }
+    expect(messages.sent).toHaveLength(0);
+  });
+
+  it('signs a staff member in', async () => {
+    const { app, lastCode } = setup();
+    await db.insert(users).values({ role: 'staff', phone: '+97688000001' });
+    const body = { channel: 'sms', target: '88000001', as: 'staff' };
+    await request(app).post('/v1/auth/otp/request').send(body).expect(204);
+    const res = await request(app)
+      .post('/v1/auth/otp/verify')
+      .send({ ...body, code: lastCode() });
+    expect(res.status).toBe(200);
+    expect(res.body.user).toMatchObject({ role: 'staff', phone: '+97688000001' });
+  });
+
+  it('never creates an account through the staff path', async () => {
+    const { app, lastCode } = setup();
+    await request(app)
+      .post('/v1/auth/otp/request')
+      .send({ channel: 'sms', target: '95049990' })
+      .expect(204);
+    const res = await request(app)
+      .post('/v1/auth/otp/verify')
+      .send({ channel: 'sms', target: '95049990', code: lastCode(), as: 'staff' });
+    expect(res.status).toBe(403);
+    expect(res.body.error).toBe('not_staff');
+    const found = await db.select().from(users).where(eq(users.phone, '+97695049990'));
+    expect(found).toHaveLength(0);
+  });
+});

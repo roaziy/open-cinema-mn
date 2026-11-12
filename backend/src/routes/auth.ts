@@ -75,16 +75,23 @@ export function createAuthRouter(deps: AppDeps, limiters: Limiters): Router {
   }
 
   r.post('/auth/otp/request', limiters.otp, validate(OtpRequestBody), async (req, res) => {
-    const { channel, target: raw } = req.body as OtpRequestBody;
+    const { channel, target: raw, as } = req.body as OtpRequestBody;
     const target = normalizeTarget(channel, raw);
     if (!target) throw badRequest('invalid_target');
+    // Staff sign-in: no code (and no SMS) for a number that is not a staff account.
+    if (
+      as === 'staff' &&
+      (channel !== 'sms' || (await findUser('phone', target))?.role !== 'staff')
+    ) {
+      throw new AppError(403, 'not_staff');
+    }
     const code = await issueOtp(db, clock(), target, { exact: target });
     await sendCode(channel, target, code);
     res.status(204).end();
   });
 
   r.post('/auth/otp/verify', limiters.otp, validate(OtpVerifyBody), async (req, res) => {
-    const { channel, target: raw, code } = req.body as OtpVerifyBody;
+    const { channel, target: raw, code, as } = req.body as OtpVerifyBody;
     const target = normalizeTarget(channel, raw);
     if (!target) throw badRequest('invalid_target');
     const now = clock();
@@ -92,6 +99,8 @@ export function createAuthRouter(deps: AppDeps, limiters: Limiters): Router {
 
     const column = channel === 'sms' ? 'phone' : 'email';
     let user = await findUser(column, target);
+    // Staff sign-in never creates an account; only an existing staff member gets in.
+    if (as === 'staff' && user?.role !== 'staff') throw new AppError(403, 'not_staff');
     if (!user) {
       try {
         [user] = await db
