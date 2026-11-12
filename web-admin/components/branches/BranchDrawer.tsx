@@ -1,6 +1,5 @@
 'use client';
 
-import { AdminBranchBody, type Branch } from '@open-cinema/shared';
 import { useRouter } from 'next/navigation';
 import { useState, useTransition } from 'react';
 import { Button } from '@/components/ui/Button';
@@ -8,6 +7,7 @@ import { Drawer } from '@/components/ui/Drawer';
 import { Labeled, TextInput } from '@/components/ui/Inputs';
 import { Notice } from '@/components/ui/Notice';
 import { call, messageOf } from '@/lib/client-api';
+import { AdminBranchBody, type Branch } from '@/lib/shared';
 
 // Ulaanbaatar city centre: a starting point the admin nudges, not a real branch location.
 const CENTER = { lat: '47.9184', lng: '106.9177' };

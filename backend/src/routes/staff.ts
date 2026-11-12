@@ -1,4 +1,3 @@
-import { ScanBody } from '@open-cinema/shared';
 import { type Request, type RequestHandler, Router } from 'express';
 import { z } from 'zod';
 import type { AppDeps } from '../app';
@@ -7,6 +6,7 @@ import { validate } from '../lib/http';
 import type { Limiters } from '../lib/rate-limit';
 import { type AuthUser, requireAuth, requireRole } from '../middleware/auth';
 import { recentScans, scanTicket, todayShowtimes, undoScan } from '../services/scan';
+import { ScanBody } from '../shared';
 
 const UUID = z.string().uuid();
 const RecentQuery = z.object({ deviceId: UUID });

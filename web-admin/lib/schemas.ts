@@ -1,1 +1,1 @@
-export { type TodayShowtime, TodayShowtimeSchema } from '@open-cinema/shared';
+export { type TodayShowtime, TodayShowtimeSchema } from '@/lib/shared';

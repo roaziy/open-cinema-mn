@@ -1,4 +1,3 @@
-import { type AdminStaff, AdminStaffBody, normalizePhone } from '@open-cinema/shared';
 import { and, asc, eq } from 'drizzle-orm';
 import { Router } from 'express';
 import type { AppDeps } from '../../app';
@@ -6,6 +5,7 @@ import type { Db } from '../../db/client';
 import { branches, users } from '../../db/schema';
 import { badRequest, conflict, isUniqueViolation, notFound } from '../../lib/errors';
 import { uuidParam, validate } from '../../lib/http';
+import { type AdminStaff, AdminStaffBody, normalizePhone } from '../../shared';
 
 async function staffView(db: Db, id: string): Promise<AdminStaff> {
   const [row] = await db

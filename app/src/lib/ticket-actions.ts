@@ -1,7 +1,7 @@
-import type { TicketView } from '@open-cinema/shared';
 import * as Calendar from 'expo-calendar';
 import { Linking } from 'react-native';
 import type { TKey } from '@/i18n';
+import type { TicketView } from '@/shared';
 import { fetchTicket } from './orders';
 
 type T = (key: TKey, params?: Record<string, string | number>) => string;

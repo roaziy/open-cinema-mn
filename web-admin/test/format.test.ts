@@ -1,5 +1,5 @@
-import { formatMnt } from '@open-cinema/shared';
 import { describe, expect, it } from 'vitest';
+import { formatMnt } from '@/lib/shared';
 import {
   addDays,
   compact,

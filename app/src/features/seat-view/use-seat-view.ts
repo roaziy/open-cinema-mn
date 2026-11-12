@@ -1,4 +1,3 @@
-import type { SeatState } from '@open-cinema/shared';
 import { usePreventRemove } from 'expo-router/react-navigation';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import type { HostInstance } from 'react-native';
@@ -11,6 +10,7 @@ import {
 import { type SeatTransform, seatContentMetrics } from '@/components/seat-canvas';
 import { haptic } from '@/lib/haptics';
 import type { SeatLayout } from '@/lib/seat-layout';
+import type { SeatState } from '@/shared';
 import {
   type CamState,
   mapFitOf,

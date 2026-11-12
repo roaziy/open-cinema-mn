@@ -1,4 +1,3 @@
-import { type SeatMap, type SeatState, seatViewStats } from '@open-cinema/shared';
 import { useHeaderHeight } from 'expo-router/react-navigation';
 import {
   lazy,
@@ -35,6 +34,7 @@ import { useI18n } from '@/i18n';
 import { haptic } from '@/lib/haptics';
 import { mediaUrl } from '@/lib/http';
 import { seatLabel } from '@/lib/seats';
+import { type SeatMap, type SeatState, seatViewStats } from '@/shared';
 import { colors, radius, space } from '@/theme/tokens';
 import { type } from '@/theme/type';
 import {

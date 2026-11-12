@@ -1,8 +1,9 @@
 /* eslint-disable react/no-unknown-property -- react-three-fiber props */
-import { SCREEN_BOTTOM_M } from '@open-cinema/shared';
+
 import { useThree } from '@react-three/fiber/native';
 import { type RefObject, useCallback, useEffect, useLayoutEffect, useMemo, useRef } from 'react';
 import * as THREE from 'three';
+import { SCREEN_BOTTOM_M } from '@/shared';
 import { type ScreenSource, smoothstep } from './camera-math';
 import { palette } from './palette';
 import { createKitGeometry, disposeKitGeometry, type ModuleGeometry } from './room-kit-geometry';

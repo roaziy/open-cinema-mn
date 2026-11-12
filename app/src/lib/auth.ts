@@ -1,12 +1,12 @@
+import * as SecureStore from 'expo-secure-store';
+import { useSyncExternalStore } from 'react';
 import {
   type AuthTokens,
   AuthTokensSchema,
   type OtpChannel,
   type PublicUser,
   PublicUserSchema,
-} from '@open-cinema/shared';
-import * as SecureStore from 'expo-secure-store';
-import { useSyncExternalStore } from 'react';
+} from '@/shared';
 import { rawRequest } from './http';
 import { runRefresh } from './retry';
 

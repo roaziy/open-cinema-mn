@@ -1,8 +1,8 @@
 'use client';
 
-import type { SeatKind } from '@open-cinema/shared';
 import { useRef } from 'react';
 import { bounds } from '@/lib/hall-layout';
+import type { SeatKind } from '@/lib/shared';
 import { KIND_FILL } from './kinds';
 
 export type PlanSeat = {

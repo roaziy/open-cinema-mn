@@ -1,10 +1,10 @@
-import { AdminDashboardQuery, AdminReportQuery, ubDayRange } from '@open-cinema/shared';
 import { Router } from 'express';
 import type { z } from 'zod';
 import type { AppDeps } from '../../app';
 import { badRequest } from '../../lib/errors';
 import { validate } from '../../lib/http';
 import { buildDashboard, buildReport } from '../../services/reports';
+import { AdminDashboardQuery, AdminReportQuery, ubDayRange } from '../../shared';
 
 const MAX_REPORT_DAYS = 366;
 

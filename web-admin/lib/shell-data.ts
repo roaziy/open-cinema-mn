@@ -1,8 +1,8 @@
 import 'server-only';
-import { BranchSchema } from '@open-cinema/shared';
 import { unstable_rethrow } from 'next/navigation';
 import { cache } from 'react';
 import { z } from 'zod';
+import { BranchSchema } from '@/lib/shared';
 import { apiGet } from './api';
 import { type HueKey, hueFor } from './hues';
 import { type TodayShowtime, TodayShowtimeSchema } from './schemas';

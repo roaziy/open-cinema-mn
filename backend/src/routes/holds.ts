@@ -1,4 +1,3 @@
-import { HoldCreateBody } from '@open-cinema/shared';
 import { Router } from 'express';
 import { rateLimit } from 'express-rate-limit';
 import { z } from 'zod';
@@ -7,6 +6,7 @@ import { notFound } from '../lib/errors';
 import { validate } from '../lib/http';
 import { requireAuth } from '../middleware/auth';
 import { activeHolds, createHolds, releaseHold, SeatTakenError } from '../services/holds';
+import { HoldCreateBody } from '../shared';
 
 const UUID = z.string().uuid();
 

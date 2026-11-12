@@ -1,10 +1,10 @@
-import type { Role } from '@open-cinema/shared';
 import { eq } from 'drizzle-orm';
 import type { RequestHandler } from 'express';
 import type { Db } from '../db/client';
 import { users } from '../db/schema';
 import { forbidden, unauthorized } from '../lib/errors';
 import { verifyAccessToken } from '../lib/tokens';
+import type { Role } from '../shared';
 
 export type AuthUser = { id: string; role: Role; branchId: string | null };
 

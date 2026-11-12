@@ -1,7 +1,7 @@
-import { PassUrlResponseSchema } from '@open-cinema/shared';
 import { NextResponse } from 'next/server';
 import { bffHeaders, clientOf } from '@/lib/bff';
 import { apiUrl } from '@/lib/env';
+import { PassUrlResponseSchema } from '@/lib/shared';
 
 const NO_STORE = { 'Cache-Control': 'no-store', 'X-Robots-Tag': 'noindex' };
 

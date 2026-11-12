@@ -1,4 +1,3 @@
-import { AdminScanPageSchema, ScanResultSchema, TodayShowtimeSchema } from '@open-cinema/shared';
 import { eq } from 'drizzle-orm';
 import request from 'supertest';
 import { beforeEach, describe, expect, it } from 'vitest';
@@ -19,6 +18,7 @@ import { checkCode } from '../src/lib/sign';
 import { signAccessToken } from '../src/lib/tokens';
 import { MockPaymentProvider } from '../src/payments/mock';
 import { createHolds } from '../src/services/holds';
+import { AdminScanPageSchema, ScanResultSchema, TodayShowtimeSchema } from '../src/shared';
 import { fakeMessages, fixedClock, makeTestApp, one, resetDb } from './helpers';
 
 // 2026-11-08 10:00 UTC is 18:00 in Ulaanbaatar.

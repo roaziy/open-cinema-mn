@@ -1,9 +1,9 @@
-import { ADMIN_PASSWORD_MIN, normalizeEmail } from '@open-cinema/shared';
 import { eq } from 'drizzle-orm';
 import type { Db } from '../db/client';
 import { users } from '../db/schema';
 import { hashPassword } from '../lib/password';
 import { revokeAllSessions } from '../lib/tokens';
+import { ADMIN_PASSWORD_MIN, normalizeEmail } from '../shared';
 
 export type CreateAdminResult = 'created' | 'password_reset';
 

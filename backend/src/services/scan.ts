@@ -1,13 +1,3 @@
-import type {
-  AdminScan,
-  AdminScanPage,
-  AdminScanQuery,
-  ScanBody,
-  ScanResult,
-  ScanResultCode,
-  TodayShowtime,
-} from '@open-cinema/shared';
-import { ubBusinessDate, ubBusinessDayRange } from '@open-cinema/shared';
 import { and, asc, desc, eq, isNull, lt, or, sql } from 'drizzle-orm';
 import { z } from 'zod';
 import type { Db } from '../db/client';
@@ -25,6 +15,16 @@ import {
 import { AppError, conflict, forbidden } from '../lib/errors';
 import { verifyCheckCode, verifyQr } from '../lib/sign';
 import type { AuthUser } from '../middleware/auth';
+import type {
+  AdminScan,
+  AdminScanPage,
+  AdminScanQuery,
+  ScanBody,
+  ScanResult,
+  ScanResultCode,
+  TodayShowtime,
+} from '../shared';
+import { ubBusinessDate, ubBusinessDayRange } from '../shared';
 import { SLOT_COLUMNS } from './catalog-views';
 
 /** Same device re-scanning a ticket it just admitted, and the undo window, both 2 minutes. */

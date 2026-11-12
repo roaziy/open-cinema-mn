@@ -1,4 +1,3 @@
-import { AdminBranchBody, AdminBranchPatch } from '@open-cinema/shared';
 import { asc, eq } from 'drizzle-orm';
 import { Router } from 'express';
 import type { AppDeps } from '../../app';
@@ -6,6 +5,7 @@ import { branches } from '../../db/schema';
 import { conflict, isForeignKeyViolation, notFound } from '../../lib/errors';
 import { uuidParam, validate } from '../../lib/http';
 import { toBranch } from '../../services/catalog-views';
+import { AdminBranchBody, AdminBranchPatch } from '../../shared';
 
 export function createAdminBranchesRouter({ db }: AppDeps): Router {
   const r = Router();

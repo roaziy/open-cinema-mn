@@ -1,10 +1,10 @@
 import { createHash, randomBytes } from 'node:crypto';
-import type { AuthTokens, PublicUser, Role } from '@open-cinema/shared';
 import { eq } from 'drizzle-orm';
 import { jwtVerify, SignJWT } from 'jose';
 import type { Db } from '../db/client';
 import { sessions, type users } from '../db/schema';
 import { env } from '../env';
+import type { AuthTokens, PublicUser, Role } from '../shared';
 
 export const ACCESS_TTL_S = 15 * 60;
 /** A just-rotated refresh token replayed within this window is a lost response, not theft. */

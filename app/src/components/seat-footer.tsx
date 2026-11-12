@@ -1,4 +1,3 @@
-import { formatMnt, type SeatState, seatPrice } from '@open-cinema/shared';
 import { Clock, Eye } from 'phosphor-react-native';
 import { ScrollView, StyleSheet, Text, View } from 'react-native';
 import Animated, { FadeIn, FadeOut, LinearTransition } from 'react-native-reanimated';
@@ -6,6 +5,7 @@ import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useI18n } from '@/i18n';
 import { formatCountdown, seatLabel, useCountdown } from '@/lib/seats';
 import { useTween } from '@/lib/use-tween';
+import { formatMnt, type SeatState, seatPrice } from '@/shared';
 import { colors, hues, radius, space } from '@/theme/tokens';
 import { type } from '@/theme/type';
 import { Pressable } from './pressable';

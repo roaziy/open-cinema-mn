@@ -1,4 +1,4 @@
-import type { SeatKind } from '@open-cinema/shared';
+import type { SeatKind } from '@/lib/shared';
 
 export const KIND_LABEL: Record<SeatKind, string> = {
   standard: 'Энгийн',

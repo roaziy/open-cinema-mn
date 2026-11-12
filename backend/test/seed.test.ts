@@ -2,13 +2,13 @@ import { mkdtemp, readFile, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
 import { verify } from '@node-rs/argon2';
-import { formatUbTime, ubDate } from '@open-cinema/shared';
 import { eq } from 'drizzle-orm';
 import request from 'supertest';
 import { afterAll, beforeAll, beforeEach, describe, expect, it } from 'vitest';
 import { db } from '../src/db/client';
 import { runSeed } from '../src/db/run-seed';
 import { halls, movies, seats, showtimes, users } from '../src/db/schema';
+import { formatUbTime, ubDate } from '../src/shared';
 import { LocalStorage } from '../src/storage/local';
 import { fixedClock, makeTestApp, resetDb } from './helpers';
 

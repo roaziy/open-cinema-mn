@@ -1,5 +1,5 @@
 import type { ServerResponse } from 'node:http';
-import type { SeatDelta } from '@open-cinema/shared';
+import type { SeatDelta } from '../shared';
 import { isDraining } from './drain';
 
 export type SeatListener = (changes: SeatDelta[]) => void;

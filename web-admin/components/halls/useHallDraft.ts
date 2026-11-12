@@ -1,13 +1,8 @@
 'use client';
 
-import {
-  type AdminHallDetail,
-  generateSeats,
-  HallGenParams,
-  type SeatKind,
-} from '@open-cinema/shared';
 import { useMemo, useState } from 'react';
 import { DEFAULT_GEN, inferGen, parseAisles, sameGen } from '@/lib/hall-layout';
+import { type AdminHallDetail, generateSeats, HallGenParams, type SeatKind } from '@/lib/shared';
 import type { PlanSeat } from './SeatPlan';
 
 export type Raw = {

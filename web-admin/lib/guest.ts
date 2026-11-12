@@ -1,4 +1,4 @@
-import { type PublicTickets, PublicTicketsSchema } from '@open-cinema/shared';
+import { type PublicTickets, PublicTicketsSchema } from '@/lib/shared';
 import { bffHeaders, type Client } from './bff';
 import { apiUrl } from './env';
 

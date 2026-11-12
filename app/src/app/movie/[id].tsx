@@ -1,4 +1,3 @@
-import { formatMnt } from '@open-cinema/shared';
 import { router, useLocalSearchParams } from 'expo-router';
 import { CalendarBlank, CaretLeft, Clock, ShieldCheck, Tag } from 'phosphor-react-native';
 import { type ReactNode, useMemo } from 'react';
@@ -15,6 +14,7 @@ import { ErrorState } from '@/components/state-views';
 import { useI18n } from '@/i18n';
 import { useFromPrice, useMovie } from '@/lib/catalog';
 import { formatDuration, formatMonthDay, nextUbDays } from '@/lib/format';
+import { formatMnt } from '@/shared';
 import { colors, hairlineWidth, hues, radius, space } from '@/theme/tokens';
 import { type } from '@/theme/type';
 

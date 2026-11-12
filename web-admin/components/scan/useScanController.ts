@@ -1,11 +1,11 @@
 'use client';
 
-import type { ScanResult } from '@open-cinema/shared';
 import { useEffect, useMemo, useRef, useSyncExternalStore } from 'react';
 import { call, messageOf } from '@/lib/client-api';
 import { type ControllerState, ScanController } from '@/lib/scan/controller';
 import { idleFlow } from '@/lib/scan/flow';
 import { newId } from '@/lib/scan/ids';
+import type { ScanResult } from '@/lib/shared';
 import { signal } from './sounds';
 
 const SEND_TIMEOUT_MS = 6000;

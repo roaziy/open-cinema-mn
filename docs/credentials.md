@@ -2,8 +2,8 @@
 
 In development Open Cinema runs with no credentials at all (`MESSAGES_PROVIDER=dev`, `STORAGE_PROVIDER=local`,
 `PAYMENT_PROVIDER=mock`, Wallet disabled). This guide covers what to create when you go live.
-Every value goes into the server's `.env` (repository root on the VPS, `chmod 600 .env`), never into
-git. Variable names below are exactly those in `.env.example`.
+Every value goes into the server's `.env` (`backend/.env` on the VPS, `chmod 600 .env`), never into
+git. Variable names below are exactly those in `backend/.env.example` and `web-admin/.env.example`.
 
 After editing `.env`, restart: `pm2 reload open-cinema-api --update-env`.
 

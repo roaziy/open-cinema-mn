@@ -1,6 +1,6 @@
-import type { MovieSummary } from '@open-cinema/shared';
 import { router } from 'expo-router';
 import { FlatList, StyleSheet, Text, View } from 'react-native';
+import type { MovieSummary } from '@/shared';
 import { colors, space } from '@/theme/tokens';
 import { type } from '@/theme/type';
 import { Poster } from './poster';

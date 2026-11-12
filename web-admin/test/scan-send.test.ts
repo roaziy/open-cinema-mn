@@ -1,5 +1,5 @@
-import type { ScanBody, ScanResult } from '@open-cinema/shared';
 import { describe, expect, it } from 'vitest';
+import type { ScanBody, ScanResult } from '@/lib/shared';
 import { backoffMs, isRetryable, sendScan } from '../lib/scan/send';
 
 const TOKEN = 'oc1.t.s.mac';

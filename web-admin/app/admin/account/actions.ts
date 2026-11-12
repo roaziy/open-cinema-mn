@@ -1,11 +1,11 @@
 'use server';
 
-import { AdminPasswordBody, AuthTokensSchema } from '@open-cinema/shared';
 import { cookies } from 'next/headers';
 import { unstable_rethrow } from 'next/navigation';
 import { apiFetch } from '@/lib/api';
 import { readClaims } from '@/lib/auth/claims';
 import { setAuthCookies } from '@/lib/auth/cookies';
+import { AdminPasswordBody, AuthTokensSchema } from '@/lib/shared';
 
 export type PasswordState = { error?: string; done?: boolean };
 

@@ -1,9 +1,9 @@
 'use client';
 
-import type { ScanResult } from '@open-cinema/shared';
 import { Poster } from '@/components/ui/Poster';
 import { clockUb } from '@/lib/format';
 import { canUndo, cardFor, type Tone, undoSecondsLeft } from '@/lib/scan/card';
+import type { ScanResult } from '@/lib/shared';
 import { avoidOrange } from '@/lib/tone';
 import { useNow } from './useNow';
 

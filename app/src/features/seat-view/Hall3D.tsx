@@ -1,13 +1,13 @@
 /* eslint-disable react/no-unknown-property -- react-three-fiber props */
 import './three-shim';
-import type { SeatMap, SeatState } from '@open-cinema/shared';
-import { avoidOrange, SCREEN_BOTTOM_M } from '@open-cinema/shared';
 import { Canvas, useFrame, useThree } from '@react-three/fiber/native';
 import * as Device from 'expo-device';
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import { type LayoutChangeEvent, PixelRatio, Platform, View } from 'react-native';
 import type { SharedValue } from 'react-native-reanimated';
 import * as THREE from 'three';
+import type { SeatMap, SeatState } from '@/shared';
+import { avoidOrange, SCREEN_BOTTOM_M } from '@/shared';
 import {
   type CamState,
   hallDepth,

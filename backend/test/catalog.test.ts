@@ -1,4 +1,3 @@
-import { BranchShowtimesSchema, MovieSummarySchema, SeatMapSchema } from '@open-cinema/shared';
 import request from 'supertest';
 import { beforeEach, describe, expect, it } from 'vitest';
 import { db } from '../src/db/client';
@@ -13,6 +12,7 @@ import {
   tickets,
   users,
 } from '../src/db/schema';
+import { BranchShowtimesSchema, MovieSummarySchema, SeatMapSchema } from '../src/shared';
 import { fixedClock, makeTestApp, one, resetDb } from './helpers';
 
 // 12:00 in Ulaanbaatar on 2026-11-08

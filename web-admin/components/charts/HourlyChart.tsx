@@ -1,5 +1,5 @@
-import { formatMnt } from '@open-cinema/shared';
 import { compact, count } from '@/lib/format';
+import { formatMnt } from '@/lib/shared';
 
 type Hour = { hour: number; revenue: number; tickets: number };
 

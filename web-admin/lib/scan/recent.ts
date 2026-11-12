@@ -1,4 +1,4 @@
-import type { ScanResult } from '@open-cinema/shared';
+import type { ScanResult } from '@/lib/shared';
 
 export type RecentScan = { result: ScanResult; undone: boolean };
 

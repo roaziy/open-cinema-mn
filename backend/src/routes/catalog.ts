@@ -1,5 +1,3 @@
-import type { MovieDetail, SeatDelta, SeatMap } from '@open-cinema/shared';
-import { ubDate, ubDayRange } from '@open-cinema/shared';
 import { and, asc, desc, eq, gt, inArray, sql } from 'drizzle-orm';
 import { Router } from 'express';
 import { z } from 'zod';
@@ -9,6 +7,8 @@ import { notFound } from '../lib/errors';
 import { validate } from '../lib/http';
 import { heldCount, SLOT_COLUMNS, toBranch, toSlot, toSummary } from '../services/catalog-views';
 import { nonFreeSeats } from '../services/seat-state';
+import type { MovieDetail, SeatDelta, SeatMap } from '../shared';
+import { ubDate, ubDayRange } from '../shared';
 
 const HEARTBEAT_MS = 20_000;
 const UUID = z.string().uuid();

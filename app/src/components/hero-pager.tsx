@@ -1,4 +1,3 @@
-import type { MovieSummary } from '@open-cinema/shared';
 import { router } from 'expo-router';
 import { useCallback, useState } from 'react';
 import {
@@ -14,6 +13,7 @@ import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useI18n } from '@/i18n';
 import { formatDuration } from '@/lib/format';
 import { haptic } from '@/lib/haptics';
+import type { MovieSummary } from '@/shared';
 import { colors, radius, space } from '@/theme/tokens';
 import { type } from '@/theme/type';
 import { Poster } from './poster';

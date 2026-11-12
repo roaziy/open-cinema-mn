@@ -1,9 +1,9 @@
-import type { TicketView } from '@open-cinema/shared';
-import { ubDate } from '@open-cinema/shared';
 import QRCode from 'qrcode';
 import type { ReactNode } from 'react';
 import { Poster } from '@/components/ui/Poster';
 import { clockUb, dayMonth, weekdayMn } from '@/lib/format';
+import type { TicketView } from '@/lib/shared';
+import { ubDate } from '@/lib/shared';
 import { avoidOrange, readableOn } from '@/lib/tone';
 
 const NOTCH = 12;

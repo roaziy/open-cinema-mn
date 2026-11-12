@@ -1,6 +1,6 @@
-import { TicketViewSchema } from '@open-cinema/shared';
 import { Alert } from 'react-native';
 import type { TKey } from '@/i18n';
+import { TicketViewSchema } from '@/shared';
 import { api } from './api';
 import { getUser } from './auth';
 

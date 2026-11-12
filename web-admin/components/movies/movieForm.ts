@@ -1,5 +1,5 @@
-import { type AdminMovie, AdminMovieBody } from '@open-cinema/shared';
 import { todayUb } from '@/lib/format';
+import { type AdminMovie, AdminMovieBody } from '@/lib/shared';
 
 export type Form = {
   title: string;

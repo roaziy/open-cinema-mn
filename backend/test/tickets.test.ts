@@ -2,7 +2,6 @@ import { execFileSync } from 'node:child_process';
 import { mkdtempSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import { PublicTicketsSchema } from '@open-cinema/shared';
 import { eq } from 'drizzle-orm';
 import request from 'supertest';
 import { afterAll, beforeEach, describe, expect, it } from 'vitest';
@@ -23,6 +22,7 @@ import { checkCode, signLink, signPassUrl, verifyLink } from '../src/lib/sign';
 import { signAccessToken } from '../src/lib/tokens';
 import { MockPaymentProvider } from '../src/payments/mock';
 import { createHolds } from '../src/services/holds';
+import { PublicTicketsSchema } from '../src/shared';
 import { fakeMessages, fixedClock, makeTestApp, one, resetDb } from './helpers';
 
 const NOW = '2026-11-08T04:00:00Z';

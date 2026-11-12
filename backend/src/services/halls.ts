@@ -1,16 +1,10 @@
-import type {
-  AdminHall,
-  AdminHallDetail,
-  AdminSeat,
-  HallGenParams,
-  SeatKind,
-} from '@open-cinema/shared';
-import { generateSeats } from '@open-cinema/shared';
 import { and, asc, eq, gt, inArray, sql } from 'drizzle-orm';
 import type { Db } from '../db/client';
 import { bookings, halls, seatHolds, seats, showtimes, tickets } from '../db/schema';
 import { conflict, isForeignKeyViolation, notFound } from '../lib/errors';
 import type { SeatHub } from '../lib/seat-hub';
+import type { AdminHall, AdminHallDetail, AdminSeat, HallGenParams, SeatKind } from '../shared';
+import { generateSeats } from '../shared';
 import type { Tx } from './holds';
 import { nonFreeSeats } from './seat-state';
 

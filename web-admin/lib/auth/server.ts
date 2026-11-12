@@ -1,6 +1,6 @@
 import 'server-only';
-import { type AuthTokens, AuthTokensSchema } from '@open-cinema/shared';
 import { headers } from 'next/headers';
+import { type AuthTokens, AuthTokensSchema } from '@/lib/shared';
 import { bffHeaders, clientOf } from '../bff';
 import { apiUrl } from '../env';
 

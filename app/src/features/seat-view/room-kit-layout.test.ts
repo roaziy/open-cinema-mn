@@ -1,5 +1,5 @@
-import { generateSeats, SCREEN_BOTTOM_M } from '@open-cinema/shared';
 import { describe, expect, it } from 'vitest';
+import { generateSeats, SCREEN_BOTTOM_M } from '@/shared';
 import { hallDepth, hallExtents, hallHalfWidth, rowsOf, stepSpans } from './camera-math';
 import {
   floorAt,

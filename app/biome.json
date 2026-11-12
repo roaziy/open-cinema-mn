@@ -3,10 +3,11 @@
   "vcs": {
     "enabled": true,
     "clientKind": "git",
-    "useIgnoreFile": true
+    "useIgnoreFile": true,
+    "root": ".."
   },
   "files": {
-    "includes": ["**", "!**/package-lock.json", "!docs", "!.superpowers"]
+    "includes": ["**", "!**/package-lock.json"]
   },
   "formatter": {
     "indentStyle": "space",

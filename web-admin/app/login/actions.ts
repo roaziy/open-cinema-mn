@@ -1,12 +1,12 @@
 'use server';
 
-import { AdminLoginBody } from '@open-cinema/shared';
 import { cookies } from 'next/headers';
 import { RedirectType, redirect } from 'next/navigation';
 import { readClaims } from '@/lib/auth/claims';
 import { setAuthCookies } from '@/lib/auth/cookies';
 import { safeNext } from '@/lib/auth/redirects';
 import { postForTokens, postJson } from '@/lib/auth/server';
+import { AdminLoginBody } from '@/lib/shared';
 
 export type LoginState = { error?: string; email?: string };
 

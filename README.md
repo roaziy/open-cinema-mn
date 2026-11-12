@@ -66,14 +66,19 @@ Next.js (admin+staff) ┘     (pm2)   │
                                     └──> passkit-generator  Apple Wallet .pkpass
 ```
 
-| Folder       | Contents                                              |
-| ------------ | ----------------------------------------------------- |
-| `app/`       | Customer app: Expo SDK 58, expo-router                |
-| `web-admin/` | Admin and staff web app: Next.js                      |
-| `backend/`   | API: Express, Drizzle, tests against a real Postgres  |
-| `shared/`    | zod schemas, types and seat/3D math used by all three |
-| `deploy/`    | Production runbook                                    |
-| `docs/`      | Design, credentials guide, screenshots                |
+| Folder       | Contents                                                          |
+| ------------ | ----------------------------------------------------------------- |
+| `app/`       | Customer app: Expo SDK 58, expo-router                            |
+| `web-admin/` | Admin and staff web app: Next.js                                  |
+| `backend/`   | API: Express, Drizzle, tests against a real Postgres              |
+| `docs/`      | Design, deployment runbook, credentials guide, screenshots        |
+| `.github/`   | CI workflow, gitleaks config                                      |
+
+Each of `app/`, `backend/` and `web-admin/` is a standalone package: its own `package.json`,
+`package-lock.json`, `node_modules`, `tsconfig.json`, `biome.json` and `.env`. The zod schemas, types
+and seat/3D math that all three use live in `backend/src/shared/` and are copied unchanged to
+`app/src/shared/` and `web-admin/lib/shared/`. Edit the backend copy, then run `npm run sync:shared`
+at the repository root; CI fails (`npm run check:shared`) when the copies differ.
 
 ## Quick start
 
@@ -82,16 +87,17 @@ You need Node 24 and a local Postgres 17.
 ```bash
 git clone https://github.com/<owner>/open-cinema-mn.git
 cd open-cinema-mn
-npm ci
+npm run install:all             # npm ci in backend/, web-admin/ and app/
 
 createdb open_cinema_dev
 createdb open_cinema_test
 
+cd backend
 cp .env.example .env            # defaults work locally: codes are logged, files stay on disk
 npm run db:migrate
-npm run db:seed                 # fictional cinemas, films and an admin account (see .env)
+npm run db:seed                 # fictional cinemas, films and an admin account (see backend/.env)
 
-npm -w @open-cinema/backend run dev        # API on http://localhost:4000
+npm run dev                     # API on http://localhost:4000 (from the repo root: npm run dev:backend)
 curl http://localhost:4000/v1/health
 ```
 
@@ -101,6 +107,7 @@ Login codes are printed in the API log while `MESSAGES_PROVIDER=dev`.
 
 ```bash
 cd app
+cp .env.example .env
 npx expo run:ios
 ```
 
@@ -109,18 +116,21 @@ A physical phone on the same Wi-Fi works without editing `app/.env`: in developm
 **Admin web:**
 
 ```bash
-npm -w web-admin run dev          # http://localhost:3000
+cd web-admin
+cp .env.example .env
+npm run dev                       # http://localhost:3000 (from the repo root: npm run dev:admin)
 ```
 
-Sign in with `SEED_ADMIN_EMAIL` / `SEED_ADMIN_PASSWORD` from your `.env` (created by `npm run db:seed`, development only). On a real deployment create the first admin with `npm -w @open-cinema/backend run admin:create:prod`; see [`deploy/README.md`](deploy/README.md).
+Sign in with `SEED_ADMIN_EMAIL` / `SEED_ADMIN_PASSWORD` from `backend/.env` (development only). On a real deployment create the first admin with `npm run admin:create:prod` in `backend/`; see [`docs/deploy.md`](docs/deploy.md).
 
-**Checks**
+**Checks**, in each of `backend/`, `web-admin/` and `app/`:
 
 ```bash
 npm run typecheck && npm run lint && npm test
 ```
 
-Tests need `TEST_DATABASE_URL` (see `.env.example`) and run against real Postgres.
+Backend tests need `TEST_DATABASE_URL` (see `backend/.env.example`) and run against real Postgres.
+After editing `backend/src/shared/`, run `npm run sync:shared` at the repository root.
 
 ## Screenshots
 
@@ -135,7 +145,7 @@ The images live in [`docs/screenshots/`](docs/screenshots/).
 Open Cinema needs a Node 24 host for the API (managed with pm2, no Docker), a Postgres database
 (Supabase works well, and nothing runs on the API host), and Vercel or any Node host for the admin web.
 
-- [`deploy/README.md`](deploy/README.md): step-by-step runbook (build, migrate, pm2, reverse proxy for
+- [`docs/deploy.md`](docs/deploy.md): step-by-step runbook (build, migrate, pm2, reverse proxy for
   Server-Sent Events, updates and rollback, admin web on Vercel)
 - [`docs/credentials.md`](docs/credentials.md): every credential, where it goes, how to get it, how to
   verify and rotate it

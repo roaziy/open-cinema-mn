@@ -1,4 +1,3 @@
-import type { PublicTickets } from '@open-cinema/shared';
 import { eq, sql } from 'drizzle-orm';
 import { Router } from 'express';
 import { z } from 'zod';
@@ -12,6 +11,7 @@ import { signPassUrl, verifyLink, verifyPassSig } from '../lib/sign';
 import { requireAuth } from '../middleware/auth';
 import { bookingView } from '../services/bookings';
 import { myTickets, ticketViews } from '../services/tickets';
+import type { PublicTickets } from '../shared';
 import { buildPass, WalletUnavailableError, walletConfig } from '../wallet/pass';
 
 const UUID = z.string().uuid();

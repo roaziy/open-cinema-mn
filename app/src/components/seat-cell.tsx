@@ -1,4 +1,3 @@
-import type { SeatKind } from '@open-cinema/shared';
 import { Wheelchair } from 'phosphor-react-native';
 import { memo } from 'react';
 import { Pressable, StyleSheet, View } from 'react-native';
@@ -9,6 +8,7 @@ import Animated, {
   withSpring,
   withTiming,
 } from 'react-native-reanimated';
+import type { SeatKind } from '@/shared';
 import { colors, hues } from '@/theme/tokens';
 
 export type SeatStatus = 'free' | 'mine' | 'taken';

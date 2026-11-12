@@ -1,6 +1,6 @@
-import type { seatViewStats } from '@open-cinema/shared';
 import { StyleSheet, Text, View } from 'react-native';
 import { type TKey, useI18n } from '@/i18n';
+import type { seatViewStats } from '@/shared';
 import { colors, hues, radius, space } from '@/theme/tokens';
 import { type } from '@/theme/type';
 

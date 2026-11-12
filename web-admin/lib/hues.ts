@@ -1,4 +1,4 @@
-export { HUES, type HueKey, hueFor } from '@open-cinema/shared';
+export { HUES, type HueKey, hueFor } from '@/lib/shared';
 
 export function initials(name: string | null | undefined, fallback = '?'): string {
   const parts = (name ?? '').trim().split(/\s+/).filter(Boolean);

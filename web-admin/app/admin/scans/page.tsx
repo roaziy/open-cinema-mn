@@ -1,4 +1,3 @@
-import { ScanResultCodeSchema } from '@open-cinema/shared';
 import type { Metadata } from 'next';
 import Link from 'next/link';
 import { redirect } from 'next/navigation';
@@ -14,6 +13,7 @@ import { getBranches, getScans, safely } from '@/lib/admin-data';
 import { businessToday, dayMonth, isDate, weekdayMn } from '@/lib/format';
 import { hueFor } from '@/lib/hues';
 import { isUuid } from '@/lib/ids';
+import { ScanResultCodeSchema } from '@/lib/shared';
 
 export const metadata: Metadata = { title: 'Шалгалт' };
 

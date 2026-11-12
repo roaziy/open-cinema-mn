@@ -40,15 +40,51 @@ jobs:
         with:
           node-version: 24
           cache: npm
-      - run: npm ci
-      - name: Typecheck (all workspaces)
+          cache-dependency-path: |
+            backend/package-lock.json
+            web-admin/package-lock.json
+            app/package-lock.json
+      - name: Shared copies are identical
+        run: npm run check:shared
+      - name: Install (backend)
+        working-directory: backend
+        run: npm ci
+      - name: Install (web-admin)
+        working-directory: web-admin
+        run: npm ci
+      - name: Install (app)
+        working-directory: app
+        run: npm ci
+      - name: Typecheck (backend)
+        working-directory: backend
         run: npm run typecheck
-      - name: Lint (biome)
+      - name: Lint (backend)
+        working-directory: backend
         run: npm run lint
-      - name: Tests (shared, backend, web-admin, app)
+      - name: Tests (backend)
+        working-directory: backend
+        run: npm test
+      - name: Typecheck (web-admin)
+        working-directory: web-admin
+        run: npm run typecheck
+      - name: Lint (web-admin)
+        working-directory: web-admin
+        run: npm run lint
+      - name: Tests (web-admin)
+        working-directory: web-admin
+        run: npm test
+      - name: Typecheck (app)
+        working-directory: app
+        run: npm run typecheck
+      - name: Lint (app, biome + expo)
+        working-directory: app
+        run: npm run lint
+      - name: Tests (app)
+        working-directory: app
         run: npm test
       - name: Backend production build
-        run: npm -w @open-cinema/backend run build
+        working-directory: backend
+        run: npm run build
       - name: Backend bundle starts (production mode)
         env:
           NODE_ENV: production
@@ -79,11 +115,9 @@ jobs:
           done
           kill "$pid" || true
           exit 1
-      - name: App lint (expo)
-        working-directory: app
-        run: npx expo lint
       - name: Web admin build
-        run: npm run build --workspace web-admin --if-present
+        working-directory: web-admin
+        run: npm run build
         env:
           API_INTERNAL_URL: http://localhost:4000
 
@@ -101,3 +135,4 @@ jobs:
       - uses: gitleaks/gitleaks-action@ff98106e4c7b2bc287b24eaf42907196329070c7 # v2.3.9
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GITLEAKS_CONFIG: .github/gitleaks.toml

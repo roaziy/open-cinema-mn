@@ -1,4 +1,3 @@
-import { normalizeEmail, normalizePhone, type OtpChannel, type SeatMap } from '@open-cinema/shared';
 import { useQueryClient } from '@tanstack/react-query';
 import { router, useLocalSearchParams } from 'expo-router';
 import { useState } from 'react';
@@ -22,6 +21,7 @@ import { loginKeepingHolds } from '@/lib/login-flow';
 import { otpErrorKey } from '@/lib/otp-errors';
 import { seatKeys, seatLabel } from '@/lib/seats';
 import { showToast } from '@/lib/toast';
+import { normalizeEmail, normalizePhone, type OtpChannel, type SeatMap } from '@/shared';
 import { colors, radius, space } from '@/theme/tokens';
 import { fonts, type } from '@/theme/type';
 

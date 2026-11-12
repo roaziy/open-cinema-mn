@@ -1,9 +1,9 @@
 'use client';
 
-import { type AdminMovie, type AdminShowtime, formatUbTime, ubDate } from '@open-cinema/shared';
 import { useState } from 'react';
 import { Labeled, Select, TextInput } from '@/components/ui/Inputs';
 import { ubInstant } from '@/lib/format';
+import { type AdminMovie, type AdminShowtime, formatUbTime, ubDate } from '@/lib/shared';
 import type { DrawerTarget, HallOption } from './ShowtimeDrawer';
 
 export const FORMATS = ['2D', '3D', 'IMAX'] as const;

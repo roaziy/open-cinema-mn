@@ -1,6 +1,6 @@
 import 'server-only';
-import { PublicUserSchema } from '@open-cinema/shared';
 import { cookies, headers } from 'next/headers';
+import { PublicUserSchema } from '@/lib/shared';
 import { bffHeaders, clientOf } from '../bff';
 import { apiUrl } from '../env';
 import { isFresh } from './claims';

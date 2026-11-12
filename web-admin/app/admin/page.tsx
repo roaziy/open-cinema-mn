@@ -1,4 +1,3 @@
-import { formatMnt, formatUbTime } from '@open-cinema/shared';
 import {
   ArrowCounterClockwise,
   ChartLineUp,
@@ -20,6 +19,7 @@ import { getBranches, getDashboard, getShowtimes, safely } from '@/lib/admin-dat
 import { count, dayPrefix, pct, todayUb } from '@/lib/format';
 import { hueFor } from '@/lib/hues';
 import { isUuid } from '@/lib/ids';
+import { formatMnt, formatUbTime } from '@/lib/shared';
 
 export const metadata: Metadata = { title: 'Хяналтын самбар' };
 

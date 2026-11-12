@@ -1,6 +1,6 @@
-import { formatMnt } from '@open-cinema/shared';
 import { count, pct } from '@/lib/format';
 import { HUES, type HueKey } from '@/lib/hues';
+import { formatMnt } from '@/lib/shared';
 
 export type RankedRow = {
   id: string;

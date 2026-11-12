@@ -1,4 +1,3 @@
-import { AdminShowtimeBody, AdminShowtimeListQuery, AdminShowtimePatch } from '@open-cinema/shared';
 import { Router } from 'express';
 import type { z } from 'zod';
 import type { AppDeps } from '../../app';
@@ -11,6 +10,7 @@ import {
   previewCancel,
   updateShowtime,
 } from '../../services/showtimes';
+import { AdminShowtimeBody, AdminShowtimeListQuery, AdminShowtimePatch } from '../../shared';
 
 export function createAdminShowtimesRouter(deps: AppDeps): Router {
   const { db } = deps;

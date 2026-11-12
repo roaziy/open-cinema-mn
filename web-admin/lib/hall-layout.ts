@@ -1,4 +1,4 @@
-import type { HallGenParams } from '@open-cinema/shared';
+import type { HallGenParams } from '@/lib/shared';
 
 type SeatLike = { rowLabel: string; number: number; x_m: number; y_m: number; z_m: number };
 

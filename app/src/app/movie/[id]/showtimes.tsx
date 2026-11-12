@@ -1,4 +1,3 @@
-import { formatMnt, formatUbTime, type ShowtimeSlot } from '@open-cinema/shared';
 import { router, useLocalSearchParams } from 'expo-router';
 import { useHeaderHeight } from 'expo-router/react-navigation';
 import { Buildings } from 'phosphor-react-native';
@@ -15,6 +14,7 @@ import { type TKey, useI18n } from '@/i18n';
 import { useBranchId } from '@/lib/branch';
 import { useMovie, useShowtimes } from '@/lib/catalog';
 import { formatDuration, nextUbDays, weekdayOf } from '@/lib/format';
+import { formatMnt, formatUbTime, type ShowtimeSlot } from '@/shared';
 import { colors, hairlineWidth, hueFor, radius, space } from '@/theme/tokens';
 import { type } from '@/theme/type';
 

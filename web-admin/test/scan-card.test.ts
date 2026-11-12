@@ -1,5 +1,5 @@
-import { type ScanResult, ScanResultCodeSchema } from '@open-cinema/shared';
 import { describe, expect, it } from 'vitest';
+import { type ScanResult, ScanResultCodeSchema } from '@/lib/shared';
 import { canUndo, cardFor, undoSecondsLeft, VIBRATION } from '../lib/scan/card';
 
 const base: ScanResult = {
