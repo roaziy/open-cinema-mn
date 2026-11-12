@@ -865,17 +865,32 @@ describe('staff sign-in by code', () => {
     }
   });
 
-  it('never creates an account through the staff path', async () => {
-    const { app, lastCode } = setup();
+  it('keeps staff and customer codes apart', async () => {
+    const { app, lastCode, messages } = setup();
+    await db.insert(users).values({ role: 'staff', phone: '+97688000001' });
     await request(app)
       .post('/v1/auth/otp/request')
-      .send({ channel: 'sms', target: '95049990' })
+      .send({ channel: 'sms', target: '88000001', as: 'staff' })
       .expect(204);
+    await vi.waitFor(() => expect(messages.sent).toHaveLength(1));
+    // the customer path does not see the staff code: no "too soon", and the staff code is no use there
+    await request(app)
+      .post('/v1/auth/otp/request')
+      .send({ channel: 'sms', target: '88000001' })
+      .expect(204);
+    const customerCode = lastCode();
+    const staffTry = await request(app)
+      .post('/v1/auth/otp/verify')
+      .send({ channel: 'sms', target: '88000001', code: customerCode, as: 'staff' });
+    expect(staffTry.body.error).not.toBe(undefined);
+  });
+
+  it('never creates an account through the staff path', async () => {
+    const { app } = setup();
     const res = await request(app)
       .post('/v1/auth/otp/verify')
-      .send({ channel: 'sms', target: '95049990', code: lastCode(), as: 'staff' });
-    expect(res.status).toBe(403);
-    expect(res.body.error).toBe('not_staff');
+      .send({ channel: 'sms', target: '95049990', code: '123456', as: 'staff' });
+    expect(res.status).toBe(400);
     const found = await db.select().from(users).where(eq(users.phone, '+97695049990'));
     expect(found).toHaveLength(0);
   });
