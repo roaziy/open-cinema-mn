@@ -34,7 +34,7 @@ export default ({ config }: ConfigContext): ExpoConfig => ({
   android: {
     package: process.env.APP_BUNDLE_ID ?? 'cloud.roaziy.opencinema',
     adaptiveIcon: {
-      backgroundColor: CANVAS,
+      backgroundColor: '#2E6BF0',
       foregroundImage: './assets/images/android-icon-foreground.png',
       backgroundImage: './assets/images/android-icon-background.png',
       monochromeImage: './assets/images/android-icon-monochrome.png',
