@@ -90,8 +90,9 @@ git clone https://github.com/roaziy/open-cinema-mn.git
 cd open-cinema-mn
 npm run install:all             # npm ci in backend/, web-admin/ and mobile-app/
 
-createdb open_cinema_dev
-createdb open_cinema_test
+# empty local databases (Postgres CLI); skip both if DATABASE_URL points elsewhere
+createdb open_cinema_dev        # used by the API in development
+createdb open_cinema_test       # used by backend tests (they wipe tables)
 
 cd backend
 cp .env.example .env            # defaults work locally: codes are logged, files stay on disk
