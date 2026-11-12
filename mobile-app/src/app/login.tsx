@@ -17,6 +17,7 @@ import { Pressable } from '@/components/pressable';
 import { useI18n } from '@/i18n';
 import { requestOtp } from '@/lib/auth';
 import { haptic } from '@/lib/haptics';
+import { localPhone } from '@/lib/local-phone';
 import { loginKeepingHolds } from '@/lib/login-flow';
 import { otpErrorKey } from '@/lib/otp-errors';
 import { seatKeys, seatLabel } from '@/lib/seats';
@@ -160,7 +161,7 @@ export default function LoginScreen() {
                   style={styles.input}
                   value={value}
                   onChangeText={(v) => {
-                    setValue(v);
+                    setValue(mode === 'phone' ? localPhone(v) : v);
                     setError(null);
                   }}
                   autoFocus
