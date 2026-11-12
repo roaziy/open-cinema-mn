@@ -9,7 +9,7 @@ import { SupabaseStorage } from '../src/storage/supabase';
 import { makeTestApp } from './helpers';
 
 const base = {
-  API_PUBLIC_URL: 'http://localhost:4000',
+  API_PUBLIC_URL: 'http://localhost:8080',
   SUPABASE_URL: undefined,
   SUPABASE_SERVICE_ROLE_KEY: undefined,
   SUPABASE_BUCKET: undefined,
@@ -23,14 +23,14 @@ describe('LocalStorage', () => {
   afterAll(() => rm(dir, { recursive: true, force: true }));
 
   it('writes the file and returns a /media URL', async () => {
-    const s = new LocalStorage('http://localhost:4000/', dir);
+    const s = new LocalStorage('http://localhost:8080/', dir);
     const url = await s.put('posters/a.png', Buffer.from('hello'), 'image/png');
-    expect(url).toBe('http://localhost:4000/media/posters/a.png');
+    expect(url).toBe('http://localhost:8080/media/posters/a.png');
     expect((await readFile(path.join(dir, 'posters/a.png'))).toString()).toBe('hello');
   });
 
   it('rejects keys that escape the directory', async () => {
-    const s = new LocalStorage('http://localhost:4000', dir);
+    const s = new LocalStorage('http://localhost:8080', dir);
     await expect(s.put('../evil.txt', Buffer.from('x'), 'text/plain')).rejects.toThrow(/invalid/);
   });
 });
@@ -61,7 +61,7 @@ describe('createStorage', () => {
 describe('/media', () => {
   it('serves uploads cross-origin and 404s as JSON when missing', async () => {
     const key = `test-${process.pid}.txt`;
-    const url = await new LocalStorage('http://localhost:4000').put(
+    const url = await new LocalStorage('http://localhost:8080').put(
       key,
       Buffer.from('ok'),
       'text/plain',

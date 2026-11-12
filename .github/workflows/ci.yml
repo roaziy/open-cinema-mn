@@ -119,7 +119,7 @@ jobs:
         working-directory: web-admin
         run: npm run build
         env:
-          API_INTERNAL_URL: http://localhost:4000
+          API_INTERNAL_URL: http://localhost:8080
 
   gitleaks:
     runs-on: ubuntu-latest

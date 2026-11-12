@@ -32,7 +32,7 @@ export function resolveApiOrigin(
 
 /**
  * Media (poster, backdrop) URLs come from the backend as absolute links to its public host,
- * `http://localhost:4000/...` in development: a phone cannot load those. Same rule as the API
+ * `http://localhost:8080/...` in development: a phone cannot load those. Same rule as the API
  * origin, but the path, query and port stay as they are.
  */
 export function devMediaUrl(url: string, opts: { dev: boolean; hostUri?: string | null }): string {

@@ -29,7 +29,7 @@ const seed = (over: Partial<Parameters<typeof runSeed>[0]> = {}) =>
 
 beforeAll(async () => {
   dir = await mkdtemp(path.join(tmpdir(), 'oc-media-'));
-  storage = new LocalStorage('http://localhost:4000', dir);
+  storage = new LocalStorage('http://localhost:8080', dir);
 });
 afterAll(() => rm(dir, { recursive: true, force: true }));
 beforeEach(resetDb);
@@ -43,11 +43,11 @@ describe('seed', () => {
     expect(api.status).toBe(200);
     expect(api.body.length).toBeGreaterThanOrEqual(4);
     for (const m of api.body)
-      expect(m.posterUrl).toMatch(/^http:\/\/localhost:4000\/media\/posters\/.+\.png$/);
+      expect(m.posterUrl).toMatch(/^http:\/\/localhost:8080\/media\/posters\/.+\.png$/);
 
     const rows = await db.select().from(movies);
     for (const m of rows) {
-      expect(m.posterUrl).toMatch(/^http:\/\/localhost:4000\/media\/posters\/.+\.png$/);
+      expect(m.posterUrl).toMatch(/^http:\/\/localhost:8080\/media\/posters\/.+\.png$/);
       expect(m.backdropUrl).toBe(m.posterUrl);
       expect(m.synopsis.split(/[.!?]\s/).length).toBe(2);
     }
@@ -138,7 +138,7 @@ describe('seed', () => {
   it('writes posters through the storage provider', async () => {
     await seed();
     const [m] = await db.select().from(movies).where(eq(movies.title, 'Талын салхи'));
-    expect(m?.posterUrl).toBe('http://localhost:4000/media/posters/talyn-salkhi.png');
+    expect(m?.posterUrl).toBe('http://localhost:8080/media/posters/talyn-salkhi.png');
     const bytes = await readFile(path.join(dir, 'posters/talyn-salkhi.png'));
     expect(bytes.subarray(1, 4).toString()).toBe('PNG');
   });

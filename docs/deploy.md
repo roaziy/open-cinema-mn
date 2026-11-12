@@ -59,7 +59,7 @@ Set at least these for production (every variable is described in `backend/.env.
 | ---------------------------------------- | ------------------------------------------------------------------------------- |
 | `NODE_ENV`                               | `production` (the pm2 file also sets it)                                        |
 | `HOST`                                   | leave unset (binds `127.0.0.1` in production); never `0.0.0.0` behind a proxy   |
-| `PORT`                                   | `4000` (any free port; keep the proxy in step)                                  |
+| `PORT`                                   | `8080` (any free port; keep the proxy in step)                                  |
 | `DATABASE_URL`                           | your PostgreSQL connection string                                               |
 | `DATABASE_SSL`                           | `verify` with `DATABASE_CA_FILE` (recommended), or `require`; see 1.2.1         |
 | `JWT_SECRET`, `QR_SECRET`, `LINK_SECRET` | three different random strings of 32+ characters                                |
@@ -114,7 +114,7 @@ npm run admin:create:prod -- --email you@example.com --name "Your Name"
 
 pm2 start ecosystem.config.cjs
 pm2 save
-curl -s http://127.0.0.1:4000/v1/health      # {"ok":true,"db":true}
+curl -s http://127.0.0.1:8080/v1/health      # {"ok":true,"db":true}
 ```
 
 `admin:create:prod` never touches other data. For a scripted setup pass the password in
@@ -155,14 +155,14 @@ Useful commands: `pm2 status`, `pm2 logs open-cinema-api`, `pm2 monit`.
 
 ### 1.5 Reverse proxy
 
-Both examples send `api.example.com` to `127.0.0.1:4000` and are safe for Server-Sent Events: no
+Both examples send `api.example.com` to `127.0.0.1:8080` and are safe for Server-Sent Events: no
 response buffering and a long read timeout. Otherwise the live seat feed stalls or arrives in bursts.
 
 Caddy:
 
 ```caddyfile
 api.example.com {
-    reverse_proxy 127.0.0.1:4000 {
+    reverse_proxy 127.0.0.1:8080 {
         # flush each SSE event immediately
         flush_interval -1
         transport http {
@@ -183,7 +183,7 @@ server {
     # ssl_certificate / ssl_certificate_key: managed by certbot or equivalent
 
     location / {
-        proxy_pass http://127.0.0.1:4000;
+        proxy_pass http://127.0.0.1:8080;
         proxy_http_version 1.1;
         proxy_set_header Host $host;
         proxy_set_header X-Real-IP $remote_addr;
@@ -229,7 +229,7 @@ fi
 npm run build
 npm run db:migrate:prod
 pm2 startOrReload ecosystem.config.cjs
-curl -s http://127.0.0.1:4000/v1/health
+curl -s http://127.0.0.1:8080/v1/health
 ```
 
 **Deploy order.** Release the API first, then the admin web, then rebuild the app. The clients
