@@ -312,7 +312,7 @@ its directory is needed. Environment variables (see `web-admin/.env.example`):
 | `BFF_SECRET`        | the same value as `BFF_SECRET` in `backend/.env`                                                                                   |
 | `APP_NAME`          | optional product name (default `Open Cinema`)                                                                                      |
 | `ADMIN_FONT_DIR`    | optional directory with licensed font files; unset falls back to Onest                                                             |
-| `WALLET_BADGE_FILE` | set to `1` only after Apple's "Add to Apple Wallet" artwork is at `web-admin/public/wallet-badge-mn.svg`; until then a text button |
+| `WALLET_BADGE_URL` | optional: URL of Apple's "Add to Apple Wallet" badge you host yourself; empty = text button |
 
 Serve it on the hostname you put in `WEB_PUBLIC_URL` and `CORS_ORIGINS` on the API
 (`https://cinema.example.com`). The door scanner (`/staff/scan`) opens the phone camera, which
