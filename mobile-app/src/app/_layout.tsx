@@ -53,13 +53,16 @@ export default function RootLayout() {
       <QueryClientProvider client={queryClient}>
         <ThemeProvider value={theme}>
           <StatusBar style="light" />
+          {/* dangerouslySingular: a screen is identified by its route and params, so a double tap
+              (or two quick pushes) opens it once instead of stacking duplicates. */}
           <Stack
             screenOptions={{ headerShown: false, contentStyle: { backgroundColor: colors.canvas } }}
           >
             <Stack.Screen name="(tabs)" />
-            <Stack.Screen name="movie/[id]" />
+            <Stack.Screen name="movie/[id]" dangerouslySingular />
             <Stack.Screen
               name="movie/[id]/showtimes"
+              dangerouslySingular
               options={{
                 headerShown: true,
                 title: t('showtimes.title'),
@@ -70,9 +73,10 @@ export default function RootLayout() {
                 headerTitleStyle: { fontFamily: fonts.semibold, color: colors.ink },
               }}
             />
-            <Stack.Screen name="showtime/[id]" />
+            <Stack.Screen name="showtime/[id]" dangerouslySingular />
             <Stack.Screen
               name="showtime/[id]/gate"
+              dangerouslySingular
               options={{
                 presentation: 'formSheet',
                 sheetAllowedDetents: [0.7, 1],
@@ -80,11 +84,12 @@ export default function RootLayout() {
                 contentStyle: { backgroundColor: colors.surface },
               }}
             />
-            <Stack.Screen name="checkout/[showtimeId]" />
-            <Stack.Screen name="pay/[bookingId]" />
-            <Stack.Screen name="ticket/[id]" />
+            <Stack.Screen name="checkout/[showtimeId]" dangerouslySingular />
+            <Stack.Screen name="pay/[bookingId]" dangerouslySingular />
+            <Stack.Screen name="ticket/[id]" dangerouslySingular />
             <Stack.Screen
               name="login"
+              dangerouslySingular
               options={{
                 presentation: 'modal',
                 contentStyle: { backgroundColor: colors.surface },
@@ -92,6 +97,7 @@ export default function RootLayout() {
             />
             <Stack.Screen
               name="branches"
+              dangerouslySingular
               options={{
                 presentation: 'formSheet',
                 sheetAllowedDetents: 'fitToContents',
