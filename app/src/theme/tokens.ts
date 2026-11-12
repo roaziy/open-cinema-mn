@@ -1,5 +1,5 @@
 /** Dark-only design tokens. See the "Visual language" section of the UI plan. */
-import { HUES, type HueKey, hueFor as sharedHueFor } from '@open-cinema/shared';
+import { HUES, type HueKey, hueFor as sharedHueFor } from '@/shared';
 
 export const colors = {
   canvas: '#0B0B0D',

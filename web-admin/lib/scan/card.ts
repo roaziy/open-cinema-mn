@@ -1,4 +1,4 @@
-import type { ScanResult, ScanResultCode } from '@open-cinema/shared';
+import type { ScanResult, ScanResultCode } from '@/lib/shared';
 import { clockUb } from '../format';
 
 /** Colour is meaning: green admit, neutral repeat/offline, red reject. */

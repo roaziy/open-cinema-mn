@@ -1,10 +1,4 @@
-import { dirname, resolve } from 'node:path';
-import { fileURLToPath } from 'node:url';
-import { loadEnvConfig } from '@next/env';
 import type { NextConfig } from 'next';
-
-// Local dev: share the monorepo-root .env with the other apps. Hosted builds use real env vars.
-loadEnvConfig(resolve(dirname(fileURLToPath(import.meta.url)), '..'));
 
 const securityHeaders = [
   { key: 'X-Content-Type-Options', value: 'nosniff' },
@@ -19,7 +13,6 @@ const buildId = process.env.VERCEL_GIT_COMMIT_SHA?.slice(0, 12) ?? Date.now().to
 const config: NextConfig = {
   env: { OC_BUILD_ID: buildId },
   generateBuildId: () => buildId,
-  transpilePackages: ['@open-cinema/shared'],
   poweredByHeader: false,
   agentRules: false,
   allowedDevOrigins: ['127.0.0.1'],

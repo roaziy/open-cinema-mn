@@ -1,7 +1,7 @@
-import { SeatDeltaSchema } from '@open-cinema/shared';
 import { useCallback, useEffect, useState } from 'react';
 import { AppState } from 'react-native';
 import EventSource from 'react-native-sse';
+import { SeatDeltaSchema } from '@/shared';
 import { API_BASE } from './http';
 import { startWatchdog } from './watchdog';
 

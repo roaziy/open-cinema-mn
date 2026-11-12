@@ -1,4 +1,4 @@
-import { AdminShowtimeListQuery, ubBusinessDate, ubDate, ubDayRange } from '@open-cinema/shared';
+import { AdminShowtimeListQuery, ubBusinessDate, ubDate, ubDayRange } from '@/lib/shared';
 
 /** Plain count grouped like money (`1,200`), so numbers on one screen read alike. */
 export function count(n: number): string {

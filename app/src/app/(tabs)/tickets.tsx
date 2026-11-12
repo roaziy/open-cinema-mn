@@ -1,4 +1,3 @@
-import { formatUbTime, type TicketView, ubDate } from '@open-cinema/shared';
 import { router, useFocusEffect } from 'expo-router';
 import { useCallback, useState } from 'react';
 import { FlatList, RefreshControl, StyleSheet, Text, View } from 'react-native';
@@ -12,6 +11,7 @@ import { useI18n } from '@/i18n';
 import { useAuth } from '@/lib/auth';
 import { formatMonthDay } from '@/lib/format';
 import { offlineSince, useTickets } from '@/lib/orders';
+import { formatUbTime, type TicketView, ubDate } from '@/shared';
 import { colors, radius, space } from '@/theme/tokens';
 import { type } from '@/theme/type';
 

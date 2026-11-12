@@ -1,8 +1,8 @@
-import type { AdminDashboard, AdminReport } from '@open-cinema/shared';
-import { DAY_MS, UB_OFFSET_MS, ubDate, ubDayRange } from '@open-cinema/shared';
 import { and, asc, desc, eq, gte, lt, sql } from 'drizzle-orm';
 import type { Db } from '../db/client';
 import { bookings, branches, halls, movies, payments, showtimes } from '../db/schema';
+import type { AdminDashboard, AdminReport } from '../shared';
+import { DAY_MS, UB_OFFSET_MS, ubDate, ubDayRange } from '../shared';
 import { SLOT_COLUMNS } from './catalog-views';
 
 const UPCOMING = 8;

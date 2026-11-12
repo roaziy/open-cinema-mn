@@ -23,7 +23,7 @@ if (
 
 if (env.NODE_ENV === 'production' && dbTls.level === 'require') {
   console.warn(
-    'WARNING: database TLS is encrypted but the server identity is NOT verified (DATABASE_SSL=require). Download the Supabase CA certificate and set DATABASE_SSL=verify and DATABASE_CA_FILE (deploy/README.md 1.2.1).',
+    'WARNING: database TLS is encrypted but the server identity is NOT verified (DATABASE_SSL=require). Download the Supabase CA certificate and set DATABASE_SSL=verify and DATABASE_CA_FILE (docs/deploy.md 1.2.1).',
   );
 }
 if (env.NODE_ENV === 'production' && dbTls.level === 'off') {
@@ -36,7 +36,7 @@ if (env.NODE_ENV === 'production' && dbTls.level === 'off') {
   })();
   if (!['localhost', '127.0.0.1', '[::1]', '::1', ''].includes(host)) {
     console.warn(
-      'WARNING: database TLS is OFF in production: credentials and data cross the network in plaintext. Set DATABASE_SSL=verify (deploy/README.md 1.2.1).',
+      'WARNING: database TLS is OFF in production: credentials and data cross the network in plaintext. Set DATABASE_SSL=verify (docs/deploy.md 1.2.1).',
     );
   }
 }

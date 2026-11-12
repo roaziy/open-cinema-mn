@@ -1,4 +1,4 @@
-import { PublicUserSchema } from '@open-cinema/shared';
+import { PublicUserSchema } from '@/shared';
 import { api } from './api';
 import { updateUser } from './auth';
 

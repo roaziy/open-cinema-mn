@@ -1,6 +1,6 @@
-import { formatUbTime } from '@open-cinema/shared';
 import { StyleSheet, Text } from 'react-native';
 import { useI18n } from '@/i18n';
+import { formatUbTime } from '@/shared';
 import { colors, space } from '@/theme/tokens';
 import { type } from '@/theme/type';
 

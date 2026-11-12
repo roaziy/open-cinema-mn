@@ -18,7 +18,7 @@ import {
   ubBusinessDayRange,
   ubDate,
   ubDayRange,
-} from '../src/index';
+} from '../src/shared';
 
 describe('money', () => {
   it('formats MNT', () => {

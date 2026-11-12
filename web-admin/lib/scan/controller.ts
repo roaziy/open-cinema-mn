@@ -1,4 +1,4 @@
-import type { ScanBody, ScanResult } from '@open-cinema/shared';
+import type { ScanBody, ScanResult } from '@/lib/shared';
 import { cardFor, type SoundKind } from './card';
 import { type Flow, flowReducer, idleFlow } from './flow';
 import { type SendDeps, sendScan } from './send';

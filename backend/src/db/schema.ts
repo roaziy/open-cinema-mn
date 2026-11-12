@@ -1,4 +1,3 @@
-import { type ScanResult, type SeatKind, SeatKindSchema } from '@open-cinema/shared';
 import { sql } from 'drizzle-orm';
 import {
   boolean,
@@ -16,6 +15,7 @@ import {
   uniqueIndex,
   uuid,
 } from 'drizzle-orm/pg-core';
+import { type ScanResult, type SeatKind, SeatKindSchema } from '../shared';
 
 const id = () => uuid('id').primaryKey().default(sql`gen_random_uuid()`);
 const ts = (name: string) => timestamp(name, { withTimezone: true });

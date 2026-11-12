@@ -1,4 +1,6 @@
 import 'server-only';
+import { notFound, unstable_rethrow } from 'next/navigation';
+import { z } from 'zod';
 import {
   AdminDashboardSchema,
   AdminHallDetailSchema,
@@ -10,9 +12,7 @@ import {
   AdminStaffSchema,
   BranchSchema,
   TodayShowtimeSchema,
-} from '@open-cinema/shared';
-import { notFound, unstable_rethrow } from 'next/navigation';
-import { z } from 'zod';
+} from '@/lib/shared';
 import { ApiError, apiGet } from './api';
 
 const q = (params: Record<string, string | undefined>): string => {

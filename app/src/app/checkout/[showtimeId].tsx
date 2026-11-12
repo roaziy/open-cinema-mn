@@ -1,4 +1,3 @@
-import { formatMnt, formatUbTime, normalizeEmail, seatPrice } from '@open-cinema/shared';
 import { useQueryClient } from '@tanstack/react-query';
 import { router, Stack, useIsFocused, useLocalSearchParams } from 'expo-router';
 import { useHeaderHeight } from 'expo-router/react-navigation';
@@ -31,6 +30,7 @@ import {
   useSeatMap,
 } from '@/lib/seats';
 import { showToast } from '@/lib/toast';
+import { formatMnt, formatUbTime, normalizeEmail, seatPrice } from '@/shared';
 import { colors, hues, radius, space } from '@/theme/tokens';
 import { type } from '@/theme/type';
 

@@ -1,5 +1,5 @@
-import { generateSeats } from '@open-cinema/shared';
 import { describe, expect, it } from 'vitest';
+import { generateSeats } from '@/lib/shared';
 import {
   bounds,
   DEFAULT_GEN,

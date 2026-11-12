@@ -1,6 +1,6 @@
-import type { ScanResultCode } from '@open-cinema/shared';
 import Link from 'next/link';
 import { RESULT_TITLES } from '@/lib/scan/card';
+import type { ScanResultCode } from '@/lib/shared';
 
 const SHOWN: ScanResultCode[] = [
   'admitted',

@@ -1,5 +1,5 @@
-import { ubDate } from '@open-cinema/shared';
 import type { Locale, TKey } from '@/i18n';
+import { ubDate } from '@/shared';
 
 type T = (key: TKey, params?: Record<string, string | number>) => string;
 

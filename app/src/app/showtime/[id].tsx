@@ -1,5 +1,3 @@
-import type { Hold } from '@open-cinema/shared';
-import { formatUbTime } from '@open-cinema/shared';
 import { useQueryClient } from '@tanstack/react-query';
 import { router, Stack, useLocalSearchParams } from 'expo-router';
 import { useHeaderHeight } from 'expo-router/react-navigation';
@@ -26,6 +24,8 @@ import { layoutSeats } from '@/lib/seat-layout';
 import { liveHolds, seatLabel, useMyHolds, useSeatActions, useSeatMap } from '@/lib/seats';
 import { useSeatStream } from '@/lib/sse';
 import { showToast } from '@/lib/toast';
+import type { Hold } from '@/shared';
+import { formatUbTime } from '@/shared';
 import { colors, radius, space } from '@/theme/tokens';
 import { type } from '@/theme/type';
 

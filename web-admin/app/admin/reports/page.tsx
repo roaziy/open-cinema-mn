@@ -1,4 +1,3 @@
-import { formatMnt } from '@open-cinema/shared';
 import type { Metadata } from 'next';
 import Link from 'next/link';
 import { redirect } from 'next/navigation';
@@ -15,6 +14,7 @@ import { getBranches, getReport, safely } from '@/lib/admin-data';
 import { addDays, count, dayMonth, isDate, pct, todayUb, weekdayMn } from '@/lib/format';
 import { hueFor } from '@/lib/hues';
 import { isUuid } from '@/lib/ids';
+import { formatMnt } from '@/lib/shared';
 
 export const metadata: Metadata = { title: 'Тайлан' };
 

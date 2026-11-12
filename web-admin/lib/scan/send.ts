@@ -1,4 +1,4 @@
-import { type ScanBody, type ScanResult, ScanResultSchema } from '@open-cinema/shared';
+import { type ScanBody, type ScanResult, ScanResultSchema } from '@/lib/shared';
 
 export type RetryReason = 'network' | 'busy';
 

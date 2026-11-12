@@ -1,4 +1,3 @@
-import { normalizeEmail } from '@open-cinema/shared';
 import { router, useIsFocused, useLocalSearchParams } from 'expo-router';
 import { Clock, SignIn, Ticket } from 'phosphor-react-native';
 import { useEffect, useMemo, useState } from 'react';
@@ -10,6 +9,7 @@ import { useI18n } from '@/i18n';
 import { getContactEmail, setContactEmail } from '@/lib/checkout-store';
 import { confirmGuestLogin } from '@/lib/guest-login';
 import { formatCountdown, liveHolds, useCountdown, useMyHolds } from '@/lib/seats';
+import { normalizeEmail } from '@/shared';
 import { colors, hues, radius, space } from '@/theme/tokens';
 import { fonts, type } from '@/theme/type';
 

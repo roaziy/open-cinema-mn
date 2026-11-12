@@ -1,15 +1,11 @@
 'use client';
 
-import {
-  formatMnt,
-  type ShowtimeCancelPreview,
-  ShowtimeCancelPreviewSchema,
-} from '@open-cinema/shared';
 import { useCallback, useEffect, useState } from 'react';
 import { Button } from '@/components/ui/Button';
 import { Notice } from '@/components/ui/Notice';
 import { call, messageOf } from '@/lib/client-api';
 import { count } from '@/lib/format';
+import { formatMnt, type ShowtimeCancelPreview, ShowtimeCancelPreviewSchema } from '@/lib/shared';
 
 type State =
   | { state: 'loading' }

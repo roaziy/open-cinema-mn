@@ -1,4 +1,4 @@
-import { type Hold, HoldSchema, type OtpChannel } from '@open-cinema/shared';
+import { type Hold, HoldSchema, type OtpChannel } from '@/shared';
 import { ApiError, api } from './api';
 import { getAccessToken, getRefreshToken, getUser, loginWithOtp } from './auth';
 import { rawRequest } from './http';

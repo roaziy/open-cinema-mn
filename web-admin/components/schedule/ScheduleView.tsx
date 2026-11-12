@@ -1,12 +1,12 @@
 'use client';
 
-import type { AdminMovie, AdminShowtime } from '@open-cinema/shared';
 import { Plus } from '@phosphor-icons/react/dist/ssr';
 import { useEffect, useMemo, useState } from 'react';
 import { Button } from '@/components/ui/Button';
 import { Empty } from '@/components/ui/Empty';
 import { count, minutesIntoDay } from '@/lib/format';
 import { HUES, type HueKey } from '@/lib/hues';
+import type { AdminMovie, AdminShowtime } from '@/lib/shared';
 import { clickToStart, hourTicks, nowOffset, place, rangeFor } from '@/lib/timeline';
 import { type DrawerTarget, type HallOption, ShowtimeDrawer } from './ShowtimeDrawer';
 

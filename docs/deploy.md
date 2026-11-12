@@ -6,11 +6,11 @@ Open Cinema runs in three places:
 | ------------------------ | -------------------------------------------------- | ------------------------------------------------------- |
 | API (`backend/`)         | A Linux VPS you can SSH into but do not administer | pm2, behind the server's existing reverse proxy         |
 | Database                 | Supabase (Postgres)                                | Session pooler connection, nothing installed on the VPS |
-| Admin web (`web-admin/`) | Vercel                                             | Monorepo project, root directory `web-admin/`           |
+| Admin web (`web-admin/`) | Vercel                                             | Project with root directory `web-admin/`           |
 | Customer app (`app/`)    | Development builds on your own devices             | `npx expo run:ios` / `run:android`                      |
 
 There is no Docker and no database on the VPS. Credentials (Supabase, wesend, Apple Wallet) are
-collected in [`docs/credentials.md`](../docs/credentials.md). Do that before going live: with
+collected in [`credentials.md`](credentials.md). Do that before going live: with
 `NODE_ENV=production` the default `MESSAGES_PROVIDER=dev` does not log login codes (it only
 records the recipient), so nobody can complete an OTP login. A production deployment needs
 `MESSAGES_PROVIDER=wesend` with a working key. Local storage and no Wallet are fine to start with.
@@ -31,18 +31,14 @@ node -v   # v24.x
 npm install -g pm2
 
 git clone https://github.com/<owner>/open-cinema-mn.git ~/open-cinema
-cd ~/open-cinema
+cd ~/open-cinema/backend
 mkdir -p logs
 npm ci
 ```
 
-`npm ci` installs the dev dependencies too, which the build needs (esbuild). Run it from the
-repository root: the workspaces share one lockfile. To skip the app and admin web dependencies on
-the VPS, install only what the API needs (verified to build and start):
-
-```bash
-npm ci --workspace @open-cinema/backend --workspace @open-cinema/shared
-```
+Every package is standalone, so the VPS only needs the API: install from `backend/`. `npm ci`
+installs the dev dependencies too, which the build needs (esbuild). The app and admin web
+dependencies are never installed on the VPS.
 
 ### 1.2 Configure
 
@@ -52,7 +48,10 @@ chmod 600 .env
 nano .env
 ```
 
-Set at least these for production (every variable is described in `.env.example`):
+The API's env file lives at **`backend/.env`** (it used to be the repository root `.env`). On an
+existing server move it once: `mv ~/open-cinema/.env ~/open-cinema/backend/.env`.
+
+Set at least these for production (every variable is described in `backend/.env.example`):
 
 | Variable                                 | Value                                                                                    |
 | ---------------------------------------- | ---------------------------------------------------------------------------------------- |
@@ -92,18 +91,20 @@ How the settings combine:
   `DATABASE_SSL=verify` together with `sslmode=verify-full` is accepted (same strength; both check the host name).
   A `DATABASE_SSL` weaker than the URL's `sslmode` stops the API from starting, with an error naming both.
 
-The API reads `.env` from the repository root (pm2 passes `--env-file-if-exists=../.env` to node).
+The API reads `backend/.env` (pm2 passes `--env-file-if-exists=.env` to node, with `backend/` as the
+working directory).
 Variables already set in the environment win over the file.
 
 ### 1.3 Build, migrate, start
 
 ```bash
-npm -w @open-cinema/backend run build        # backend/dist/index.js, dist/migrate.js, dist/admin-create.js
-npm -w @open-cinema/backend run db:migrate:prod
+# from ~/open-cinema/backend
+npm run build        # dist/index.js, dist/migrate.js, dist/admin-create.js
+npm run db:migrate:prod
 # first deploy only: the first admin account (asks for the password without echoing it)
-npm -w @open-cinema/backend run admin:create:prod -- --email you@example.com --name "Your Name"
+npm run admin:create:prod -- --email you@example.com --name "Your Name"
 
-pm2 start backend/ecosystem.config.cjs
+pm2 start ecosystem.config.cjs
 pm2 save
 curl -s http://127.0.0.1:4000/v1/health      # {"ok":true,"db":true}
 ```
@@ -116,8 +117,8 @@ password later from the gear icon next to their name in the admin app.
 Demo data (fictional cinemas and films) is for development only: `db:seed` refuses to run with
 `NODE_ENV=production` and truncates every table, so never use it on a live database.
 
-The build bundles the API with esbuild into `backend/dist/index.js` (shared code inlined, other
-packages loaded from `node_modules`). `db:migrate:prod` runs the bundled `dist/migrate.js` with plain
+The build bundles the API with esbuild into `backend/dist/index.js` (its own code, including `src/shared`, is
+bundled; dependencies are loaded from `node_modules`). `db:migrate:prod` runs the bundled `dist/migrate.js` with plain
 node, so production never needs tsx. The migration SQL stays in `backend/drizzle/`.
 
 Run exactly **one** instance. The live seat feed (SSE) keeps its state in memory, so the pm2 file
@@ -136,7 +137,7 @@ pins `instances: 1`. Do not switch it to cluster mode.
 
   `pm2 resurrect` restores the list saved by `pm2 save`. Check it once after a real reboot.
 
-Logs live in `~/open-cinema/logs/` (`api-out.log`, `api-error.log`). Rotate them:
+Logs live in `~/open-cinema/backend/logs/` (`api-out.log`, `api-error.log`). Rotate them:
 
 ```bash
 pm2 install pm2-logrotate
@@ -216,14 +217,15 @@ The admin web app does not rely on this: it forwards the end user's address with
 cd ~/open-cinema
 before=$(git rev-parse HEAD)
 git pull --ff-only
+cd backend
 # npm ci deletes node_modules first, so only run it when the lockfile changed, with the API stopped
 if ! git diff --quiet "$before" HEAD -- package-lock.json; then
   pm2 stop open-cinema-api
   npm ci
 fi
-npm -w @open-cinema/backend run build
-npm -w @open-cinema/backend run db:migrate:prod
-pm2 startOrReload backend/ecosystem.config.cjs
+npm run build
+npm run db:migrate:prod
+pm2 startOrReload ecosystem.config.cjs
 curl -s http://127.0.0.1:4000/v1/health
 ```
 
@@ -238,7 +240,7 @@ What this guarantees:
   and `dist.next` to `dist` (two renames back to back; if the second fails the first is undone),
   and deletes `dist.old`. A pm2 restart during the slow part of a build always finds the previous
   complete tree.
-- **No broken `node_modules`.** `npm ci` runs only when `package-lock.json` changed, and only while
+- **No broken `node_modules`.** `npm ci` runs only when `backend/package-lock.json` changed, and only while
   the API is stopped (about a minute of downtime for those releases). `startOrReload` starts it again
   afterwards (and also works when nothing was stopped).
 - Migrations run before the new code starts, so they must be additive (see rollback).
@@ -273,7 +275,7 @@ ecosystem file changes in a release, recreate the process once:
 
 ```bash
 pm2 delete open-cinema-api
-pm2 start backend/ecosystem.config.cjs
+pm2 start ecosystem.config.cjs      # from ~/open-cinema/backend
 pm2 save
 pm2 describe open-cinema-api | grep -iE "kill|restart"   # check the values you expect
 ```
@@ -284,10 +286,11 @@ pm2 describe open-cinema-api | grep -iE "kill|restart"   # check the values you 
 cd ~/open-cinema
 git log --oneline -5              # pick the last good commit
 git checkout <good-sha>
+cd backend
 pm2 stop open-cinema-api
 npm ci
-npm -w @open-cinema/backend run build
-pm2 startOrReload backend/ecosystem.config.cjs
+npm run build
+pm2 startOrReload ecosystem.config.cjs
 ```
 
 Migrations are not reverted automatically. Keep them backward compatible with the previous release
@@ -305,12 +308,9 @@ using the database URL as a repository secret), never from the VPS.
 The admin web app (`web-admin/`, Next.js) is deployed from the same repository as a Vercel project.
 
 1. Vercel, Add New, Project, import the GitHub repository.
-2. **Root Directory**: `web-admin`. Enable "Include source files outside of the Root Directory",
-   because the app imports the workspace package `shared/`.
-3. **Install Command**: `cd .. && npm ci` (install from the monorepo root so workspaces resolve).
-   To skip the other apps' dependencies you can use
-   `cd .. && npm ci --workspace @open-cinema/web-admin --workspace @open-cinema/shared` instead
-   (verified: `npm run build` in `web-admin/` succeeds after it).
+2. **Root Directory**: `web-admin`. The package is standalone (its shared code is the copy in
+   `web-admin/lib/shared`), so nothing outside the root directory is needed.
+3. **Install Command**: `npm ci`.
    **Build Command**: `npm run build`. Framework preset: Next.js. Node.js version: 24.x.
 4. Environment variables (Production and Preview):
 
@@ -322,14 +322,12 @@ The admin web app (`web-admin/`, Next.js) is deployed from the same repository a
    | `ADMIN_FONT_DIR`    | leave unset on Vercel (licensed fonts are never committed; the app falls back to Onest)                                                                                                      |
    | `WALLET_BADGE_FILE` | set to `1` only after you put Apple's "Add to Apple Wallet" artwork at `web-admin/public/wallet-badge-mn.svg` (Apple's licence applies; until then the guest page shows a plain text button) |
 
-   Check `.env.example` (the "Admin web" section) for any variable added since this was written.
+   Check `web-admin/.env.example` for any variable added since this was written.
    The door scanner (`/staff/scan`) opens the phone camera, which browsers only allow on HTTPS (or
    localhost), so the staff phones must use the https domain. `npm run build` first copies the QR
    decoder's wasm into `public/zxing/` (`prebuild` / `predev`); a bare `next build` or `next dev`
    skips that step and the scanner then cannot load its decoder.
-5. `web-admin/next.config.ts` already sets `transpilePackages: ['@open-cinema/shared']`, which the
-   shared package needs because it ships TypeScript source. Keep it if you edit the config.
-6. Domain: add `cinema.roaziy.cloud` under Project, Settings, Domains and create the DNS record
+5. Domain: add `cinema.roaziy.cloud` under Project, Settings, Domains and create the DNS record
    Vercel shows. The same hostname goes into `WEB_PUBLIC_URL` and `CORS_ORIGINS` on the VPS.
 
 After the first deploy, open `https://cinema.roaziy.cloud` and sign in with the account you created
@@ -352,7 +350,7 @@ EXPO_PUBLIC_API_URL=https://cinema-api.roaziy.cloud npx expo run:ios --device
 
 ## 4. CI notes
 
-`.github/workflows/ci.yml` runs typecheck, lint, tests, the production build and a secret scan
+`.github/workflows/ci.yml` runs typecheck, lint, tests, the production build, a check that the three `shared` copies are identical, and a secret scan
 (gitleaks). While the repository belongs to a personal account the scan needs nothing. If it moves
 to a GitHub organization, `gitleaks-action` requires a licence key: add it as the repository secret
 `GITLEAKS_LICENSE` (free for open-source use at gitleaks.io), or the job fails.

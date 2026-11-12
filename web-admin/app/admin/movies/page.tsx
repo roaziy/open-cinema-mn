@@ -1,4 +1,3 @@
-import type { AdminMovie } from '@open-cinema/shared';
 import { Plus } from '@phosphor-icons/react/dist/ssr';
 import type { Metadata } from 'next';
 import Link from 'next/link';
@@ -9,6 +8,7 @@ import { PageHeader } from '@/components/ui/PageHeader';
 import { Poster } from '@/components/ui/Poster';
 import { getMovies, safely } from '@/lib/admin-data';
 import { dayMonth } from '@/lib/format';
+import type { AdminMovie } from '@/lib/shared';
 
 export const metadata: Metadata = { title: 'Кино' };
 

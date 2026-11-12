@@ -1,4 +1,4 @@
-import { EYE_HEIGHT_M, SCREEN_BOTTOM_M } from '@open-cinema/shared';
+import { EYE_HEIGHT_M, SCREEN_BOTTOM_M } from '@/lib/shared';
 
 type S = { rowLabel: string; x_m: number; y_m: number; z_m: number };
 

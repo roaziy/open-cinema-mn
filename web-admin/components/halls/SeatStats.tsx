@@ -1,4 +1,4 @@
-import type { SeatViewLabel } from '@open-cinema/shared';
+import type { SeatViewLabel } from '@/lib/shared';
 import { VIEW_LABEL } from './kinds';
 
 type Stats = { distanceM: number; viewDeg: number; offCenterDeg: number; label: SeatViewLabel };

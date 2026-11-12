@@ -1,10 +1,5 @@
-import {
-  type BookingView,
-  BookingViewSchema,
-  type TicketView,
-  TicketViewSchema,
-} from '@open-cinema/shared';
 import { useQuery } from '@tanstack/react-query';
+import { type BookingView, BookingViewSchema, type TicketView, TicketViewSchema } from '@/shared';
 import { ApiError, api } from './api';
 import { getUserId, useAuth } from './auth';
 import { loadCache, saveList, saveTicket } from './ticket-cache';

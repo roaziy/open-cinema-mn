@@ -1,4 +1,4 @@
-import type { SeatState } from '@open-cinema/shared';
+import type { SeatState } from '@/shared';
 
 export type SeatSlot = { seat: SeatState; left: number; top: number };
 export type RowSlot = { label: string; top: number };

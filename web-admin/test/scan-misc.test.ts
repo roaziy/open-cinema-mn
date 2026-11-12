@@ -1,5 +1,5 @@
-import type { ScanResult } from '@open-cinema/shared';
 import { afterEach, describe, expect, it, vi } from 'vitest';
+import type { ScanResult } from '@/lib/shared';
 import { call } from '../lib/client-api';
 import { cleanLabel, readDoorLabel, saveDoorLabel } from '../lib/scan/door';
 import { needsRestart } from '../lib/scan/health';

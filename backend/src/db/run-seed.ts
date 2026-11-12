@@ -1,9 +1,9 @@
 import { readFile } from 'node:fs/promises';
 import path from 'node:path';
 import { hash } from '@node-rs/argon2';
-import { generateSeats, type HallGenParams, ubDate, ubDayRange } from '@open-cinema/shared';
 import { sql } from 'drizzle-orm';
 import { BACKEND_ROOT } from '../lib/paths';
+import { generateSeats, type HallGenParams, ubDate, ubDayRange } from '../shared';
 import type { StorageProvider } from '../storage';
 import type { Db } from './client';
 import { branches, halls, movies, seats, showtimes, users } from './schema';

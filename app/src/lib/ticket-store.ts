@@ -1,4 +1,4 @@
-import type { TicketView } from '@open-cinema/shared';
+import type { TicketView } from '@/shared';
 import {
   applyList,
   applyTicket,

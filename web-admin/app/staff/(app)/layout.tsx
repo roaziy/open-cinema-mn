@@ -1,4 +1,3 @@
-import { BranchSchema } from '@open-cinema/shared';
 import { unstable_rethrow } from 'next/navigation';
 import type { ReactNode } from 'react';
 import { z } from 'zod';
@@ -7,6 +6,7 @@ import { StaffShell } from '@/components/shell/StaffShell';
 import { apiGet } from '@/lib/api';
 import { APP_NAME } from '@/lib/env';
 import { requireRole } from '@/lib/session';
+import { BranchSchema } from '@/lib/shared';
 
 async function branchName(branchId: string | null): Promise<string | null> {
   if (!branchId) return null;

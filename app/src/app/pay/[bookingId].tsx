@@ -1,4 +1,3 @@
-import { formatMnt } from '@open-cinema/shared';
 import { useQueryClient } from '@tanstack/react-query';
 import { router, Stack, useLocalSearchParams } from 'expo-router';
 import { useHeaderHeight } from 'expo-router/react-navigation';
@@ -16,6 +15,7 @@ import { haptic } from '@/lib/haptics';
 import { mockPay, orderKeys, useBooking } from '@/lib/orders';
 import { formatCountdown, useCountdown } from '@/lib/seats';
 import { showToast } from '@/lib/toast';
+import { formatMnt } from '@/shared';
 import { colors, radius, space } from '@/theme/tokens';
 import { type } from '@/theme/type';
 

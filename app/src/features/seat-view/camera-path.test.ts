@@ -1,8 +1,8 @@
-import { EYE_HEIGHT_M } from '@open-cinema/shared';
 import * as THREE from 'three';
 import { describe, expect, it } from 'vitest';
-import { generateSeats } from '../../../../shared/src/hall-generator';
+import { EYE_HEIGHT_M } from '@/shared';
 import { layoutSeats } from '../../lib/seat-layout';
+import { generateSeats } from '../../shared/hall-generator';
 import {
   CLOSE_MS,
   divePace,

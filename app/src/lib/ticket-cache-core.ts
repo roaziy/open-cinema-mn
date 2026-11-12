@@ -1,5 +1,5 @@
-import { type TicketView, TicketViewSchema } from '@open-cinema/shared';
 import { z } from 'zod';
+import { type TicketView, TicketViewSchema } from '@/shared';
 
 /**
  * The tickets a signed-in user has already loaded, kept so the QR still shows with no signal

@@ -1,10 +1,10 @@
 'use client';
 
-import { type ScanResult, ScanResultSchema } from '@open-cinema/shared';
 import { useCallback, useEffect, useState } from 'react';
 import { z } from 'zod';
 import { call } from '@/lib/client-api';
 import { mapRecent, type RecentScan } from '@/lib/scan/recent';
+import { type ScanResult, ScanResultSchema } from '@/lib/shared';
 
 export type { RecentScan };
 

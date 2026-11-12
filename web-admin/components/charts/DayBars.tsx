@@ -1,5 +1,5 @@
-import { formatMnt } from '@open-cinema/shared';
 import { compact, dayMonth } from '@/lib/format';
+import { formatMnt } from '@/lib/shared';
 import { niceMax } from './HourlyChart';
 
 type Day = { date: string; revenue: number; tickets: number };

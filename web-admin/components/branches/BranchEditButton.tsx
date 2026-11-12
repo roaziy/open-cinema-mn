@@ -1,9 +1,9 @@
 'use client';
 
-import type { Branch } from '@open-cinema/shared';
 import { PencilSimple } from '@phosphor-icons/react/dist/ssr';
 import { useState } from 'react';
 import { Button } from '@/components/ui/Button';
+import type { Branch } from '@/lib/shared';
 import { BranchDrawer } from './BranchDrawer';
 
 export function BranchEditButton({ branch }: { branch: Branch }) {

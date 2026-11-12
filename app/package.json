@@ -3,7 +3,6 @@
   "version": "1.0.0",
   "main": "expo-router/entry",
   "dependencies": {
-    "@open-cinema/shared": "*",
     "@react-three/fiber": "9.8.2",
     "@tanstack/react-query": "^5.107.1",
     "expo": "~58.0.23",
@@ -37,9 +36,11 @@
     "react-native-sse": "^1.2.1",
     "react-native-svg": "15.16.0",
     "react-native-worklets": "0.13.0",
-    "three": "0.187.0"
+    "three": "0.187.0",
+    "zod": "4.6.7"
   },
   "devDependencies": {
+    "@biomejs/biome": "2.6.6",
     "@types/node": "^24.19.2",
     "@types/react": "~19.3.0",
     "@types/three": "0.187.0",
@@ -52,7 +53,7 @@
     "start": "expo start",
     "android": "expo run:android",
     "ios": "expo run:ios",
-    "lint": "expo lint",
+    "lint": "biome check . && expo lint",
     "typecheck": "tsc --noEmit",
     "test": "node --disable-warning=MODULE_TYPELESS_PACKAGE_JSON --test --experimental-strip-types test/*.test.mts && vitest run src"
   },

@@ -1,9 +1,9 @@
-import type { SeatMap, SeatState } from '@open-cinema/shared';
 import { useFrame, useThree } from '@react-three/fiber/native';
 import { useEffect, useEffectEvent, useLayoutEffect, useRef } from 'react';
 import { AppState } from 'react-native';
 import type { SharedValue } from 'react-native-reanimated';
 import type * as THREE from 'three';
+import type { SeatMap, SeatState } from '@/shared';
 import { divePace, shouldLead, turnBlendMs, turnRoundAt, turnRoundMs } from './camera-clock';
 import { hopDurationMs, hopFrame } from './camera-hop';
 import {

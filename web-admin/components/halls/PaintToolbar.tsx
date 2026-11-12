@@ -1,6 +1,6 @@
 'use client';
 
-import type { SeatKind } from '@open-cinema/shared';
+import type { SeatKind } from '@/lib/shared';
 import { KIND_FILL, KIND_LABEL, KINDS } from './kinds';
 import type { Tool } from './useHallDraft';
 

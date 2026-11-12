@@ -1,7 +1,7 @@
-import type { AdminScan } from '@open-cinema/shared';
 import { clockUb } from '@/lib/format';
 import { HUES, hueFor } from '@/lib/hues';
 import { RESULT_TITLES, RESULT_TONES } from '@/lib/scan/card';
+import type { AdminScan } from '@/lib/shared';
 
 const TONE_CLASS = {
   admit: 'bg-hue-green/15 text-hue-green',

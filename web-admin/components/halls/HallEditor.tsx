@@ -1,12 +1,12 @@
 'use client';
 
-import { type AdminHallDetail, seatViewStats } from '@open-cinema/shared';
 import { useRouter } from 'next/navigation';
 import { type ChangeEvent, useState, useTransition } from 'react';
 import { Button } from '@/components/ui/Button';
 import { Labeled, Select, TextInput } from '@/components/ui/Inputs';
 import { Notice } from '@/components/ui/Notice';
 import { messageOf } from '@/lib/client-api';
+import { type AdminHallDetail, seatViewStats } from '@/lib/shared';
 import { GeneratorFields } from './GeneratorFields';
 import { KIND_LABEL } from './kinds';
 import { PaintToolbar } from './PaintToolbar';

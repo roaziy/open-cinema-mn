@@ -1,5 +1,5 @@
-import type { ScanResult } from '@open-cinema/shared';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import type { ScanResult } from '@/lib/shared';
 import { AUTO_CLOSE_MS, ScanController } from '../lib/scan/controller';
 
 const result = (scanId: string, over: Partial<ScanResult> = {}): ScanResult => ({

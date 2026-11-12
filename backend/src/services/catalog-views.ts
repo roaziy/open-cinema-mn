@@ -1,4 +1,3 @@
-import type { Branch, MovieSummary, ShowtimeSlot } from '@open-cinema/shared';
 import { sql } from 'drizzle-orm';
 import {
   type branches,
@@ -9,6 +8,7 @@ import {
   showtimes,
   tickets,
 } from '../db/schema';
+import type { Branch, MovieSummary, ShowtimeSlot } from '../shared';
 
 type MovieRow = typeof movies.$inferSelect;
 type BranchRow = typeof branches.$inferSelect;

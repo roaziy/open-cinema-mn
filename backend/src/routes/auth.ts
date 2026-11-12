@@ -1,13 +1,3 @@
-import {
-  AdminLoginBody,
-  AdminPasswordBody,
-  normalizeEmail,
-  normalizePhone,
-  type OtpChannel,
-  OtpRequestBody,
-  OtpVerifyBody,
-  RefreshBody,
-} from '@open-cinema/shared';
 import { and, eq, sql } from 'drizzle-orm';
 import { type Request, Router } from 'express';
 import { z } from 'zod';
@@ -28,6 +18,16 @@ import {
 import { otpEmail, otpSms } from '../messages/templates';
 import { MessageSendError } from '../messages/wesend';
 import { requireAuth, requireRole } from '../middleware/auth';
+import {
+  AdminLoginBody,
+  AdminPasswordBody,
+  normalizeEmail,
+  normalizePhone,
+  type OtpChannel,
+  OtpRequestBody,
+  OtpVerifyBody,
+  RefreshBody,
+} from '../shared';
 
 const LOCK_MS = 15 * 60 * 1000;
 const MAX_FAILED_LOGINS = 5;

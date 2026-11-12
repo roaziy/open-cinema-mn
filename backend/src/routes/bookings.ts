@@ -1,4 +1,3 @@
-import { BookingCreateBody } from '@open-cinema/shared';
 import { eq } from 'drizzle-orm';
 import { Router } from 'express';
 import { z } from 'zod';
@@ -11,6 +10,7 @@ import { TimeoutError } from '../lib/timeout';
 import { requireAuth } from '../middleware/auth';
 import { MockPaymentProvider } from '../payments/mock';
 import { bookingView, confirmBooking, createBooking } from '../services/bookings';
+import { BookingCreateBody } from '../shared';
 
 const UUID = z.string().uuid();
 

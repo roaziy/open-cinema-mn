@@ -1,11 +1,11 @@
 'use client';
 
-import type { AdminMovie } from '@open-cinema/shared';
 import { useRouter } from 'next/navigation';
 import { useState, useTransition } from 'react';
 import { Button } from '@/components/ui/Button';
 import { Notice } from '@/components/ui/Notice';
 import { CallError, call, messageOf } from '@/lib/client-api';
+import type { AdminMovie } from '@/lib/shared';
 import { suggestTone } from '@/lib/tone';
 import { ImagePicker } from './ImagePicker';
 import { MovieFields } from './MovieFields';

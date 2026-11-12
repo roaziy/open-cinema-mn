@@ -1,5 +1,5 @@
-import type { ScanResult } from '@open-cinema/shared';
 import { describe, expect, it } from 'vitest';
+import type { ScanResult } from '@/lib/shared';
 import { type Flow, flowReducer, idleFlow, isBusy } from '../lib/scan/flow';
 
 const admitted: ScanResult = {

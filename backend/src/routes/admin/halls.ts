@@ -1,10 +1,3 @@
-import {
-  AdminHallBody,
-  AdminHallListQuery,
-  AdminHallPatch,
-  AdminHallRegenerateBody,
-  AdminSeatChangesBody,
-} from '@open-cinema/shared';
 import { eq } from 'drizzle-orm';
 import { Router } from 'express';
 import type { z } from 'zod';
@@ -19,6 +12,13 @@ import {
   listHalls,
   regenerateHall,
 } from '../../services/halls';
+import {
+  AdminHallBody,
+  AdminHallListQuery,
+  AdminHallPatch,
+  AdminHallRegenerateBody,
+  AdminSeatChangesBody,
+} from '../../shared';
 
 export function createAdminHallsRouter({ db, clock, seatHub }: AppDeps): Router {
   const r = Router();

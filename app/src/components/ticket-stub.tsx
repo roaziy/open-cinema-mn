@@ -1,10 +1,10 @@
-import { formatUbTime, type TicketView, ubDate } from '@open-cinema/shared';
 import { Image } from 'expo-image';
 import { StyleSheet, Text, View } from 'react-native';
 import QRCode from 'react-native-qrcode-svg';
 import { type Locale, useI18n } from '@/i18n';
 import { formatMonthDay } from '@/lib/format';
 import { mediaUrl } from '@/lib/http';
+import { formatUbTime, type TicketView, ubDate } from '@/shared';
 import { colors, radius, space } from '@/theme/tokens';
 import { fonts, type } from '@/theme/type';
 

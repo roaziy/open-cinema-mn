@@ -1,10 +1,10 @@
-import { type AdminMovie, AdminMovieBody, AdminMoviePatch } from '@open-cinema/shared';
 import { and, desc, eq, gt } from 'drizzle-orm';
 import { Router } from 'express';
 import type { AppDeps } from '../../app';
 import { movies, showtimes } from '../../db/schema';
 import { conflict, isForeignKeyViolation, notFound } from '../../lib/errors';
 import { uuidParam, validate } from '../../lib/http';
+import { type AdminMovie, AdminMovieBody, AdminMoviePatch } from '../../shared';
 
 const toAdminMovie = (m: typeof movies.$inferSelect): AdminMovie => ({
   id: m.id,

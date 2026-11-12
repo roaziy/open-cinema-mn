@@ -1,3 +1,7 @@
+import { keepPreviousData, useQuery, useQueryClient } from '@tanstack/react-query';
+import { router } from 'expo-router';
+import { useCallback, useEffect, useRef, useState } from 'react';
+import type { TKey } from '@/i18n';
 import {
   HOLD_TTL_MS,
   type Hold,
@@ -7,11 +11,7 @@ import {
   type SeatMap,
   SeatMapSchema,
   type SeatState,
-} from '@open-cinema/shared';
-import { keepPreviousData, useQuery, useQueryClient } from '@tanstack/react-query';
-import { router } from 'expo-router';
-import { useCallback, useEffect, useRef, useState } from 'react';
-import type { TKey } from '@/i18n';
+} from '@/shared';
 import { ApiError, api } from './api';
 import { ensureGuest, useAuth } from './auth';
 import { haptic } from './haptics';

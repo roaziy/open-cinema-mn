@@ -1,4 +1,4 @@
-import { avoidOrange } from '@open-cinema/shared';
+import { avoidOrange } from '@/lib/shared';
 
 export { avoidOrange };
 

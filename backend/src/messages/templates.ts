@@ -1,5 +1,5 @@
-import { formatMnt, formatUbTime, ubDate } from '@open-cinema/shared';
 import { env } from '../env';
+import { formatMnt, formatUbTime, ubDate } from '../shared';
 
 export type Rendered = { subject: string; html: string; text: string };
 

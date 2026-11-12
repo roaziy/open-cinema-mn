@@ -1,6 +1,5 @@
 'use client';
 
-import { type AdminStaff, normalizePhone } from '@open-cinema/shared';
 import { Plus } from '@phosphor-icons/react/dist/ssr';
 import { useRouter } from 'next/navigation';
 import { useState, useTransition } from 'react';
@@ -13,6 +12,7 @@ import { Notice } from '@/components/ui/Notice';
 import { PageHeader } from '@/components/ui/PageHeader';
 import { CallError, call, messageOf } from '@/lib/client-api';
 import { HUES, hueFor } from '@/lib/hues';
+import { type AdminStaff, normalizePhone } from '@/lib/shared';
 
 type Branch = { id: string; name: string };
 

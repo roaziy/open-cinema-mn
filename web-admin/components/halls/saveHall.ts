@@ -1,5 +1,5 @@
-import type { AdminHallDetail, HallGenParams, SeatKind } from '@open-cinema/shared';
 import { call } from '@/lib/client-api';
+import type { AdminHallDetail, HallGenParams, SeatKind } from '@/lib/shared';
 import { seatKey } from './useHallDraft';
 
 export type HallSave = {

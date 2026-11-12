@@ -1,9 +1,9 @@
 import { readFile } from 'node:fs/promises';
 import path from 'node:path';
-import { formatUbTime, type TicketView, ubDate } from '@open-cinema/shared';
 import { PKPass } from 'passkit-generator';
 import { type Env, env } from '../env';
 import { BACKEND_ROOT } from '../lib/paths';
+import { formatUbTime, type TicketView, ubDate } from '../shared';
 
 const MODEL = path.join(BACKEND_ROOT, 'src/wallet/model/OpenCinema.pass');
 

@@ -1,5 +1,5 @@
-import type { TicketView } from '@open-cinema/shared';
 import { describe, expect, it } from 'vitest';
+import type { TicketView } from '@/shared';
 import { listFrom, parseCache } from './ticket-cache-core';
 import { type CacheFs, createTicketStore, fileNameFor } from './ticket-store';
 

@@ -1,4 +1,4 @@
-import { AuthTokensSchema, type PublicUser } from '@open-cinema/shared';
+import { AuthTokensSchema, type PublicUser } from '@/lib/shared';
 import { bffHeaders, type Client } from '../bff';
 import { apiUrl } from '../env';
 import type { Tokens } from './cookies';

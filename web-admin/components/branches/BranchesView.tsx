@@ -1,6 +1,5 @@
 'use client';
 
-import type { Branch } from '@open-cinema/shared';
 import { Buildings, PencilSimple, Plus } from '@phosphor-icons/react/dist/ssr';
 import Link from 'next/link';
 import { useState } from 'react';
@@ -10,6 +9,7 @@ import { IconTile } from '@/components/ui/IconTile';
 import { PageHeader } from '@/components/ui/PageHeader';
 import { count } from '@/lib/format';
 import { type HueKey, hueFor } from '@/lib/hues';
+import type { Branch } from '@/lib/shared';
 import { BranchDrawer } from './BranchDrawer';
 
 export type BranchRow = Branch & { halls: number; seats: number; today: number };

@@ -1,8 +1,8 @@
 import 'server-only';
-import { type PublicUser, PublicUserSchema, type Role } from '@open-cinema/shared';
 import { headers } from 'next/headers';
 import { redirect } from 'next/navigation';
 import { cache } from 'react';
+import { type PublicUser, PublicUserSchema, type Role } from '@/lib/shared';
 import { ApiError, apiFetch } from './api';
 import { loginPathFor } from './auth/redirects';
 

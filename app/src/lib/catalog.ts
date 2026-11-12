@@ -1,11 +1,11 @@
+import { keepPreviousData, useQueries, useQuery } from '@tanstack/react-query';
 import {
   BranchSchema,
   type BranchShowtimes,
   BranchShowtimesSchema,
   MovieDetailSchema,
   MovieSummarySchema,
-} from '@open-cinema/shared';
-import { keepPreviousData, useQueries, useQuery } from '@tanstack/react-query';
+} from '@/shared';
 import { api } from './api';
 
 /** The catalog is public: browsing must not create a guest account. The first hold does. */

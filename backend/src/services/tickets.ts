@@ -1,9 +1,9 @@
-import type { TicketView } from '@open-cinema/shared';
 import { asc, desc, eq, type SQL, sql } from 'drizzle-orm';
 import type { Db } from '../db/client';
 import { bookings, branches, halls, movies, seats, showtimes, tickets } from '../db/schema';
 import { env } from '../env';
 import { checkCode, signPassUrl } from '../lib/sign';
+import type { TicketView } from '../shared';
 import { walletConfig } from '../wallet/pass';
 import { toBranch, toSummary } from './catalog-views';
 

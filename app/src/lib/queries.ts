@@ -1,5 +1,5 @@
-import { type PublicUser, PublicUserSchema } from '@open-cinema/shared';
 import { QueryClient, useQuery } from '@tanstack/react-query';
+import { type PublicUser, PublicUserSchema } from '@/shared';
 import { api } from './api';
 import { getUserId, subscribeAuth } from './auth';
 import { shouldClearCache } from './identity-change';

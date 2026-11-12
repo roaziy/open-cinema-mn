@@ -1,4 +1,3 @@
-import { normalizeEmail } from '@open-cinema/shared';
 import { useState } from 'react';
 import { StyleSheet, Text, TextInput, View } from 'react-native';
 import { type TKey, useI18n } from '@/i18n';
@@ -7,6 +6,7 @@ import { haptic } from '@/lib/haptics';
 import { otpErrorKey } from '@/lib/otp-errors';
 import { requestEmailCode, verifyEmailCode } from '@/lib/profile';
 import { showToast } from '@/lib/toast';
+import { normalizeEmail } from '@/shared';
 import { colors, radius, space } from '@/theme/tokens';
 import { fonts, type } from '@/theme/type';
 import { OtpEntry } from './otp-entry';

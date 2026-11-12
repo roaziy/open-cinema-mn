@@ -1,7 +1,7 @@
 'use client';
 
-import { ScanByOrder } from '@open-cinema/shared';
 import { useEffect, useRef, useState } from 'react';
+import { ScanByOrder } from '@/lib/shared';
 
 const FIELD =
   'focus-ring h-14 rounded-panel border border-hairline bg-surface px-4 text-[20px] uppercase text-ink placeholder:text-muted';

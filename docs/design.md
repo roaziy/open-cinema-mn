@@ -65,12 +65,13 @@ Next.js (admin+staff) ┼──> Express API (TypeScript) ──> PostgreSQL (Su
                       │          └──> passkit-generator (Wallet .pkpass)
 ```
 
-**Monorepo** **(owner: stack; builder call: layout)**
+**Repository layout** **(owner: stack; builder call: layout)**
 ```
 app     Expo SDK 58, expo-router
 web-admin      Next.js (App Router), admin + staff, PWA
 backend        Express + TypeScript
-shared zod schemas + inferred types used by all three apps
+zod schemas + inferred types: source in backend/src/shared, copied unchanged into app/src/shared and
+web-admin/lib/shared (npm run sync:shared); each package is standalone
 ```
 
 **Stack**
@@ -81,7 +82,7 @@ shared zod schemas + inferred types used by all three apps
 | Web | Next.js App Router, PWA manifest + service worker, `barcode-detector` polyfill for QR scanning (iOS Safari ships the native API disabled) |
 | API | Express + TypeScript **(owner)**, zod request validation, Drizzle ORM **(builder call)**, Server-Sent Events for live seats, `passkit-generator` |
 | DB | PostgreSQL hosted on Supabase **(owner)**, used as a plain database (no Supabase Auth, Realtime or RLS). The API connects through the Supavisor **session pooler** (IPv4). Migrations live in the repo. |
-| Hosting | **Backend** on a VPS the owner can use but does not administer (no database there): run with **pm2** (no Docker): `backend` is bundled with esbuild into `dist/index.js` (shared code inlined) and pm2 runs `node dist/index.js`, behind the VPS's existing reverse proxy, domain `cinema-api.roaziy.cloud`. **web-admin** on Vercel (monorepo root, project root `web-admin/`), domain `cinema.roaziy.cloud`. **App** runs as a development build on the owner's devices. The database is Supabase only; backups use Supabase's own or a scheduled GitHub Action `pg_dump`, not the VPS **(owner)**. |
+| Hosting | **Backend** on a VPS the owner can use but does not administer (no database there): run with **pm2** (no Docker): `backend` is bundled with esbuild into `dist/index.js` (its own code, including `src/shared`, bundled) and pm2 runs `node dist/index.js`, behind the VPS's existing reverse proxy, domain `cinema-api.roaziy.cloud`. **web-admin** on Vercel (project root `web-admin/`), domain `cinema.roaziy.cloud`. **App** runs as a development build on the owner's devices. The database is Supabase only; backups use Supabase's own or a scheduled GitHub Action `pg_dump`, not the VPS **(owner)**. |
 | CI | GitHub Actions: typecheck, lint, tests, gitleaks |
 
 Package manager and test runner are left to the builder.
@@ -195,7 +196,7 @@ Reference: the "view from seat" concept at x.com/oiharshit/status/21183695502953
   - Labels (tunable constants): view > 90° → "Very close to the screen"; 50–90° → "Close and immersive"; off-center > 20° → "Angled view"; otherwise "Balanced view".
 - Wheelchair seats show their kind in the header.
 - **Fallback:** if GL fails, show the stats card over a 2D diagram. Target 60 fps on iPhone 12 or newer **(builder call)**.
-- The math lives in `shared` with unit tests.
+- The math lives in `shared` (copied into each package) with unit tests.
 
 ## 10. UI direction
 
@@ -244,7 +245,7 @@ Reference: the "view from seat" concept at x.com/oiharshit/status/21183695502953
 ## 13. Delivery phases
 
 0. **De-risk spikes (throwaway):** a 3D hall scene in Expo with a camera fly-to-seat on a real iPhone, and a signed `.pkpass` that installs in Wallet. These are the two riskiest parts, so they are proven first **(builder call)**.
-1. Foundation: monorepo, shared package, DB schema + migrations, seed, auth (OTP + admin).
+1. Foundation: standalone packages, shared schemas, DB schema + migrations, seed, auth (OTP + admin).
 2. Admin: branches, hall generator, movies (with media upload), showtimes, prices, showtime cancellation.
 3. Customer: browse, detail, showtimes, live seat map, holds.
 4. Checkout (mock pay), tickets, QR, staff scan PWA, email (profile verification, confirmation, cancellation).

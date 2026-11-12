@@ -1,9 +1,9 @@
 import { randomUUID } from 'node:crypto';
-import type { UploadResult } from '@open-cinema/shared';
 import { Router } from 'express';
 import multer from 'multer';
 import type { AppDeps } from '../../app';
 import { AppError, badRequest } from '../../lib/errors';
+import type { UploadResult } from '../../shared';
 
 export const MAX_UPLOAD_BYTES = 8 * 1024 * 1024;
 

@@ -1,8 +1,8 @@
 'use client';
 
-import type { ScanResultCode } from '@open-cinema/shared';
 import { clockUb } from '@/lib/format';
 import { canUndo, cardFor } from '@/lib/scan/card';
+import type { ScanResultCode } from '@/lib/shared';
 import { useNow } from './useNow';
 import type { RecentScan } from './useRecent';
 

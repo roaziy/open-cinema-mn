@@ -1,11 +1,4 @@
 import { randomUUID } from 'node:crypto';
-import {
-  type BookingCreateBody,
-  type BookingView,
-  MAX_SEATS_PER_BOOKING,
-  type SeatDelta,
-  seatPrice,
-} from '@open-cinema/shared';
 import { and, asc, eq, gt, inArray, lt, or, sql } from 'drizzle-orm';
 import type { AppDeps } from '../app';
 import type { Db } from '../db/client';
@@ -28,6 +21,13 @@ import { signLink, signQr } from '../lib/sign';
 import { withTimeout } from '../lib/timeout';
 import { bookingConfirmedEmail } from '../messages/templates';
 import type { MockRaw } from '../payments/mock';
+import {
+  type BookingCreateBody,
+  type BookingView,
+  MAX_SEATS_PER_BOOKING,
+  type SeatDelta,
+  seatPrice,
+} from '../shared';
 import { heldCount, SLOT_COLUMNS, toBranch, toSlot, toSummary } from './catalog-views';
 import { lockUserShowtime, SeatTakenError, type Tx } from './holds';
 import { nonFreeSeats } from './seat-state';

@@ -1,9 +1,9 @@
-import { AdminScanQuery } from '@open-cinema/shared';
 import { Router } from 'express';
 import type { z } from 'zod';
 import type { AppDeps } from '../../app';
 import { validate } from '../../lib/http';
 import { adminScans } from '../../services/scan';
+import { AdminScanQuery } from '../../shared';
 
 export function createAdminScansRouter({ db }: AppDeps): Router {
   const r = Router();

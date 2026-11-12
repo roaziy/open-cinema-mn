@@ -1,4 +1,4 @@
-import type { ScanResult } from '@open-cinema/shared';
+import type { ScanResult } from '@/lib/shared';
 import type { RetryReason } from './send';
 
 /** What the scanner screen is doing. Decoding is allowed only while `idle`. */

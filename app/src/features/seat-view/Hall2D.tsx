@@ -1,9 +1,9 @@
-import type { SeatMap, SeatState } from '@open-cinema/shared';
-import { EYE_HEIGHT_M, SCREEN_BOTTOM_M } from '@open-cinema/shared';
 import { useMemo } from 'react';
 import { StyleSheet, Text, View } from 'react-native';
 import Svg, { Circle, Line, Path, Polygon, Rect } from 'react-native-svg';
 import { useI18n } from '@/i18n';
+import type { SeatMap, SeatState } from '@/shared';
+import { EYE_HEIGHT_M, SCREEN_BOTTOM_M } from '@/shared';
 import { colors, radius, space } from '@/theme/tokens';
 import { type } from '@/theme/type';
 import { hallDepth, hallExtents, hallHalfWidth, rowsOf, stepSpans } from './camera-math';

@@ -1,4 +1,4 @@
-import { EYE_HEIGHT_M, SCREEN_BOTTOM_M } from '@open-cinema/shared';
+import { EYE_HEIGHT_M, SCREEN_BOTTOM_M } from '@/shared';
 
 /**
  * Pure maths for the view-from-seat scene. World axes follow three.js (Y up): world x is the
