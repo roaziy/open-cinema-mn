@@ -84,7 +84,9 @@ export function createAuthRouter(deps: AppDeps, limiters: Limiters): Router {
     if (as === 'staff') {
       const staff = channel === 'sms' && (await findUser('phone', target))?.role === 'staff';
       if (staff) {
-        void issueOtp(db, clock(), target, { exact: target })
+        // Its own scope: a staff code never shares a cooldown or record with the customer path.
+        const key = `staff:${target}`;
+        void issueOtp(db, clock(), key, { exact: key })
           .then((code) => sendCode(channel, target, code))
           .catch((err) => {
             if (!(err instanceof AppError)) console.error('staff sign-in code not sent', err);
@@ -103,7 +105,7 @@ export function createAuthRouter(deps: AppDeps, limiters: Limiters): Router {
     const target = normalizeTarget(channel, raw);
     if (!target) throw badRequest('invalid_target');
     const now = clock();
-    await consumeOtp(db, now, { exact: target }, code);
+    await consumeOtp(db, now, { exact: as === 'staff' ? `staff:${target}` : target }, code);
 
     const column = channel === 'sms' ? 'phone' : 'email';
     let user = await findUser(column, target);
