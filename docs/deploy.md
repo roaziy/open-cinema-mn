@@ -292,7 +292,7 @@ the database from a backup rather than editing it by hand. Return to the branch 
 
 Back up the database with whatever your PostgreSQL host provides, or a scheduled `pg_dump` stored
 off the server. Uploaded images are not part of a database dump: with `STORAGE_PROVIDER=local` back
-up `backend/uploads/`; with a remote storage adapter use that service's own backup.
+up `backend/uploads/`; with `r2` the files live in your R2 bucket.
 
 ## 2. Admin web
 

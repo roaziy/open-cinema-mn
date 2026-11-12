@@ -69,18 +69,32 @@ Posters and images. `STORAGE_PROVIDER` is:
 
 - `local` (default): files are written under `backend/uploads/` and served by the API. Back that
   folder up; it is not part of a database dump.
-- `supabase`: an optional adapter that uses a public bucket of a hosted object store.
+- `r2`: a Cloudflare R2 bucket (the free tier covers 10 GB). Files survive a server move and load
+  from Cloudflare's network.
+
+Setting up R2, in the Cloudflare dashboard under R2 Object Storage:
+
+1. **Create bucket**, e.g. `open-cinema-media`.
+2. In the bucket's **Settings**, turn on public access: either the `r2.dev` URL or a custom domain.
+   Copy that public URL.
+3. **Manage API Tokens** → create an R2 token with **Object Read & Write**, limited to this bucket.
+   Copy the access key ID and the secret (shown once).
+4. Copy the **Account ID** from the R2 overview page.
 
 | Variable | Value |
 |---|---|
-| `STORAGE_PROVIDER` | `local` or `supabase` |
-| `SUPABASE_URL` | project URL (only for `supabase`) |
-| `SUPABASE_SERVICE_ROLE_KEY` | service key, server only (only for `supabase`) |
-| `SUPABASE_BUCKET` | public bucket name (only for `supabase`) |
+| `STORAGE_PROVIDER` | `local` or `r2` |
+| `R2_ACCOUNT_ID` | 32-character account ID (only for `r2`) |
+| `R2_BUCKET` | bucket name (only for `r2`) |
+| `R2_ACCESS_KEY_ID` | the token's access key ID (only for `r2`) |
+| `R2_SECRET_ACCESS_KEY` | the token's secret, server only (only for `r2`) |
+| `R2_PUBLIC_URL` | the bucket's public URL, e.g. `https://pub-….r2.dev` (only for `r2`) |
 
 **Verify.** Upload a poster in the admin app and open the returned URL in a browser; it must load
-without signing in. The service key bypasses all access rules: never put it in the app, the admin web
-or git. Rotate it in the provider, update the variable, restart.
+without signing in. Keep the secret out of the app, the admin web and git. To rotate it, create a new
+token, update the variables, restart, then delete the old token.
+
+Switching providers does not move existing images: posters uploaded before keep their old URLs.
 
 ## 5. Optional: login-code messages (SMS and email)
 

@@ -108,7 +108,7 @@ ticket_scans   id, ticket_id?, staff_id, device_id, scan_id UNIQUE, result(admit
 
 Seat geometry is in meters, with the screen on the line y = 0 and x across the hall. `z_m` is the stepped floor height; the generator defaults to a rise of 0.15 m per row **(builder call)**. A hall's seats cannot be regenerated while any future showtime in it has valid tickets.
 
-Posters and backdrops are uploaded by the admin to the configured storage provider (`local` disk by default, or an optional hosted adapter), and the URLs are stored on `movies` **(builder call)**. Storage is not covered by `pg_dump` (back up `backend/uploads/` for `local`); seeds can recreate demo media. The admin hall editor **generates** seats from rows, columns, seat pitch, row spacing and aisle gaps, then allows per-seat kind changes. It is not a freeform drag editor **(builder call)**.
+Posters and backdrops are uploaded by the admin to the configured storage provider (`local` disk by default, or a Cloudflare R2 bucket), and the URLs are stored on `movies` **(builder call)**. Storage is not covered by `pg_dump` (back up `backend/uploads/` for `local`); seeds can recreate demo media. The admin hall editor **generates** seats from rows, columns, seat pitch, row spacing and aisle gaps, then allows per-seat kind changes. It is not a freeform drag editor **(builder call)**.
 
 ## 8. Key flows
 

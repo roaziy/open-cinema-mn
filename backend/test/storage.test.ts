@@ -5,14 +5,16 @@ import request from 'supertest';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { createStorage } from '../src/storage';
 import { LocalStorage, UPLOAD_DIR } from '../src/storage/local';
-import { SupabaseStorage } from '../src/storage/supabase';
+import { R2Storage } from '../src/storage/r2';
 import { makeTestApp } from './helpers';
 
 const base = {
   API_PUBLIC_URL: 'http://localhost:8080',
-  SUPABASE_URL: undefined,
-  SUPABASE_SERVICE_ROLE_KEY: undefined,
-  SUPABASE_BUCKET: undefined,
+  R2_ACCOUNT_ID: undefined,
+  R2_BUCKET: undefined,
+  R2_ACCESS_KEY_ID: undefined,
+  R2_SECRET_ACCESS_KEY: undefined,
+  R2_PUBLIC_URL: undefined,
 };
 
 describe('LocalStorage', () => {
@@ -40,20 +42,22 @@ describe('createStorage', () => {
     expect(createStorage({ ...base, STORAGE_PROVIDER: 'local' })).toBeInstanceOf(LocalStorage);
   });
 
-  it('builds Supabase storage when configured', () => {
+  it('builds R2 storage when configured', () => {
     const s = createStorage({
       ...base,
-      STORAGE_PROVIDER: 'supabase',
-      SUPABASE_URL: 'https://example.supabase.co',
-      SUPABASE_SERVICE_ROLE_KEY: 'service-key',
-      SUPABASE_BUCKET: 'media',
+      STORAGE_PROVIDER: 'r2',
+      R2_ACCOUNT_ID: '0123456789abcdef0123456789abcdef',
+      R2_BUCKET: 'media',
+      R2_ACCESS_KEY_ID: 'key',
+      R2_SECRET_ACCESS_KEY: 'secret',
+      R2_PUBLIC_URL: 'https://media.example.com',
     });
-    expect(s).toBeInstanceOf(SupabaseStorage);
+    expect(s).toBeInstanceOf(R2Storage);
   });
 
-  it('throws when supabase is selected without its settings', () => {
-    expect(() => createStorage({ ...base, STORAGE_PROVIDER: 'supabase' })).toThrow(
-      /SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY, SUPABASE_BUCKET/,
+  it('throws when r2 is selected without its settings', () => {
+    expect(() => createStorage({ ...base, STORAGE_PROVIDER: 'r2' })).toThrow(
+      /R2_ACCOUNT_ID, R2_BUCKET, R2_ACCESS_KEY_ID, R2_SECRET_ACCESS_KEY, R2_PUBLIC_URL/,
     );
   });
 });
