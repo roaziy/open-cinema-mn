@@ -83,49 +83,70 @@ at the repository root; CI fails (`npm run check:shared`) when the copies differ
 
 ## Quick start
 
-You need Node 24 and a local Postgres 17.
+You need Node 24 and PostgreSQL 17 (local or remote). The mobile app also needs a Mac with Xcode
+for the iOS simulator.
 
 ```bash
 git clone https://github.com/roaziy/open-cinema-mn.git
 cd open-cinema-mn
-npm run install:all             # npm ci in backend/, web-admin/ and mobile-app/
+npm run install:all     # npm ci in backend/, web-admin/ and mobile-app/ (or npm ci in just one)
+```
 
+Start the backend first: the admin web and the mobile app both talk to it. Each service runs in
+its own terminal.
+
+### 1. Backend (API): `backend/`
+
+```bash
 # empty local databases (Postgres CLI); skip both if DATABASE_URL points elsewhere
 createdb open_cinema_dev        # used by the API in development
 createdb open_cinema_test       # used by backend tests (they wipe tables)
 
 cd backend
 cp .env.example .env            # defaults work locally: codes are logged, files stay on disk
-npm run db:migrate
-npm run db:seed                 # fictional cinemas, films and an admin account (see backend/.env)
-
-npm run dev                     # API on http://localhost:4000 (from the repo root: npm run dev:backend)
-curl http://localhost:4000/v1/health
+npm run db:migrate              # create the tables
+npm run db:seed                 # demo cinemas, films, an admin and two staff accounts
+npm run dev                     # http://localhost:4000, restarts when you save a file
 ```
 
-Login codes are printed in the API log while `MESSAGES_PROVIDER=dev`.
+Check it from another terminal: `curl http://localhost:4000/v1/health`. While
+`MESSAGES_PROVIDER=dev`, login codes (SMS and email) are printed in this terminal instead of sent.
 
-**Customer app** on the iOS simulator (development build, not Expo Go):
-
-```bash
-cd mobile-app
-cp .env.example .env
-npx expo run:ios
-```
-
-A physical phone on the same Wi-Fi works without editing `mobile-app/.env`: in development the app replaces `localhost` in `EXPO_PUBLIC_API_URL` with the Metro host's LAN address (the API listens on all interfaces). On iOS, allow "Local Network" access when prompted. Fonts are also loaded at runtime, so Expo Go shows the brand font too.
-
-**Admin web:**
+### 2. Admin and staff web: `web-admin/`
 
 ```bash
 cd web-admin
 cp .env.example .env
-npm run dev                       # http://localhost:3000 (from the repo root: npm run dev:admin)
+npm run dev                     # http://localhost:3000
 ```
 
-Sign in with `SEED_ADMIN_EMAIL` / `SEED_ADMIN_PASSWORD` from `backend/.env` (development only). On a real deployment create the first admin with `npm run admin:create:prod` in `backend/`; see [`docs/deploy.md`](docs/deploy.md).
+- **Admin** (`/login`): `SEED_ADMIN_EMAIL` / `SEED_ADMIN_PASSWORD` from `backend/.env`
+  (development only; in production create the first admin with `npm run admin:create:prod` in
+  `backend/`, see [`docs/deploy.md`](docs/deploy.md)).
+- **Staff** ticket scanner (`/staff/login`): a seeded staff phone number; the code appears in the
+  backend terminal.
 
-**Checks**, in each of `backend/`, `web-admin/` and `mobile-app/`:
+### 3. Mobile app (customer): `mobile-app/`
+
+```bash
+cd mobile-app
+cp .env.example .env
+npx expo run:ios                # first time: builds the development app, installs it, starts Metro
+npx expo start                  # afterwards: just start Metro
+```
+
+It is a development build, not Expo Go. A physical phone on the same Wi-Fi works without editing
+`mobile-app/.env`: in development the app swaps `localhost` in `EXPO_PUBLIC_API_URL` for the dev
+machine's LAN address. On iOS, allow "Local Network" access when asked.
+
+### From the repository root
+
+`npm run dev:backend`, `npm run dev:admin` and `npm run dev:mobile` start each service without
+`cd`.
+
+## Checks
+
+In each of `backend/`, `web-admin/` and `mobile-app/`:
 
 ```bash
 npm run typecheck && npm run lint && npm test
