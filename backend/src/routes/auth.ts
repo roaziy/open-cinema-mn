@@ -20,7 +20,7 @@ import {
 } from '../lib/tokens';
 import { otpEmail, otpSms } from '../messages/templates';
 import { MessageSendError } from '../messages/wesend';
-import { requireAuth, requireRole } from '../middleware/auth';
+import { activeStaffAccount, requireAuth, requireRole } from '../middleware/auth';
 import {
   AdminLoginBody,
   AdminPasswordBody,
@@ -91,7 +91,10 @@ export function createAuthRouter(deps: AppDeps, limiters: Limiters): Router {
   /** Loads the signed-in account from the table its role belongs to. */
   async function loadAccount(who: { id: string; role: Role }): Promise<AccountRow | undefined> {
     if (isStaffRole(who.role)) {
-      const [a] = await db.select().from(staffAccounts).where(eq(staffAccounts.id, who.id));
+      const [a] = await db
+        .select()
+        .from(staffAccounts)
+        .where(and(eq(staffAccounts.id, who.id), activeStaffAccount()));
       return a;
     }
     const [u] = await db.select().from(users).where(eq(users.id, who.id));

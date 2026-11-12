@@ -816,7 +816,11 @@ describe('staff', () => {
       refreshTokenHash: 'h',
       expiresAt: new Date('2027-01-01'),
     });
+    const staffAuth = `Bearer ${await signAccessToken({ id: made.body.id, role: 'staff' }, s.clock())}`;
+    await request(s.app).get('/v1/me').set('Authorization', staffAuth).expect(200);
     await a('delete', `/staff/${made.body.id}`).expect(204);
+    // an access token the removed member still holds stops working at once
+    await request(s.app).get('/v1/me').set('Authorization', staffAuth).expect(401);
     // the account stays for scan history, without a phone or branch, and its sessions end
     const [row] = await db.select().from(staffAccounts).where(eq(staffAccounts.id, made.body.id));
     expect(row).toMatchObject({ role: 'staff', name: 'Door A', branchId: null, phone: null });
