@@ -5,7 +5,9 @@ useDefault = true
 
 [allowlist]
 description = "Fixed test fixtures, never real secrets"
+regexTarget = "line"
 regexes = [
   '''test-(jwt|qr|link|bff)-secret-[0-9a-f]+''',
   '''ci-(jwt|qr|link|bff)-secret-[0-9a-z-]+''',
+  '''idempotencyKey: '[0-9a-f-]{36}',''',
 ]
