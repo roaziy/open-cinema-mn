@@ -125,10 +125,14 @@ function TicketBlock({ id, index, total }: { id: string; index: number | null; t
       {live ? (
         <View style={styles.actions}>
           {NativeWallet ? (
-            <NativeWallet onPress={wallet} style={[styles.passButton, walletBusy && styles.busy]} />
+            // Apple draws the button (and its font); the frame around it is the app's, so it matches
+            // the Calendar button below.
+            <View style={[styles.action, styles.walletFrame, walletBusy && styles.busy]}>
+              <NativeWallet variant="black" onPress={wallet} style={styles.passButton} />
+            </View>
           ) : process.env.EXPO_OS === 'ios' ? (
             <Pressable
-              style={[styles.action, styles.wallet, walletBusy && styles.busy]}
+              style={[styles.action, walletBusy && styles.busy]}
               onPress={wallet}
               disabled={walletBusy}
               accessibilityRole="button"
@@ -165,12 +169,13 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
     gap: space.sm,
     borderRadius: radius.card,
-    backgroundColor: colors.fill,
+    // The raised tone matches Apple's dark Wallet button, so both actions read as a pair.
+    backgroundColor: colors.raised,
     borderWidth: 1,
     borderColor: colors.hairline,
   },
-  wallet: { backgroundColor: colors.raised },
   busy: { opacity: 0.6 },
-  passButton: { width: '100%', height: 50 },
+  walletFrame: { overflow: 'hidden', paddingHorizontal: 0 },
+  passButton: StyleSheet.absoluteFill,
   actionText: { ...type.headline, color: colors.ink },
 });
