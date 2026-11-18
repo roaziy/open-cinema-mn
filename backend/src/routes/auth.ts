@@ -238,7 +238,10 @@ export function createAuthRouter(deps: AppDeps, limiters: Limiters): Router {
     const account = owner
       ? 'staffAccountId' in owner
         ? (
-            await db.select().from(staffAccounts).where(eq(staffAccounts.id, owner.staffAccountId))
+            await db
+              .select()
+              .from(staffAccounts)
+              .where(and(eq(staffAccounts.id, owner.staffAccountId), activeStaffAccount()))
           )[0]
         : (await db.select().from(users).where(eq(users.id, owner.userId)))[0]
       : undefined;

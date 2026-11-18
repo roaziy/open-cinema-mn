@@ -19,7 +19,7 @@ import {
 import { runSweep } from '../src/jobs/sweeper';
 import { SeatHub } from '../src/lib/seat-hub';
 import { TimeoutError } from '../src/lib/timeout';
-import { signAccessToken } from '../src/lib/tokens';
+import { sha256, signAccessToken } from '../src/lib/tokens';
 import { MockPaymentProvider } from '../src/payments/mock';
 import { confirmBooking, refundOwed } from '../src/services/bookings';
 import { createHolds } from '../src/services/holds';
@@ -829,6 +829,13 @@ describe('staff', () => {
       .from(sessions)
       .where(eq(sessions.staffAccountId, made.body.id));
     expect(session?.revokedAt).not.toBeNull();
+    // a session that escaped revocation still cannot be refreshed
+    await db.insert(sessions).values({
+      staffAccountId: made.body.id,
+      refreshTokenHash: sha256('left-over'),
+      expiresAt: new Date('2027-01-01'),
+    });
+    await request(s.app).post('/v1/auth/refresh').send({ refreshToken: 'left-over' }).expect(401);
     expect((await a('get', '/staff').expect(200)).body).toHaveLength(0);
     await a('delete', `/staff/${made.body.id}`).expect(404);
     // the phone can be given to a new staff member
