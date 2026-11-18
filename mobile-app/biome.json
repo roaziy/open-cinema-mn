@@ -7,7 +7,7 @@
     "root": ".."
   },
   "files": {
-    "includes": ["**", "!**/package-lock.json"]
+    "includes": ["**", "!**/package-lock.json", "!expo-env.d.ts"]
   },
   "formatter": {
     "indentStyle": "space",
