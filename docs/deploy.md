@@ -107,7 +107,7 @@ If your provider offers several connection modes, use one that keeps normal sess
 
 ```bash
 # from ~/open-cinema/backend
-npm run build        # dist/index.js, dist/migrate.js, dist/admin-create.js
+npm run build        # dist/index.js, dist/migrate.js, dist/admin-create.js, dist/halls-create.js
 npm run db:migrate:prod
 # first deploy only: the first admin (asks for the password without echoing it)
 npm run admin:create:prod -- --email you@example.com --name "Your Name"
@@ -120,6 +120,16 @@ curl -s http://127.0.0.1:8080/v1/health      # {"ok":true,"db":true}
 `admin:create:prod` never touches other data. For a scripted setup pass the password in
 `ADMIN_PASSWORD`. It refuses to overwrite an existing admin; to recover a lost password run it again
 with `--reset-password` (this also clears a lockout).
+
+Ready-made halls (2D, 3D, 3D Dolby Vision, IMAX, VIP, small) can be added to a branch after it exists
+in the admin. Seats come painted (premium back rows, wheelchair seats at the front). A hall whose
+name already exists in the branch is skipped, so it is safe to run again:
+
+```bash
+npm run halls:create:prod -- --list                                  # templates and branches
+npm run halls:create:prod -- --branch "Your Branch"                  # all of them
+npm run halls:create:prod -- --branch "Your Branch" --only imax,vip  # some of them
+```
 
 Demo data (`db:seed`) is for development only: it refuses to run with `NODE_ENV=production` and
 truncates every table.

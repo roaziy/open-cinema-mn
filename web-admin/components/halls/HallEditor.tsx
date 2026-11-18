@@ -6,8 +6,12 @@ import { Button } from '@/components/ui/Button';
 import { Labeled, Select, TextInput } from '@/components/ui/Inputs';
 import { Notice } from '@/components/ui/Notice';
 import { messageOf } from '@/lib/client-api';
-import { type HallTemplate, templateKinds } from '@/lib/hall-templates';
-import { type AdminHallDetail, seatViewStats } from '@/lib/shared';
+import {
+  type AdminHallDetail,
+  type HallTemplate,
+  seatViewStats,
+  templateKinds,
+} from '@/lib/shared';
 import { GeneratorFields } from './GeneratorFields';
 import { KIND_LABEL } from './kinds';
 import { PaintToolbar } from './PaintToolbar';

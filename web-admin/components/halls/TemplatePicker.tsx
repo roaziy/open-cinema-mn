@@ -1,6 +1,6 @@
 'use client';
 
-import { HALL_TEMPLATES, type HallTemplate } from '@/lib/hall-templates';
+import { HALL_TEMPLATES, type HallTemplate } from '@/lib/shared';
 
 /** One click fills a new hall with a common shape; everything stays editable afterwards. */
 export function TemplatePicker({ onPick }: { onPick: (t: HallTemplate) => void }) {

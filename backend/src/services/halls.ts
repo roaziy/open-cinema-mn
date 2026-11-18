@@ -3,8 +3,15 @@ import type { Db } from '../db/client';
 import { bookings, halls, seatHolds, seats, showtimes, tickets } from '../db/schema';
 import { conflict, isForeignKeyViolation, notFound } from '../lib/errors';
 import type { SeatHub } from '../lib/seat-hub';
-import type { AdminHall, AdminHallDetail, AdminSeat, HallGenParams, SeatKind } from '../shared';
-import { generateSeats } from '../shared';
+import type {
+  AdminHall,
+  AdminHallDetail,
+  AdminSeat,
+  HallGenParams,
+  HallTemplate,
+  SeatKind,
+} from '../shared';
+import { generateSeats, templateKinds } from '../shared';
 import type { Tx } from './holds';
 import { nonFreeSeats } from './seat-state';
 
@@ -45,7 +52,12 @@ const toHall = (h: HallRow): AdminHall => ({
   locked: h.locked,
 });
 
-async function insertSeats(tx: Tx, hallId: string, gen: HallGenParams): Promise<void> {
+async function insertSeats(
+  tx: Tx,
+  hallId: string,
+  gen: HallGenParams,
+  kinds?: Map<string, SeatKind>,
+): Promise<void> {
   const rows = generateSeats(gen).map((s) => ({
     hallId,
     rowLabel: s.rowLabel,
@@ -53,7 +65,7 @@ async function insertSeats(tx: Tx, hallId: string, gen: HallGenParams): Promise<
     xM: s.x_m,
     yM: s.y_m,
     zM: s.z_m,
-    kind: s.kind,
+    kind: kinds?.get(`${s.rowLabel}-${s.number}`) ?? s.kind,
   }));
   for (let i = 0; i < rows.length; i += INSERT_CHUNK) {
     await tx.insert(seats).values(rows.slice(i, i + INSERT_CHUNK));
@@ -97,6 +109,8 @@ export async function createHall(
     screen_width_m: number;
     screen_height_m: number;
     gen: HallGenParams;
+    /** Seat kinds keyed `row-number`; the rest stay standard. */
+    kinds?: Map<string, SeatKind>;
   },
 ): Promise<string> {
   return db.transaction(async (tx) => {
@@ -112,9 +126,43 @@ export async function createHall(
       })
       .returning({ id: halls.id });
     const id = (hall as { id: string }).id;
-    await insertSeats(tx, id, b.gen);
+    await insertSeats(tx, id, b.gen, b.kinds);
     return id;
   });
+}
+
+/**
+ * Creates the given hall templates in a branch, painted. A hall with the template's name already
+ * in the branch is left alone, so running it again only adds what is missing.
+ */
+export async function createTemplateHalls(
+  db: Db,
+  branchId: string,
+  templates: HallTemplate[],
+): Promise<{ name: string; seats: number; created: boolean }[]> {
+  const existing = new Set(
+    (await db.select({ name: halls.name }).from(halls).where(eq(halls.branchId, branchId))).map(
+      (h) => h.name,
+    ),
+  );
+  const out: { name: string; seats: number; created: boolean }[] = [];
+  for (const t of templates) {
+    const seats = t.gen.rows * t.gen.seatsPerRow;
+    if (existing.has(t.name)) {
+      out.push({ name: t.name, seats, created: false });
+      continue;
+    }
+    await createHall(db, {
+      branchId,
+      name: t.name,
+      screen_width_m: t.screenW,
+      screen_height_m: t.screenH,
+      gen: t.gen,
+      kinds: templateKinds(t),
+    });
+    out.push({ name: t.name, seats, created: true });
+  }
+  return out;
 }
 
 /**
