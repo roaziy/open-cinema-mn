@@ -157,18 +157,18 @@ After editing `backend/src/shared/`, run `npm run sync:shared` at the repository
 
 ## CI and releases
 
-GitHub Actions, on every pull request and every push to `main`:
+**ci** (`.github/workflows/ci.yml`) runs on every pull request and every push to `main`: it checks
+the shared copies, then typecheck, lint and tests for each package (backend tests against a Postgres
+service), builds the backend and starts it in production mode, builds the web admin, and runs
+gitleaks over the history.
 
-- **ci** (`.github/workflows/ci.yml`): checks the shared copies, then typecheck, lint and tests for
-  each package (backend tests against a Postgres service), builds the backend and starts it in
-  production mode, builds the web admin, and runs gitleaks over the history.
-- **release** (`.github/workflows/release.yml`, only after ci passes on `main`): release-please reads the
-  [conventional commits](https://www.conventionalcommits.org) since the last release (`fix:` bumps
-  the patch, `feat:` the minor) and keeps a release PR open with the version and
-  `docs/CHANGELOG.md`. Merging it tags the commit and publishes a GitHub Release. Nothing is deployed.
+Releases are cut by hand when a version is wanted, from an up-to-date `main`:
 
-For the release PR, turn on *Settings → Actions → General → Allow GitHub Actions to create and
-approve pull requests* once.
+```bash
+gh release create vX.Y.Z --target main --generate-notes   # e.g. v0.1.4
+```
+
+GitHub writes the notes from the merged pull requests. Nothing is deployed.
 
 ## Screenshots
 
