@@ -6,7 +6,12 @@ import { Button } from '@/components/ui/Button';
 import { Labeled, Select, TextInput } from '@/components/ui/Inputs';
 import { Notice } from '@/components/ui/Notice';
 import { messageOf } from '@/lib/client-api';
-import { type AdminHallDetail, seatViewStats } from '@/lib/shared';
+import {
+  type AdminHallDetail,
+  type HallTemplate,
+  seatViewStats,
+  templateKinds,
+} from '@/lib/shared';
 import { GeneratorFields } from './GeneratorFields';
 import { KIND_LABEL } from './kinds';
 import { PaintToolbar } from './PaintToolbar';
@@ -14,6 +19,7 @@ import { SeatPlan } from './SeatPlan';
 import { SeatStats } from './SeatStats';
 import { SideProfile } from './SideProfile';
 import { saveHall } from './saveHall';
+import { TemplatePicker } from './TemplatePicker';
 import { useHallDraft } from './useHallDraft';
 
 export function HallEditor({
@@ -95,6 +101,16 @@ export function HallEditor({
   return (
     <div className="grid gap-4 xl:grid-cols-[320px_minmax(0,1fr)]">
       <div className="space-y-4">
+        {!hall && (
+          <TemplatePicker
+            onPick={edited((t: HallTemplate) => {
+              if (!name.trim()) setName(t.name);
+              setScreenW(String(t.screenW));
+              setScreenH(String(t.screenH));
+              d.applyLayout(t.gen, templateKinds(t));
+            })}
+          />
+        )}
         <section className="highlight space-y-4 rounded-panel border border-hairline bg-raised p-4">
           <Labeled label="Заалны нэр" htmlFor="h-name">
             <TextInput

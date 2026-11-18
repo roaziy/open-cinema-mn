@@ -1,4 +1,5 @@
 export * from './hall-generator';
+export * from './hall-templates';
 export * from './money';
 export * from './normalize';
 export * from './palette';

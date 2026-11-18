@@ -1,5 +1,5 @@
-// Production bundle: dist/index.js (API), dist/migrate.js (migrations) and dist/admin-create.js (first
-// admin), run with plain node.
+// Production bundle: dist/index.js (API), dist/migrate.js (migrations), dist/admin-create.js (first
+// admin) and dist/halls-create.js (ready-made halls), run with plain node.
 // Application code (including src/shared) is bundled; every dependency stays external and is
 // loaded from node_modules at runtime.
 import { rename, rm } from 'node:fs/promises';
@@ -17,6 +17,7 @@ await build({
     index: 'src/index.ts',
     migrate: 'src/db/migrate.ts',
     'admin-create': 'src/scripts/admin-create.ts',
+    'halls-create': 'src/scripts/halls-create.ts',
   },
   outdir: next,
   bundle: true,
