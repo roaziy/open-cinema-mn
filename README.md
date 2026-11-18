@@ -73,7 +73,7 @@ Next.js (admin+staff) ┘     (1 process)  │
 | `web-admin/` | Admin and staff web app: Next.js                                  |
 | `backend/`   | API: Express, Drizzle, tests against a real Postgres              |
 | `docs/`      | Design, deployment runbook, credentials guide, screenshots        |
-| `.github/`   | CI workflow, gitleaks config                                      |
+| `.github/`   | CI and release workflows, gitleaks config                         |
 
 Each of `mobile-app/`, `backend/` and `web-admin/` is a standalone package: its own `package.json`,
 `package-lock.json`, `node_modules`, `tsconfig.json`, `biome.json` and `.env`. The zod schemas, types
@@ -154,6 +154,21 @@ npm run typecheck && npm run lint && npm test
 
 Backend tests need `TEST_DATABASE_URL` (see `backend/.env.example`) and run against real Postgres.
 After editing `backend/src/shared/`, run `npm run sync:shared` at the repository root.
+
+## CI and releases
+
+GitHub Actions, on every pull request and every push to `main`:
+
+- **ci** (`.github/workflows/ci.yml`): checks the shared copies, then typecheck, lint and tests for
+  each package (backend tests against a Postgres service), builds the backend and starts it in
+  production mode, builds the web admin, and runs gitleaks over the history.
+- **release** (`.github/workflows/release.yml`, `main` only): release-please reads the
+  [conventional commits](https://www.conventionalcommits.org) since the last release (`fix:` bumps
+  the patch, `feat:` the minor) and keeps a release PR open with the version and
+  `docs/CHANGELOG.md`. Merging it tags the commit and publishes a GitHub Release. Nothing is deployed.
+
+For the release PR, turn on *Settings → Actions → General → Allow GitHub Actions to create and
+approve pull requests* once.
 
 ## Screenshots
 
