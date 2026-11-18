@@ -106,6 +106,14 @@ export function useHallDraft(hall: AdminHallDetail | null) {
   return {
     raw,
     setRaw,
+    /** Replaces the layout and paint with a ready-made one (new halls only). */
+    applyLayout(next: HallGenParams, kinds: Map<string, SeatKind>) {
+      setRawState(toRaw(next));
+      setGen(next);
+      setGenValid(true);
+      setPending(new Map(kinds));
+      setSelected(null);
+    },
     gen,
     genValid,
     regenerate,
