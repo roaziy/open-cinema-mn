@@ -5,6 +5,8 @@ const securityHeaders = [
   { key: 'X-Frame-Options', value: 'DENY' },
   { key: 'Referrer-Policy', value: 'strict-origin-when-cross-origin' },
   { key: 'Permissions-Policy', value: 'camera=(self), microphone=(), geolocation=()' },
+  // Back office and guest tickets only: keep every page and file out of search engines.
+  { key: 'X-Robots-Tag', value: 'noindex, nofollow' },
 ];
 
 // One id per build: names the service worker cache so a deploy never reuses an old one.

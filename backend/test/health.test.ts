@@ -9,6 +9,7 @@ describe('GET /v1/health', () => {
     const res = await request(makeTestApp()).get('/v1/health');
     expect(res.status).toBe(200);
     expect(res.body).toEqual({ ok: true, db: true });
+    expect(res.headers['x-robots-tag']).toBe('noindex, nofollow');
   });
 
   it('maps unknown routes to a JSON 404', async () => {
