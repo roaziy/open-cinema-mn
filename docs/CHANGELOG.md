@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.1.3](https://github.com/roaziy/open-cinema-mn/compare/v0.1.2...v0.1.3) (2026-11-18)
+
+
+### Bug Fixes
+
+* release after ci, steady dashboard test ([#6](https://github.com/roaziy/open-cinema-mn/issues/6)) ([67adc1b](https://github.com/roaziy/open-cinema-mn/commit/67adc1bd7b5cd1ab260351b7bbceeb94bafdc486))
+
 ## [0.1.2](https://github.com/roaziy/open-cinema-mn/compare/v0.1.1...v0.1.2) (2026-11-18)
 
 
