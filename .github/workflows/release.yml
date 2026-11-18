@@ -1,0 +1,46 @@
+name: release
+
+# Every push to main (a merged pull request) runs the full ci first, then tags the next version and
+# publishes its GitHub Release with notes generated from the merged pull requests. `feat:` bumps
+# the minor, anything else the patch (.github/scripts/next-version.sh). Nothing is deployed.
+on:
+  push:
+    branches: [main]
+
+permissions:
+  contents: read
+
+concurrency:
+  group: release
+  cancel-in-progress: false
+
+jobs:
+  ci:
+    uses: ./.github/workflows/ci.yml
+    permissions:
+      contents: read
+      pull-requests: read
+
+  release:
+    needs: ci
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          fetch-depth: 0
+          fetch-tags: true
+          persist-credentials: false
+      - name: Tag and publish the next version
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          last=$(git describe --tags --abbrev=0 --match 'v*' 2>/dev/null || echo v0.0.0)
+          range=$([ "$last" = v0.0.0 ] && echo HEAD || echo "$last..HEAD")
+          if ! next=$(git log --format=%s "$range" | .github/scripts/next-version.sh "$last"); then
+            echo "nothing new since $last"
+            exit 0
+          fi
+          gh release create "$next" --target "$GITHUB_SHA" --title "$next" --generate-notes

@@ -157,18 +157,13 @@ After editing `backend/src/shared/`, run `npm run sync:shared` at the repository
 
 ## CI and releases
 
-**ci** (`.github/workflows/ci.yml`) runs on every pull request and every push to `main`: it checks
-the shared copies, then typecheck, lint and tests for each package (backend tests against a Postgres
-service), builds the backend and starts it in production mode, builds the web admin, and runs
-gitleaks over the history.
-
-Releases are cut by hand when a version is wanted, from an up-to-date `main`:
-
-```bash
-gh release create vX.Y.Z --target main --generate-notes   # e.g. v0.1.4
-```
-
-GitHub writes the notes from the merged pull requests. Nothing is deployed.
+- **ci** (`.github/workflows/ci.yml`) runs on every pull request: it checks the shared copies, then
+  typecheck, lint and tests for each package (backend tests against a Postgres service), builds the
+  backend and starts it in production mode, builds the web admin, and runs gitleaks over the history.
+- **release** (`.github/workflows/release.yml`) runs on every push to `main` (a merged pull
+  request): the same ci first, then, only if it passes, it tags the next version and publishes the
+  GitHub Release with notes generated from the merged pull requests. `feat:` bumps the minor,
+  anything else the patch. Nothing is deployed.
 
 ## Screenshots
 
