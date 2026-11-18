@@ -4,11 +4,6 @@ on:
   push:
     branches: [main]
   pull_request:
-    # A release-please PR only bumps the version and changelog; ci runs on main once it merges.
-    paths-ignore:
-      - .github/.release-please-manifest.json
-      - docs/CHANGELOG.md
-      - package.json
 
 permissions:
   contents: read
