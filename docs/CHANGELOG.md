@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.1.4](https://github.com/roaziy/open-cinema-mn/compare/v0.1.3...v0.1.4) (2026-11-18)
+
+
+### Bug Fixes
+
+* skip ci on release-please prs ([#8](https://github.com/roaziy/open-cinema-mn/issues/8)) ([8841ab8](https://github.com/roaziy/open-cinema-mn/commit/8841ab879a8ff20f8450cfbb48cd82fca208b96b))
+
 ## [0.1.3](https://github.com/roaziy/open-cinema-mn/compare/v0.1.2...v0.1.3) (2026-11-18)
 
 
