@@ -1,10 +1,12 @@
 name: release
 
-# On every push to main, release-please reads the conventional commits since the last release
-# (fix: patch, feat: minor) and keeps a release PR open with the version bump and changelog.
+# After ci passes on a push to main, release-please reads the conventional commits since the last
+# release (fix: patch, feat: minor) and keeps a release PR open with the version bump and changelog.
 # Merging that PR tags the commit and publishes the GitHub Release. Nothing is deployed.
 on:
-  push:
+  workflow_run:
+    workflows: [ci]
+    types: [completed]
     branches: [main]
 
 permissions:
@@ -16,6 +18,8 @@ concurrency:
 
 jobs:
   release-please:
+    # Only a green ci run on a push to main; a failed or PR run releases nothing.
+    if: github.event.workflow_run.conclusion == 'success' && github.event.workflow_run.event == 'push'
     runs-on: ubuntu-latest
     timeout-minutes: 10
     permissions:

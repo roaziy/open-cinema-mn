@@ -952,10 +952,14 @@ describe('reports and dashboard', () => {
     await buy(s, f, doomed.id, f.bob, 4);
     await a('post', `/showtimes/${doomed.id}/cancel`).expect(200);
 
-    const res = await a('get', '/dashboard').expect(200);
+    // The refund runs after the cancel answers, so wait for it to land.
+    const res = await vi.waitFor(async () => {
+      const r = await a('get', '/dashboard').expect(200);
+      expect(r.body.refundsToday).toEqual({ count: 1, amount: 10000 });
+      return r;
+    });
     expect(res.body.today).toMatchObject({ revenue: 20000, tickets: 2 });
     expect(res.body.yesterday).toMatchObject({ revenue: 10000, tickets: 1 });
-    expect(res.body.refundsToday).toEqual({ count: 1, amount: 10000 });
     expect(res.body.hourlySales).toHaveLength(24);
     expect(res.body.hourlySales[18]).toEqual({ hour: 18, revenue: 20000, tickets: 2 });
     expect(res.body.topFilms).toEqual([
