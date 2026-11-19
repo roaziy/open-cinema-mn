@@ -1,4 +1,5 @@
-import { RefreshControl, ScrollView, StyleSheet, Text, View } from 'react-native';
+import { RefreshControl, StyleSheet, Text, View } from 'react-native';
+import Animated, { useAnimatedRef, useScrollOffset } from 'react-native-reanimated';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { BranchChip } from '@/components/branch-chip';
 import { HERO_HEIGHT, HeroPager } from '@/components/hero-pager';
@@ -17,10 +18,13 @@ export default function MoviesScreen() {
   const now = useMovies('now');
   const soon = useMovies('soon');
   const refreshing = now.isRefetching || soon.isRefetching;
+  const scrollRef = useAnimatedRef<Animated.ScrollView>();
+  const scrollY = useScrollOffset(scrollRef);
 
   return (
     <View style={styles.root}>
-      <ScrollView
+      <Animated.ScrollView
+        ref={scrollRef}
         contentInsetAdjustmentBehavior="never"
         showsVerticalScrollIndicator={false}
         contentContainerStyle={{ paddingBottom: insets.bottom + 110 }}
@@ -41,7 +45,7 @@ export default function MoviesScreen() {
               <EmptyState title={t('home.empty')} />
             </View>
           ) : (
-            <HeroPager movies={now.data.slice(0, 5)} />
+            <HeroPager movies={now.data.slice(0, 5)} scrollY={scrollY} />
           )
         ) : now.isError ? (
           <View style={{ paddingTop: insets.top + 64 }}>
@@ -82,7 +86,7 @@ export default function MoviesScreen() {
             </PosterRowSkeleton>
           </View>
         )}
-      </ScrollView>
+      </Animated.ScrollView>
 
       <View style={[styles.header, { top: insets.top + space.sm }]} pointerEvents="box-none">
         <Text style={styles.headerTitle} accessibilityRole="header">

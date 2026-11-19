@@ -3,6 +3,7 @@ import { useHeaderHeight } from 'expo-router/react-navigation';
 import { Buildings } from 'phosphor-react-native';
 import { useMemo, useState } from 'react';
 import { ScrollView, StyleSheet, Text, useWindowDimensions, View } from 'react-native';
+import Animated, { useAnimatedRef, useScrollOffset } from 'react-native-reanimated';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { IconTile } from '@/components/icon-tile';
 import { Poster } from '@/components/poster';
@@ -24,6 +25,8 @@ const GAP = space.sm;
 export default function ShowtimesScreen() {
   const { t } = useI18n();
   const insets = useSafeAreaInsets();
+  const scrollRef = useAnimatedRef<Animated.ScrollView>();
+  const scrollY = useScrollOffset(scrollRef);
   const { width } = useWindowDimensions();
   const { id } = useLocalSearchParams<{ id: string }>();
   const days = useMemo(() => nextUbDays(7), []);
@@ -56,7 +59,8 @@ export default function ShowtimesScreen() {
         : t(`weekday.${weekdayOf(d)}` as TKey);
 
   return (
-    <ScrollView
+    <Animated.ScrollView
+      ref={scrollRef}
       style={styles.root}
       contentInsetAdjustmentBehavior="never"
       contentContainerStyle={{ paddingBottom: insets.bottom + space.xxxl }}
@@ -73,6 +77,7 @@ export default function ShowtimesScreen() {
             uri={movie.data.backdropUrl ?? movie.data.posterUrl}
             tone={movie.data.tone}
             fadeHeight={160}
+            scrollY={scrollY}
           />
           <Poster uri={movie.data.posterUrl} width={60} radius={10} />
           <View style={styles.filmText}>
@@ -161,7 +166,7 @@ export default function ShowtimesScreen() {
           ))
         )}
       </View>
-    </ScrollView>
+    </Animated.ScrollView>
   );
 }
 

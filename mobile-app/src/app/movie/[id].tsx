@@ -1,7 +1,8 @@
 import { router, useLocalSearchParams } from 'expo-router';
 import { CalendarBlank, CaretLeft, Clock, ShieldCheck, Tag } from 'phosphor-react-native';
 import { type ReactNode, useMemo } from 'react';
-import { Linking, ScrollView, StyleSheet, Text, View } from 'react-native';
+import { Linking, StyleSheet, Text, View } from 'react-native';
+import Animated, { useAnimatedRef, useScrollOffset } from 'react-native-reanimated';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { AgeBadge } from '@/components/age-badge';
 import { GlassBar } from '@/components/glass-bar';
@@ -21,6 +22,8 @@ import { type } from '@/theme/type';
 export default function MovieScreen() {
   const { t, locale } = useI18n();
   const insets = useSafeAreaInsets();
+  const scrollRef = useAnimatedRef<Animated.ScrollView>();
+  const scrollY = useScrollOffset(scrollRef);
   const { id } = useLocalSearchParams<{ id: string }>();
   const movie = useMovie(id);
   const days = useMemo(() => nextUbDays(7), []);
@@ -72,13 +75,14 @@ export default function MovieScreen() {
   ) : null;
   return (
     <View style={styles.root}>
-      <ScrollView
+      <Animated.ScrollView
+        ref={scrollRef}
         contentInsetAdjustmentBehavior="never"
         showsVerticalScrollIndicator={false}
         contentContainerStyle={{ paddingBottom: insets.bottom + 120 }}
       >
         <View style={[styles.hero, { paddingTop: insets.top + 64 }]}>
-          <PosterBackdrop uri={m.backdropUrl ?? m.posterUrl} tone={m.tone} />
+          <PosterBackdrop uri={m.backdropUrl ?? m.posterUrl} tone={m.tone} scrollY={scrollY} />
           <View style={[styles.glow, { shadowColor: m.tone }]}>
             <Poster uri={m.posterUrl} width={200} radius={18} />
           </View>
@@ -133,7 +137,7 @@ export default function MovieScreen() {
             </View>
           </View>
         </View>
-      </ScrollView>
+      </Animated.ScrollView>
 
       {back}
 

@@ -9,6 +9,7 @@ import {
   useWindowDimensions,
   View,
 } from 'react-native';
+import type { SharedValue } from 'react-native-reanimated';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useI18n } from '@/i18n';
 import { formatDuration } from '@/lib/format';
@@ -23,7 +24,14 @@ import { Pressable } from './pressable';
 export const HERO_HEIGHT = 600;
 
 /** Horizontal pager of now-showing films; every page sits on its own blurred, tinted poster. */
-export function HeroPager({ movies }: { movies: MovieSummary[] }) {
+export function HeroPager({
+  movies,
+  scrollY,
+}: {
+  movies: MovieSummary[];
+  /** The page's vertical scroll offset: pulling past the top stretches the backdrops. */
+  scrollY?: SharedValue<number>;
+}) {
   const { width } = useWindowDimensions();
   const [index, setIndex] = useState(0);
 
@@ -43,10 +51,12 @@ export function HeroPager({ movies }: { movies: MovieSummary[] }) {
         keyExtractor={(m) => m.id}
         horizontal
         pagingEnabled
+        // The backdrops stretch above the pager when the page is pulled down: do not clip them.
+        style={{ overflow: 'visible' }}
         showsHorizontalScrollIndicator={false}
         onMomentumScrollEnd={onEnd}
         getItemLayout={(_, i) => ({ length: width, offset: width * i, index: i })}
-        renderItem={({ item }) => <Page movie={item} width={width} />}
+        renderItem={({ item }) => <Page movie={item} width={width} scrollY={scrollY} />}
       />
       <View style={styles.dots} pointerEvents="none">
         {movies.map((m, i) => (
@@ -57,14 +67,26 @@ export function HeroPager({ movies }: { movies: MovieSummary[] }) {
   );
 }
 
-function Page({ movie, width }: { movie: MovieSummary; width: number }) {
+function Page({
+  movie,
+  width,
+  scrollY,
+}: {
+  movie: MovieSummary;
+  width: number;
+  scrollY?: SharedValue<number>;
+}) {
   const { t } = useI18n();
   const insets = useSafeAreaInsets();
   const open = () => router.push(`/movie/${movie.id}`);
   const book = () => router.push(`/movie/${movie.id}/showtimes`);
   return (
     <View style={{ width, height: HERO_HEIGHT }}>
-      <PosterBackdrop uri={movie.backdropUrl ?? movie.posterUrl} tone={movie.tone} />
+      <PosterBackdrop
+        uri={movie.backdropUrl ?? movie.posterUrl}
+        tone={movie.tone}
+        scrollY={scrollY}
+      />
       <View style={[styles.content, { paddingTop: insets.top + 64 }]}>
         <Pressable onPress={open} accessibilityRole="button" accessibilityLabel={movie.title}>
           <View style={[styles.glow, { shadowColor: movie.tone }]}>
