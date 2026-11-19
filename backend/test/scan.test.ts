@@ -91,7 +91,14 @@ async function fixture() {
       )[0],
     );
   const user = async (v: Partial<typeof users.$inferInsert>) =>
-    one((await db.insert(users).values(v).returning())[0]);
+    one(
+      (
+        await db
+          .insert(users)
+          .values({ emailVerifiedAt: new Date(), ...v })
+          .returning()
+      )[0],
+    );
   const staff = async (v: Partial<typeof staffAccounts.$inferInsert>) =>
     one((await db.insert(staffAccounts).values(v).returning())[0]);
   return {

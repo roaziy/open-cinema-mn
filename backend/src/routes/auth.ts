@@ -21,6 +21,7 @@ import {
 import { otpEmail, otpSms } from '../messages/templates';
 import { MessageSendError } from '../messages/wesend';
 import { activeStaffAccount, requireAuth, requireRole } from '../middleware/auth';
+import { myPoints } from '../services/loyalty';
 import {
   AdminLoginBody,
   AdminPasswordBody,
@@ -348,6 +349,16 @@ export function createAuthRouter(deps: AppDeps, limiters: Limiters): Router {
 
   r.get('/me', auth, async (req, res) => {
     res.json(toPublicUser(one(await loadAccount(me(req)))));
+  });
+
+  r.get('/me/points', auth, async (req, res) => {
+    const who = me(req);
+    if (isStaffRole(who.role)) throw forbidden();
+    const [u] = await db
+      .select({ memberNo: users.memberNo })
+      .from(users)
+      .where(eq(users.id, who.id));
+    res.json(await myPoints(db, who.id, one(u).memberNo));
   });
 
   r.patch('/me', auth, validate(NameBody), async (req, res) => {

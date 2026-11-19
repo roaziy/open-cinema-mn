@@ -30,6 +30,7 @@ import {
 } from '../shared';
 import { heldCount, SLOT_COLUMNS, toBranch, toSlot, toSummary } from './catalog-views';
 import { lockUserShowtime, SeatTakenError, type Tx } from './holds';
+import { earnPoints, reversePoints } from './loyalty';
 import { nonFreeSeats } from './seat-state';
 
 type Deps = Pick<AppDeps, 'messages' | 'payments' | 'seatHub' | 'clock'>;
@@ -385,6 +386,7 @@ export async function confirmBooking(
         .update(bookings)
         .set({ status: 'paid', paidAt: deps.clock() })
         .where(eq(bookings.id, bookingId));
+      await earnPoints(tx, { id: bookingId, userId: locked.userId, total: locked.total });
       return { kind: 'paid', seatIds: locked.seatIds };
     }
 
@@ -474,6 +476,8 @@ export async function refundOwed(
       .update(payments)
       .set({ status: 'refunded', refundedAt: deps.clock() })
       .where(ownClaim(p.id, now));
+    // A refunded booking keeps no points (a no-op when none were earned).
+    await db.transaction((tx) => reversePoints(tx, bookingId));
   } catch (err) {
     console.error('refund failed, will retry', err);
     await db

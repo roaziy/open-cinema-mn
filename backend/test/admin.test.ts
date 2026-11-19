@@ -61,7 +61,14 @@ type S = ReturnType<typeof setup>;
 
 async function fixture() {
   const user = async (v: Partial<typeof users.$inferInsert>) =>
-    one((await db.insert(users).values(v).returning())[0]);
+    one(
+      (
+        await db
+          .insert(users)
+          .values({ emailVerifiedAt: new Date(NOW), ...v })
+          .returning()
+      )[0],
+    );
   const branch = one(
     (
       await db

@@ -75,7 +75,14 @@ async function fixture() {
     )[0],
   );
   const user = async (phone: string) => {
-    const u = one((await db.insert(users).values({ role: 'customer', phone }).returning())[0]);
+    const u = one(
+      (
+        await db
+          .insert(users)
+          .values({ role: 'customer', phone, emailVerifiedAt: clock() })
+          .returning()
+      )[0],
+    );
     return { id: u.id, auth: `Bearer ${await signAccessToken(u, clock())}` };
   };
   const seatId = (n: number) => one(rows.find((s) => s.number === n)).id;

@@ -31,6 +31,7 @@ describe('verdictFor', () => {
       emailVerified: false,
       name: null,
       branchId: null,
+      memberNo: null,
     });
     answer(200, user('staff'));
     expect(await verdictFor()).toEqual({ verdict: 'home', home: '/staff' });

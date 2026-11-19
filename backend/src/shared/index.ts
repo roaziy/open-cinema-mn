@@ -7,6 +7,7 @@ export * from './schemas/admin';
 export * from './schemas/auth';
 export * from './schemas/booking';
 export * from './schemas/catalog';
+export * from './schemas/loyalty';
 export * from './schemas/scan';
 export * from './schemas/ticket';
 export * from './seat-view';

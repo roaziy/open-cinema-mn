@@ -66,6 +66,7 @@ export function toPublicUser(a: AccountRow): PublicUser {
     emailVerified: isStaffRow(a) ? a.email !== null : a.emailVerifiedAt !== null,
     name: a.name,
     branchId: isStaffRow(a) ? a.branchId : null,
+    memberNo: isStaffRow(a) ? null : a.memberNo,
   };
 }
 

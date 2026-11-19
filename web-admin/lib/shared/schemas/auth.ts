@@ -11,6 +11,8 @@ export const PublicUserSchema = z.object({
   emailVerified: z.boolean(),
   name: z.string().nullable(),
   branchId: z.string().nullable(),
+  /** Member number of an app account; null for back-office accounts. */
+  memberNo: z.number().int().nullable(),
 });
 export type PublicUser = z.infer<typeof PublicUserSchema>;
 

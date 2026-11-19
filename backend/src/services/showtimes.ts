@@ -27,6 +27,7 @@ import { ubDayRange } from '../shared';
 import { refundOwed } from './bookings';
 import { SLOT_COLUMNS } from './catalog-views';
 import type { Tx } from './holds';
+import { reversePoints } from './loyalty';
 
 /** Cleaning time kept free between two showings in one hall. */
 export const CLEANING_GAP_MIN = 15;
@@ -355,6 +356,7 @@ export async function beginCancellation(
       .returning({ seatId: tickets.seatId });
     if (paid.length > 0) {
       await tx.update(bookings).set({ status: 'cancelled' }).where(inArray(bookings.id, paid));
+      for (const id of paid) await reversePoints(tx, id);
     }
     if (pending.length > 0) {
       await tx.update(bookings).set({ status: 'expired' }).where(inArray(bookings.id, pending));

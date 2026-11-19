@@ -2,9 +2,9 @@ import { eq } from 'drizzle-orm';
 import { Router } from 'express';
 import { z } from 'zod';
 import type { AppDeps } from '../app';
-import { bookings, payments } from '../db/schema';
+import { bookings, payments, users } from '../db/schema';
 import { env } from '../env';
-import { conflict, notFound } from '../lib/errors';
+import { conflict, forbidden, notFound } from '../lib/errors';
 import { validate } from '../lib/http';
 import type { Limiters } from '../lib/rate-limit';
 import { TimeoutError } from '../lib/timeout';
@@ -30,6 +30,14 @@ export function createBookingsRouter(deps: AppDeps, limiters: Limiters): Router 
 
   r.post('/bookings', auth, limiters.bookings, validate(BookingCreateBody), async (req, res) => {
     const user = req.user as NonNullable<typeof req.user>;
+    if (user.role === 'customer') {
+      const [u] = await db
+        .select({ verifiedAt: users.emailVerifiedAt })
+        .from(users)
+        .where(eq(users.id, user.id));
+      // Before any hold or payment work: the ticket and receipt go to a verified address.
+      if (!u?.verifiedAt) throw forbidden('email_required');
+    }
     const id = await createBooking(db, deps, {
       userId: user.id,
       isGuest: user.role === 'guest',

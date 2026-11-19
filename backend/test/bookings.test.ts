@@ -6,6 +6,7 @@ import {
   bookings,
   branches,
   halls,
+  loyaltyEntries,
   movies,
   payments,
   seatHolds,
@@ -22,6 +23,8 @@ import type { Messages } from '../src/messages';
 import { MockPaymentProvider } from '../src/payments/mock';
 import { confirmBooking, refundOwed } from '../src/services/bookings';
 import { createHolds } from '../src/services/holds';
+import { cancelShowtime } from '../src/services/showtimes';
+import { pointsFor } from '../src/shared';
 import { fakeMessages, fixedClock, makeTestApp, one, resetDb } from './helpers';
 
 const MIN = 60_000;
@@ -85,7 +88,7 @@ async function fixture(clock: () => Date) {
       (
         await db
           .insert(users)
-          .values({ role: 'customer', ...v })
+          .values({ role: 'customer', emailVerifiedAt: clock(), ...v })
           .returning()
       )[0],
     );
@@ -323,7 +326,7 @@ describe('paying and confirming', () => {
   it('uses the contact email when the profile email is unverified', async () => {
     const s = setup();
     const f = await fixture(s.clock);
-    const dan = await f.user({ email: 'dan@mail.mn' });
+    const dan = await f.user({ role: 'guest', email: 'dan@mail.mn', emailVerifiedAt: null });
     const holdIds = await hold(s.clock, f, dan.id, 1);
     const created = await book(s.app, dan.auth, { holdIds, contactEmail: 'contact@mail.mn' });
     await pay(s.app, dan.auth, created.body.id).expect(200);
@@ -660,5 +663,139 @@ describe('checkout robustness', () => {
         .insert(payments)
         .values({ bookingId: created.body.id, provider: 'mock', invoiceId: 'dup', amount: 1 }),
     ).rejects.toThrow();
+  });
+});
+
+describe('bonus points', () => {
+  const points = (auth: string) => request(testApp).get('/v1/me/points').set('Authorization', auth);
+  let testApp: ReturnType<typeof makeTestApp>;
+
+  const paid = async (
+    s: ReturnType<typeof setup>,
+    f: F,
+    who: { id: string; auth: string },
+    ...n: number[]
+  ) => {
+    const holdIds = await hold(s.clock, f, who.id, ...n);
+    const created = await book(s.app, who.auth, { holdIds, contactEmail: 'p@mail.mn' }).expect(200);
+    await pay(s.app, who.auth, created.body.id).expect(200);
+    return created.body.id as string;
+  };
+
+  it('computes floor(total x 1%)', () => {
+    expect(pointsFor(25000)).toBe(250);
+    expect(pointsFor(15050)).toBe(150);
+    expect(pointsFor(5700)).toBe(57);
+    expect(pointsFor(99)).toBe(0);
+  });
+
+  it('credits a customer once when the booking is paid, and lists it newest first', async () => {
+    const s = setup();
+    testApp = s.app;
+    const f = await fixture(s.clock);
+    const id = await paid(s, f, f.alice, 1, 6);
+    await confirmBooking(db, id, s.deps);
+    await confirmBooking(db, id, s.deps);
+    const rows = await db.select().from(loyaltyEntries);
+    expect(rows).toHaveLength(1);
+    expect(rows[0]).toMatchObject({ points: 250, kind: 'earn', bookingId: id });
+    const res = await points(f.alice.auth).expect(200);
+    expect(res.body.balance).toBe(250);
+    expect(res.body.memberNo).toBeGreaterThanOrEqual(100001);
+    expect(res.body.entries).toHaveLength(1);
+    expect(res.body.entries[0]).toMatchObject({
+      points: 250,
+      kind: 'earn',
+      movieTitle: 'Movie',
+      bookingId: id,
+    });
+    const second = await paid(s, f, f.alice, 2);
+    const after = await points(f.alice.auth).expect(200);
+    expect(after.body.balance).toBe(350);
+    expect(after.body.entries.map((e: { bookingId: string }) => e.bookingId)).toEqual([second, id]);
+  });
+
+  it('gives guests no points but still answers /me/points', async () => {
+    const s = setup();
+    testApp = s.app;
+    const f = await fixture(s.clock);
+    const g = await f.user({ role: 'guest' });
+    await paid(s, f, g, 1);
+    expect(await db.select().from(loyaltyEntries)).toHaveLength(0);
+    const res = await points(g.auth).expect(200);
+    expect(res.body).toMatchObject({ balance: 0, entries: [] });
+  });
+
+  it('earns nothing when the seats were lost and the payment is refunded', async () => {
+    const s = setup();
+    const f = await fixture(s.clock);
+    const holdIds = await hold(s.clock, f, f.alice.id, 1);
+    const created = await book(s.app, f.alice.auth, { holdIds }).expect(200);
+    await db.delete(seatHolds).where(eq(seatHolds.bookingId, created.body.id));
+    const [p] = await db.select().from(payments);
+    await s.payments.markPaid(one(p).invoiceId);
+    await confirmBooking(db, created.body.id, s.deps);
+    expect(await db.select().from(loyaltyEntries)).toHaveLength(0);
+  });
+
+  it('reverses once when the showing is cancelled and the booking refunded', async () => {
+    const s = setup();
+    testApp = s.app;
+    const f = await fixture(s.clock);
+    const id = await paid(s, f, f.alice, 1, 6);
+    await cancelShowtime(db, s.deps, f.show.id);
+    await cancelShowtime(db, s.deps, f.show.id);
+    await refundOwed(db, id, s.deps);
+    const rows = await db.select().from(loyaltyEntries).orderBy(loyaltyEntries.kind);
+    expect(rows.map((r) => [r.kind, r.points])).toEqual([
+      ['earn', 250],
+      ['reverse', -250],
+    ]);
+    const res = await points(f.alice.auth).expect(200);
+    expect(res.body.balance).toBe(0);
+    expect(res.body.entries).toHaveLength(2);
+  });
+
+  it('never shows a negative balance', async () => {
+    const s = setup();
+    testApp = s.app;
+    const f = await fixture(s.clock);
+    await db.insert(loyaltyEntries).values({ userId: f.alice.id, points: -40, kind: 'reverse' });
+    expect((await points(f.alice.auth).expect(200)).body.balance).toBe(0);
+  });
+
+  it('keeps entries after a booking row is removed (movie title null)', async () => {
+    const s = setup();
+    testApp = s.app;
+    const f = await fixture(s.clock);
+    await db.insert(loyaltyEntries).values({ userId: f.alice.id, points: 10, kind: 'earn' });
+    const res = await points(f.alice.auth).expect(200);
+    expect(res.body.entries[0]).toMatchObject({ movieTitle: null, bookingId: null });
+  });
+
+  it('gives every user a unique member number starting at 100001', async () => {
+    const s = setup();
+    const f = await fixture(s.clock);
+    const g = await f.user({ role: 'guest' });
+    const rows = await db.select({ n: users.memberNo }).from(users);
+    expect(new Set(rows.map((r) => r.n)).size).toBe(rows.length);
+    expect(Math.min(...rows.map((r) => r.n))).toBe(100001);
+    const me = await request(s.app).get('/v1/me').set('Authorization', g.auth).expect(200);
+    expect(me.body.memberNo).toBeGreaterThanOrEqual(100001);
+  });
+
+  it('blocks a customer without a verified email before any hold or payment work', async () => {
+    const s = setup();
+    const f = await fixture(s.clock);
+    const holdIds = await hold(s.clock, f, f.alice.id, 1);
+    await db.update(users).set({ emailVerifiedAt: null }).where(eq(users.id, f.alice.id));
+    const res = await book(s.app, f.alice.auth, { holdIds }).expect(403);
+    expect(res.body.error).toBe('email_required');
+    expect(await db.select().from(payments)).toHaveLength(0);
+    await db
+      .update(users)
+      .set({ email: 'a@mail.mn', emailVerifiedAt: s.clock() })
+      .where(eq(users.id, f.alice.id));
+    await book(s.app, f.alice.auth, { holdIds }).expect(200);
   });
 });

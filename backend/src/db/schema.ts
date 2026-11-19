@@ -44,6 +44,7 @@ export const paymentStatus = pgEnum('payment_status', [
   'failed',
   'refunded',
 ]);
+export const loyaltyKind = pgEnum('loyalty_kind', ['earn', 'reverse']);
 export const ticketStatus = pgEnum('ticket_status', ['valid', 'cancelled']);
 export const scanResult = pgEnum('scan_result', [
   'admitted',
@@ -77,9 +78,12 @@ export const users = pgTable(
     email: text('email'),
     emailVerifiedAt: ts('email_verified_at'),
     name: text('name'),
+    // Shown on the loyalty card; assigned by the database, never by the app.
+    memberNo: integer('member_no').notNull().generatedAlwaysAsIdentity({ startWith: 100001 }),
     createdAt: createdAt(),
   },
   (t) => [
+    uniqueIndex('users_member_no_unique').on(t.memberNo),
     uniqueIndex('users_phone_unique').on(t.phone).where(sql`${t.phone} is not null`),
     uniqueIndex('users_email_unique').on(t.email).where(sql`${t.email} is not null`),
     check('users_role_check', sql`${t.role} in ('guest', 'customer')`),
@@ -363,5 +367,26 @@ export const ticketScans = pgTable(
     index('ticket_scans_ticket_idx').on(t.ticketId),
     index('ticket_scans_previous_idx').on(t.previousScanId),
     index('ticket_scans_staff_device_idx').on(t.staffId, t.deviceId, t.createdAt.desc()),
+  ],
+);
+
+/** Bonus points ledger: signed rows, one earn and at most one reverse per booking. */
+export const loyaltyEntries = pgTable(
+  'loyalty_entries',
+  {
+    id: id(),
+    userId: uuid('user_id')
+      .notNull()
+      .references(() => users.id, { onDelete: 'restrict' }),
+    bookingId: uuid('booking_id').references(() => bookings.id, { onDelete: 'set null' }),
+    points: integer('points').notNull(),
+    kind: loyaltyKind('kind').notNull(),
+    createdAt: createdAt(),
+  },
+  (t) => [
+    uniqueIndex('loyalty_entries_booking_kind_unique')
+      .on(t.bookingId, t.kind)
+      .where(sql`${t.bookingId} is not null`),
+    index('loyalty_entries_user_idx').on(t.userId, t.createdAt.desc()),
   ],
 );

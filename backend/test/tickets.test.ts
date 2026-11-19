@@ -91,7 +91,7 @@ async function fixture(clock: () => Date) {
       (
         await db
           .insert(users)
-          .values({ role: 'customer', ...v })
+          .values({ role: 'customer', emailVerifiedAt: clock(), ...v })
           .returning()
       )[0],
     );
