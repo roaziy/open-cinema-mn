@@ -1,7 +1,7 @@
 import { useQueryClient } from '@tanstack/react-query';
 import { router, Stack, useLocalSearchParams } from 'expo-router';
 import { useHeaderHeight } from 'expo-router/react-navigation';
-import { Flask } from 'phosphor-react-native';
+import { FlaskConical } from 'lucide-react-native';
 import { useEffect, useRef, useState } from 'react';
 import { ActivityIndicator, ScrollView, StyleSheet, Text, View } from 'react-native';
 import QRCode from 'react-native-qrcode-svg';
@@ -132,7 +132,7 @@ export default function PayScreen() {
           ]}
         >
           <View style={styles.testBadge}>
-            <Flask size={16} weight="fill" color={colors.warning} />
+            <FlaskConical size={16} strokeWidth={1.75} color={colors.warning} />
             <Text style={styles.testBadgeText}>{t('pay.test')}</Text>
           </View>
 

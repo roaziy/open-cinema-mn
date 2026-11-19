@@ -1,12 +1,18 @@
 import { router, useLocalSearchParams } from 'expo-router';
-import { CalendarBlank, CaretLeft, Clock, ShieldCheck, Tag } from 'phosphor-react-native';
-import { type ReactNode, useMemo } from 'react';
+import {
+  CalendarDays,
+  ChevronLeft,
+  Clock,
+  type LucideIcon,
+  ShieldCheck,
+  Tag,
+} from 'lucide-react-native';
+import { useMemo } from 'react';
 import { Linking, StyleSheet, Text, View } from 'react-native';
 import Animated, { useAnimatedRef, useScrollOffset } from 'react-native-reanimated';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { AgeBadge } from '@/components/age-badge';
 import { GlassBar } from '@/components/glass-bar';
-import { IconTile } from '@/components/icon-tile';
 import { Poster } from '@/components/poster';
 import { PosterBackdrop } from '@/components/poster-backdrop';
 import { Pressable } from '@/components/pressable';
@@ -16,7 +22,7 @@ import { useI18n } from '@/i18n';
 import { useFromPrice, useMovie } from '@/lib/catalog';
 import { formatDuration, formatMonthDay, nextUbDays } from '@/lib/format';
 import { formatMnt } from '@/shared';
-import { colors, hairlineWidth, hues, radius, space } from '@/theme/tokens';
+import { colors, hairlineWidth, radius, space } from '@/theme/tokens';
 import { type } from '@/theme/type';
 
 export default function MovieScreen() {
@@ -37,7 +43,7 @@ export default function MovieScreen() {
       accessibilityRole="button"
       accessibilityLabel={t('movie.back')}
     >
-      <CaretLeft size={20} color={colors.ink} weight="bold" />
+      <ChevronLeft size={22} color={colors.ink} strokeWidth={2} />
     </Pressable>
   );
 
@@ -102,39 +108,19 @@ export default function MovieScreen() {
           <Text style={styles.synopsis}>{m.synopsis}</Text>
 
           <Text style={[styles.heading, { marginTop: space.xxl }]}>{t('movie.info')}</Text>
-          <View style={styles.panel}>
-            <View style={styles.card}>
-              <InfoRow
-                tile={<IconTile sf="clock.fill" phosphor={Clock} hue={hues.sky} size={28} />}
-                label={t('movie.duration')}
-                value={formatDuration(m.durationMin, t)}
-              />
-              <InfoRow
-                tile={<IconTile sf="tag.fill" phosphor={Tag} hue={hues.purple} size={28} />}
-                label={t('movie.genre')}
-                value={m.genres.join(', ')}
-              />
-              <InfoRow
-                tile={
-                  <IconTile
-                    sf="calendar.circle.fill"
-                    phosphor={CalendarBlank}
-                    hue={hues.teal}
-                    size={28}
-                  />
-                }
-                label={t('movie.release')}
-                value={formatMonthDay(m.releaseDate, locale)}
-              />
-              <InfoRow
-                tile={
-                  <IconTile sf="shield.fill" phosphor={ShieldCheck} hue={hues.pink} size={28} />
-                }
-                label={t('movie.age')}
-                value={m.ageRating}
-                last
-              />
-            </View>
+          <View style={styles.card}>
+            <InfoRow
+              icon={Clock}
+              label={t('movie.duration')}
+              value={formatDuration(m.durationMin, t)}
+            />
+            <InfoRow icon={Tag} label={t('movie.genre')} value={m.genres.join(', ')} />
+            <InfoRow
+              icon={CalendarDays}
+              label={t('movie.release')}
+              value={formatMonthDay(m.releaseDate, locale)}
+            />
+            <InfoRow icon={ShieldCheck} label={t('movie.age')} value={m.ageRating} last />
           </View>
         </View>
       </Animated.ScrollView>
@@ -176,19 +162,19 @@ export default function MovieScreen() {
 }
 
 function InfoRow({
-  tile,
+  icon: Icon,
   label,
   value,
   last,
 }: {
-  tile: ReactNode;
+  icon: LucideIcon;
   label: string;
   value: string;
   last?: boolean;
 }) {
   return (
     <View style={[styles.infoRow, !last && styles.infoDivider]}>
-      {tile}
+      <Icon size={20} color={colors.muted} strokeWidth={1.75} />
       <Text style={styles.infoLabel}>{label}</Text>
       <Text style={styles.infoValue} numberOfLines={1}>
         {value}
@@ -196,8 +182,6 @@ function InfoRow({
     </View>
   );
 }
-
-const PANEL_PADDING = space.sm;
 
 const styles = StyleSheet.create({
   root: { flex: 1, backgroundColor: colors.canvas },
@@ -226,21 +210,8 @@ const styles = StyleSheet.create({
   body: { paddingHorizontal: space.lg },
   heading: { ...type.title, color: colors.ink, marginBottom: space.md },
   synopsis: { ...type.body, color: colors.body, lineHeight: 23 },
-  panel: {
-    backgroundColor: colors.surface,
-    borderRadius: radius.panel,
-    padding: PANEL_PADDING,
-    borderWidth: hairlineWidth,
-    borderColor: colors.hairline,
-  },
-  card: {
-    backgroundColor: colors.raised,
-    borderRadius: radius.panel - PANEL_PADDING,
-    borderWidth: hairlineWidth,
-    borderColor: colors.hairline,
-    borderTopColor: colors.highlight,
-    paddingHorizontal: space.lg,
-  },
+  // One surface, hairline rows: no frame inside a frame.
+  card: { backgroundColor: colors.raised, borderRadius: radius.card, paddingHorizontal: space.lg },
   infoRow: { flexDirection: 'row', alignItems: 'center', gap: space.md, paddingVertical: space.md },
   infoDivider: { borderBottomWidth: hairlineWidth, borderBottomColor: colors.hairline },
   infoLabel: { ...type.body, color: colors.ink, flex: 1 },

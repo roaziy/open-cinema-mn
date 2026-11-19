@@ -1,30 +1,30 @@
-import { CloudSlash, FilmSlate } from 'phosphor-react-native';
+import { Film, type LucideIcon, WifiOff } from 'lucide-react-native';
 import { StyleSheet, Text, View } from 'react-native';
 import { useI18n } from '@/i18n';
 import { ApiError } from '@/lib/api';
-import { colors, hues, radius, space } from '@/theme/tokens';
+import { colors, radius, space } from '@/theme/tokens';
 import { type } from '@/theme/type';
-import { IconTile } from './icon-tile';
 import { Pressable } from './pressable';
 
-type EmptyProps = { title: string; hint?: string };
+type EmptyProps = { title: string; hint?: string; icon?: LucideIcon };
 
-export function EmptyState({ title, hint }: EmptyProps) {
+export function EmptyState({ title, hint, icon: Icon = Film }: EmptyProps) {
   return (
     <View style={styles.wrap}>
-      <IconTile sf="film.fill" phosphor={FilmSlate} hue={hues.indigo} size={44} />
+      <Icon size={40} color={colors.muted} strokeWidth={1.5} />
       <Text style={styles.title}>{title}</Text>
       {hint ? <Text style={styles.hint}>{hint}</Text> : null}
     </View>
   );
 }
 
+/** The copy says what failed (offline or not); the icon is the same quiet grey either way. */
 export function ErrorState({ error, onRetry }: { error: unknown; onRetry: () => void }) {
   const { t } = useI18n();
   const offline = error instanceof ApiError && error.status === 0;
   return (
     <View style={styles.wrap}>
-      <IconTile sf="wifi.slash" phosphor={CloudSlash} hue={hues.red} size={44} />
+      <WifiOff size={40} color={colors.muted} strokeWidth={1.5} />
       <Text style={styles.hint}>{offline ? t('error.network') : t('error.generic')}</Text>
       <Pressable style={styles.retry} onPress={onRetry} accessibilityRole="button">
         <Text style={styles.retryText}>{t('common.retry')}</Text>

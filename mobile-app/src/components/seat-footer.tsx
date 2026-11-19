@@ -1,4 +1,4 @@
-import { Clock, Eye } from 'phosphor-react-native';
+import { Clock, Eye } from 'lucide-react-native';
 import { ScrollView, StyleSheet, Text, View } from 'react-native';
 import Animated, { FadeIn, FadeOut, LinearTransition } from 'react-native-reanimated';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
@@ -105,7 +105,7 @@ export function SeatFooter({
               </View>
               {secondsLeft !== null ? (
                 <View style={[styles.timer, urgent && styles.timerUrgent]}>
-                  <Clock size={14} weight="fill" color={urgent ? colors.danger : colors.body} />
+                  <Clock size={14} strokeWidth={2} color={urgent ? colors.danger : colors.body} />
                   <Text style={[styles.timerText, urgent && { color: colors.danger }]}>
                     {formatCountdown(secondsLeft)}
                   </Text>
@@ -123,7 +123,7 @@ export function SeatFooter({
           onPress={onViewFromSeat}
           accessibilityRole="button"
         >
-          <Eye size={18} weight="fill" color={colors.ink} />
+          <Eye size={18} strokeWidth={1.75} color={colors.ink} />
           <Text style={styles.secondaryText}>{t('seats.fromSeat')}</Text>
         </Pressable>
         <Pressable

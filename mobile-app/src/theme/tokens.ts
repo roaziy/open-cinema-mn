@@ -16,8 +16,6 @@ export const colors = {
   /** Action blue: primary CTA, selected seat, live/selected states only. */
   action: '#2E6BF0',
   onAction: '#FFFFFF',
-  /** Glyph colour on identity-hue tiles. */
-  tileGlyph: '#FFFFFF',
 
   success: '#34D399',
   danger: '#F87171',

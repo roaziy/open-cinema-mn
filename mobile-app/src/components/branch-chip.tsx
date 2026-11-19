@@ -1,5 +1,5 @@
 import { router } from 'expo-router';
-import { CaretDown } from 'phosphor-react-native';
+import { ChevronDown } from 'lucide-react-native';
 import { StyleSheet, Text, View } from 'react-native';
 import { useI18n } from '@/i18n';
 import { useBranchId } from '@/lib/branch';
@@ -25,7 +25,7 @@ export function BranchChip() {
       <Text style={styles.label} numberOfLines={1}>
         {branch ? branch.name : t('branch.all')}
       </Text>
-      <CaretDown size={12} color={colors.body} weight="bold" />
+      <ChevronDown size={14} color={colors.body} strokeWidth={2} />
     </Pressable>
   );
 }

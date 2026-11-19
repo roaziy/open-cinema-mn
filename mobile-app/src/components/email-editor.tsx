@@ -17,9 +17,16 @@ const mapEmailError = (e: unknown): TKey | null =>
   e instanceof ApiError && e.code === 'email_taken' ? 'profile.err.email_taken' : null;
 
 /** Add or change the email: type it, get a 6-digit code (backend log in dev), type that. */
-export function EmailEditor({ hasEmail }: { hasEmail: boolean }) {
+export function EmailEditor({
+  hasEmail,
+  defaultOpen = false,
+}: {
+  hasEmail: boolean;
+  /** Start in the entry form and never collapse (the required-email screen). */
+  defaultOpen?: boolean;
+}) {
   const { t } = useI18n();
-  const [open, setOpen] = useState(false);
+  const [open, setOpen] = useState(defaultOpen);
   const [step, setStep] = useState<'email' | 'code'>('email');
   const [email, setEmail] = useState('');
   const [error, setError] = useState<string | null>(null);
@@ -27,7 +34,7 @@ export function EmailEditor({ hasEmail }: { hasEmail: boolean }) {
   const normalized = normalizeEmail(email);
 
   const close = () => {
-    setOpen(false);
+    setOpen(defaultOpen);
     setStep('email');
     setEmail('');
     setError(null);
@@ -88,9 +95,11 @@ export function EmailEditor({ hasEmail }: { hasEmail: boolean }) {
           >
             <Text style={styles.primaryText}>{t('profile.sendCode')}</Text>
           </Pressable>
-          <Pressable onPress={close} accessibilityRole="button">
-            <Text style={styles.cancel}>{t('common.cancel')}</Text>
-          </Pressable>
+          {defaultOpen ? null : (
+            <Pressable onPress={close} accessibilityRole="button">
+              <Text style={styles.cancel}>{t('common.cancel')}</Text>
+            </Pressable>
+          )}
         </>
       ) : (
         <OtpEntry

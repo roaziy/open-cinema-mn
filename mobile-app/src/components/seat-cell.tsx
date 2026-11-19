@@ -1,4 +1,4 @@
-import { Wheelchair } from 'phosphor-react-native';
+import { Accessibility } from 'lucide-react-native';
 import { memo } from 'react';
 import { Pressable, StyleSheet, View } from 'react-native';
 import Animated, {
@@ -130,7 +130,7 @@ function SeatCellView({ id, left, top, size, kind, status, label, onPress, glyph
         ) : status === 'taken' ? (
           <Cross size={size} kind={kind} />
         ) : kind === 'wheelchair' ? (
-          <Wheelchair size={glyph} color={colors.body} weight="fill" />
+          <Accessibility size={glyph} color={colors.body} strokeWidth={2} />
         ) : null}
       </Animated.View>
     </Pressable>

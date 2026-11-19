@@ -1,6 +1,6 @@
 import { router, Stack, useLocalSearchParams } from 'expo-router';
 import { useHeaderHeight } from 'expo-router/react-navigation';
-import { CalendarPlus } from 'phosphor-react-native';
+import { CalendarPlus } from 'lucide-react-native';
 import { useRef, useState } from 'react';
 import {
   ActivityIndicator,
@@ -146,7 +146,7 @@ function TicketBlock({ id, index, total }: { id: string; index: number | null; t
             </Pressable>
           ) : null}
           <Pressable style={styles.action} onPress={calendar} accessibilityRole="button">
-            <CalendarPlus size={20} weight="fill" color={colors.ink} />
+            <CalendarPlus size={20} strokeWidth={1.75} color={colors.ink} />
             <Text style={styles.actionText}>{t('ticket.calendar')}</Text>
           </Pressable>
         </View>

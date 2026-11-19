@@ -227,6 +227,72 @@ export const en: Record<TKey, string> = {
   'view.topDown': 'Top',
   'view.switcher': 'Switch seat',
 
+  'profile.personal': 'Personal info',
+  'profile.pointsRow': 'Bonus points history',
+  'profile.cinema': 'Cinema',
+  'profile.branches': 'Branches',
+  'profile.help': 'Help',
+  'profile.contact': 'Contact us',
+  'profile.terms': 'Terms of service',
+  'profile.privacy': 'Privacy policy',
+  'profile.member': 'Member',
+  'points.title': 'Bonus points',
+  'points.memberNo': 'Member number',
+  'points.unit': 'points',
+  'points.balance': 'Balance',
+  'points.bonus': 'Bonus',
+  'points.reversed': 'Reversed',
+  'points.empty': 'No points yet',
+  'points.emptyHint': 'Every ticket you buy earns bonus points worth 1% of what you paid.',
+  'account.title': 'Personal info',
+  'account.name': 'Name',
+  'account.namePlaceholder': 'Your name',
+  'account.save': 'Save',
+  'account.saved': 'Name saved',
+  'account.emailMissing': 'No email added',
+  'contact.title': 'Contact us',
+  'contact.phone': 'Phone',
+  'contact.email': 'Email',
+  'contact.facebook': 'Facebook',
+  'contact.instagram': 'Instagram',
+  'contact.empty': 'Contact details will be added soon.',
+  'emailRequired.title': 'Verify your email',
+  'emailRequired.body':
+    'Tickets and receipts are sent to your email. Add your email address and confirm it with a code to continue.',
+  'terms.title': 'Terms of service',
+  'terms.1.h': '1. General',
+  'terms.1.p':
+    'This app lets you book and pay for cinema showings and keep your digital tickets. By using it you agree to these terms.',
+  'terms.2.h': '2. Reserving seats',
+  'terms.2.p':
+    'Seats you pick are held for you for a short time until you pay. When the time runs out the seats are released and anyone can take them.',
+  'terms.3.h': '3. Payment and tickets',
+  'terms.3.p':
+    'After a successful payment your digital ticket is issued with a QR code. Scan it at the entrance before the showing. If a ticket is shared, each QR code works only once.',
+  'terms.4.h': '4. Refunds',
+  'terms.4.p':
+    'If a showing is cancelled you get a full refund. Once a showing has started or a ticket has been used it cannot be refunded. Bonus points earned on a refunded ticket are taken back.',
+  'terms.5.h': '5. Bonus points',
+  'terms.5.p':
+    '1% of what you pay is credited as bonus points. Points are used under the programme rules and cannot be exchanged for cash.',
+  'terms.6.h': '6. Contact',
+  'terms.6.p': 'Send questions and complaints through the Contact us page.',
+  'privacy.title': 'Privacy policy',
+  'privacy.1.h': 'What we keep',
+  'privacy.1.p':
+    'Your phone number, email address, name, booking and ticket history, and bonus point records.',
+  'privacy.2.h': 'Why we use it',
+  'privacy.2.p':
+    'Only to sign you in, issue tickets, send receipts, process refunds and count bonus points.',
+  'privacy.3.h': 'Sharing',
+  'privacy.3.p':
+    'We do not sell your data. Payment providers receive only what a payment needs, and authorities receive data only when the law requires it.',
+  'privacy.4.h': 'How long we keep it',
+  'privacy.4.p': 'We keep it while your account exists. To have your account deleted, contact us.',
+  'privacy.5.h': 'Your rights',
+  'privacy.5.p':
+    'You can view and edit your personal info in your profile. For any question, reach us through the Contact us page.',
+
   'lang.mn': 'Монгол',
   'lang.en': 'English',
 };

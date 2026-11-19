@@ -1,4 +1,4 @@
-import { Wheelchair } from 'phosphor-react-native';
+import { Accessibility } from 'lucide-react-native';
 import { StyleSheet, Text, View } from 'react-native';
 import { useI18n } from '@/i18n';
 import { colors, space } from '@/theme/tokens';
@@ -53,7 +53,7 @@ export function SeatLegend() {
       </Item>
       <Item label={t('seats.wheelchair')}>
         <View style={{ width: S, height: S, alignItems: 'center', justifyContent: 'center' }}>
-          <Wheelchair size={S} color={colors.body} weight="fill" />
+          <Accessibility size={S} color={colors.body} strokeWidth={2} />
         </View>
       </Item>
     </View>

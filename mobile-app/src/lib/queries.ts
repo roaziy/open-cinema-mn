@@ -29,9 +29,10 @@ export const queryKeys = {
   me: ['me'] as const,
 };
 
-export function useMe() {
+export function useMe(enabled = true) {
   return useQuery({
     queryKey: queryKeys.me,
     queryFn: async (): Promise<PublicUser> => PublicUserSchema.parse(await api('/me')),
+    enabled,
   });
 }

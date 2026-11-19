@@ -4,6 +4,7 @@ import * as SplashScreen from 'expo-splash-screen';
 import { StatusBar } from 'expo-status-bar';
 import { useEffect, useState } from 'react';
 import { GestureHandlerRootView } from 'react-native-gesture-handler';
+import { EmailGate } from '@/components/email-gate';
 import { ToastHost } from '@/components/toast-host';
 import { hydrateLocale, useI18n } from '@/i18n';
 import { getUserId, hydrateAuth } from '@/lib/auth';
@@ -15,6 +16,18 @@ import { fonts } from '@/theme/type';
 import { useBrandFontsReady } from '@/theme/use-brand-fonts';
 
 SplashScreen.preventAutoHideAsync().catch(() => {});
+
+/** Native header with the page title, used by the plain list/text pages. */
+const pageHeader = (title: string) =>
+  ({
+    headerShown: true,
+    title,
+    headerBackButtonDisplayMode: 'minimal',
+    headerTintColor: colors.ink,
+    headerShadowVisible: false,
+    headerStyle: { backgroundColor: colors.canvas },
+    headerTitleStyle: { fontFamily: fonts.semibold, color: colors.ink },
+  }) as const;
 
 const theme = {
   ...DarkTheme,
@@ -96,6 +109,36 @@ export default function RootLayout() {
               }}
             />
             <Stack.Screen
+              name="account"
+              dangerouslySingular
+              options={pageHeader(t('account.title'))}
+            />
+            <Stack.Screen
+              name="points"
+              dangerouslySingular
+              options={pageHeader(t('points.title'))}
+            />
+            <Stack.Screen
+              name="contact"
+              dangerouslySingular
+              options={pageHeader(t('contact.title'))}
+            />
+            <Stack.Screen name="terms" dangerouslySingular options={pageHeader(t('terms.title'))} />
+            <Stack.Screen
+              name="privacy"
+              dangerouslySingular
+              options={pageHeader(t('privacy.title'))}
+            />
+            <Stack.Screen
+              name="email-required"
+              dangerouslySingular
+              options={{
+                presentation: 'fullScreenModal',
+                gestureEnabled: false,
+                contentStyle: { backgroundColor: colors.canvas },
+              }}
+            />
+            <Stack.Screen
               name="branches"
               dangerouslySingular
               options={{
@@ -106,6 +149,7 @@ export default function RootLayout() {
               }}
             />
           </Stack>
+          <EmailGate />
           <ToastHost />
         </ThemeProvider>
       </QueryClientProvider>

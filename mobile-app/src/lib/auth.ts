@@ -89,7 +89,10 @@ export function hydrateAuth(): Promise<void> {
         SecureStore.getItemAsync(KEY_REFRESH, STORE_OPTS),
         SecureStore.getItemAsync(KEY_USER, STORE_OPTS),
       ]);
-      const user = rawUser ? PublicUserSchema.safeParse(JSON.parse(rawUser)) : null;
+      // A profile saved before `memberNo` existed still counts; the next /me read fills it in.
+      const user = rawUser
+        ? PublicUserSchema.safeParse({ memberNo: null, ...JSON.parse(rawUser) })
+        : null;
       if (accessToken && refreshToken && user?.success) {
         session = { accessToken, refreshToken, user: user.data };
       }

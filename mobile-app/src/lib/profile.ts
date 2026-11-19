@@ -13,3 +13,9 @@ export async function verifyEmailCode(code: string): Promise<void> {
   );
   await updateUser(user);
 }
+
+/** Save the display name; the local profile is updated to match. */
+export async function saveName(name: string): Promise<void> {
+  const user = PublicUserSchema.parse(await api('/me', { method: 'PATCH', json: { name } }));
+  await updateUser(user);
+}

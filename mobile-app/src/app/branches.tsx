@@ -1,14 +1,13 @@
 import { router } from 'expo-router';
-import { Buildings, Check, MapPin } from 'phosphor-react-native';
+import { Building2, Check, type LucideIcon, MapPin } from 'lucide-react-native';
 import { ScrollView, StyleSheet, Text, View } from 'react-native';
-import { IconTile } from '@/components/icon-tile';
 import { Pressable } from '@/components/pressable';
 import { Skeleton } from '@/components/skeleton';
 import { ErrorState } from '@/components/state-views';
 import { useI18n } from '@/i18n';
 import { setBranchId, useBranchId } from '@/lib/branch';
 import { useBranches } from '@/lib/catalog';
-import { colors, hairlineWidth, hueFor, radius, space } from '@/theme/tokens';
+import { colors, hairlineWidth, radius, space } from '@/theme/tokens';
 import { type } from '@/theme/type';
 
 /** Form sheet: pick the preferred branch (or all of them). */
@@ -38,9 +37,7 @@ export default function BranchesSheet() {
       ) : (
         <View style={styles.card}>
           <Row
-            tile={
-              <IconTile sf="building.2.fill" phosphor={Buildings} hue={colors.muted} size={30} />
-            }
+            icon={Building2}
             title={t('branch.all')}
             on={selected === null}
             onPress={() => choose(null)}
@@ -48,9 +45,7 @@ export default function BranchesSheet() {
           {data.map((b) => (
             <Row
               key={b.id}
-              tile={
-                <IconTile sf="mappin.circle.fill" phosphor={MapPin} hue={hueFor(b.id)} size={30} />
-              }
+              icon={MapPin}
               title={b.name}
               subtitle={b.address}
               on={selected === b.id}
@@ -64,7 +59,7 @@ export default function BranchesSheet() {
 }
 
 function Row(props: {
-  tile: React.ReactNode;
+  icon: LucideIcon;
   title: string;
   subtitle?: string;
   on: boolean;
@@ -77,7 +72,7 @@ function Row(props: {
       accessibilityRole="button"
       accessibilityState={{ selected: props.on }}
     >
-      {props.tile}
+      <props.icon size={20} color={colors.muted} strokeWidth={1.75} />
       <View style={styles.rowText}>
         <Text style={styles.rowTitle}>{props.title}</Text>
         {props.subtitle ? (
@@ -86,7 +81,7 @@ function Row(props: {
           </Text>
         ) : null}
       </View>
-      {props.on ? <Check size={18} color={colors.action} weight="bold" /> : null}
+      {props.on ? <Check size={18} color={colors.action} strokeWidth={2.25} /> : null}
     </Pressable>
   );
 }

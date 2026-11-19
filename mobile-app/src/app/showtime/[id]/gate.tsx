@@ -1,16 +1,15 @@
 import { router, useIsFocused, useLocalSearchParams } from 'expo-router';
-import { Clock, SignIn, Ticket } from 'phosphor-react-native';
+import { Clock, LogIn, Ticket } from 'lucide-react-native';
 import { useEffect, useMemo, useState } from 'react';
 import { StyleSheet, Text, TextInput, View } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
-import { IconTile } from '@/components/icon-tile';
 import { Pressable } from '@/components/pressable';
 import { useI18n } from '@/i18n';
 import { getContactEmail, setContactEmail } from '@/lib/checkout-store';
 import { confirmGuestLogin } from '@/lib/guest-login';
 import { formatCountdown, liveHolds, useCountdown, useMyHolds } from '@/lib/seats';
 import { normalizeEmail } from '@/shared';
-import { colors, hues, radius, space } from '@/theme/tokens';
+import { colors, radius, space } from '@/theme/tokens';
 import { fonts, type } from '@/theme/type';
 
 /** Sheet after seats for logged-out customers: log in, or continue as a guest with an email. */
@@ -65,7 +64,7 @@ export default function GateScreen() {
           </View>
           {left !== null ? (
             <View style={[styles.timer, left <= 60 && styles.timerUrgent]}>
-              <Clock size={14} weight="fill" color={left <= 60 ? colors.danger : colors.body} />
+              <Clock size={14} strokeWidth={2} color={left <= 60 ? colors.danger : colors.body} />
               <Text style={[styles.timerText, left <= 60 && { color: colors.danger }]}>
                 {formatCountdown(left)}
               </Text>
@@ -88,7 +87,7 @@ export default function GateScreen() {
           }}
           accessibilityRole="button"
         >
-          <IconTile sf="person.crop.circle.fill" phosphor={SignIn} hue={hues.purple} size={40} />
+          <LogIn size={26} color={colors.muted} strokeWidth={1.75} />
           <View style={styles.cardText}>
             <Text style={styles.cardTitle}>{t('gate.login')}</Text>
             <Text style={styles.cardHint}>{t('gate.loginHint')}</Text>
@@ -106,7 +105,7 @@ export default function GateScreen() {
 
         <View style={styles.guestCard}>
           <View style={styles.guestHead}>
-            <IconTile sf="ticket.fill" phosphor={Ticket} hue={hues.teal} size={40} />
+            <Ticket size={26} color={colors.muted} strokeWidth={1.75} />
             <View style={styles.cardText}>
               <Text style={styles.cardTitle}>{t('gate.guest')}</Text>
               <Text style={styles.cardHint}>{t('gate.guestHint')}</Text>

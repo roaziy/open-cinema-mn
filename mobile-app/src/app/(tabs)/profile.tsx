@@ -1,21 +1,33 @@
 import { router } from 'expo-router';
-import { Envelope, Globe, Phone, SignOut, UserCircle } from 'phosphor-react-native';
+import {
+  Building2,
+  CircleUserRound,
+  Coins,
+  FileText,
+  Globe,
+  Headset,
+  Shield,
+  UserRound,
+} from 'lucide-react-native';
 import { useState } from 'react';
 import { ActivityIndicator, Alert, ScrollView, StyleSheet, Text, View } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
-import { EmailEditor } from '@/components/email-editor';
-import { IconTile } from '@/components/icon-tile';
+import { MemberCard } from '@/components/member-card';
 import { Pressable } from '@/components/pressable';
-import { type Locale, useI18n } from '@/i18n';
+import { SettingsRow, SettingsSection } from '@/components/settings-list';
+import { useI18n } from '@/i18n';
 import { useAuth } from '@/lib/auth';
 import { confirmGuestLogin } from '@/lib/guest-login';
-import { colors, hues, radius, space } from '@/theme/tokens';
+import { useMyPoints } from '@/lib/loyalty';
+import { formatPoints } from '@/lib/member';
+import { colors, radius, space } from '@/theme/tokens';
 import { type } from '@/theme/type';
 
 export default function ProfileScreen() {
   const { t, locale, setLocale } = useI18n();
   const insets = useSafeAreaInsets();
   const { user, logout } = useAuth();
+  const points = useMyPoints();
   const [loggingOut, setLoggingOut] = useState(false);
   const [checkingLogin, setCheckingLogin] = useState(false);
   const signedIn = !!user && user.role !== 'guest';
@@ -51,37 +63,20 @@ export default function ProfileScreen() {
       </Text>
 
       {signedIn ? (
-        <>
-          <Text style={styles.group}>{t('profile.account')}</Text>
-          <View style={styles.card}>
-            {user.phone ? (
-              <InfoRow
-                tile={<IconTile sf="phone.fill" phosphor={Phone} hue={hues.green} size={30} />}
-                label={t('profile.phone')}
-                value={user.phone}
-              />
-            ) : null}
-            <InfoRow
-              tile={<IconTile sf="envelope.fill" phosphor={Envelope} hue={hues.teal} size={30} />}
-              label={t('profile.email')}
-              value={user.email ?? '—'}
-              note={user.email && user.emailVerified ? t('profile.verified') : undefined}
-            />
-            <EmailEditor hasEmail={!!user.email} />
-          </View>
-        </>
+        <MemberCard
+          name={user.name ?? user.phone ?? t('profile.member')}
+          phone={user.name ? user.phone : null}
+          memberNo={points.data?.memberNo ?? user.memberNo}
+          points={points.data?.balance ?? null}
+          onPress={() => router.push('/points')}
+        />
       ) : (
-        <View style={styles.card}>
-          <View style={styles.guest}>
-            <IconTile
-              sf="person.crop.circle.fill"
-              phosphor={UserCircle}
-              hue={hues.purple}
-              size={44}
-            />
+        <View style={styles.guest}>
+          <View style={styles.guestHead}>
+            <CircleUserRound size={40} color={colors.muted} strokeWidth={1.5} />
             <View style={styles.guestText}>
-              <Text style={styles.rowValue}>{t('profile.guestTitle')}</Text>
-              <Text style={styles.rowLabel}>{t('profile.guestHint')}</Text>
+              <Text style={styles.guestTitle}>{t('profile.guestTitle')}</Text>
+              <Text style={styles.guestHint}>{t('profile.guestHint')}</Text>
             </View>
           </View>
           <Pressable
@@ -108,27 +103,54 @@ export default function ProfileScreen() {
         </View>
       )}
 
-      <View style={styles.card}>
-        <View style={styles.langHead}>
-          <IconTile sf="globe" phosphor={Globe} hue={hues.indigo} size={30} />
-          <Text style={styles.rowValue}>{t('profile.language')}</Text>
-        </View>
-        <View style={styles.segments} accessibilityRole="radiogroup">
-          {(['mn', 'en'] as const satisfies readonly Locale[]).map((l) => (
-            <Pressable
-              key={l}
-              style={[styles.segment, locale === l && styles.segmentOn]}
-              onPress={() => setLocale(l)}
-              accessibilityRole="radio"
-              accessibilityState={{ selected: locale === l }}
-            >
-              <Text style={[styles.segmentText, locale === l && styles.segmentTextOn]}>
-                {t(l === 'mn' ? 'lang.mn' : 'lang.en')}
-              </Text>
-            </Pressable>
-          ))}
-        </View>
-      </View>
+      {signedIn ? (
+        <SettingsSection title={t('profile.account')}>
+          <SettingsRow
+            icon={UserRound}
+            label={t('profile.personal')}
+            onPress={() => router.push('/account')}
+          />
+          <SettingsRow
+            icon={Coins}
+            label={t('profile.pointsRow')}
+            value={points.data ? formatPoints(points.data.balance) : undefined}
+            onPress={() => router.push('/points')}
+          />
+        </SettingsSection>
+      ) : null}
+
+      <SettingsSection title={t('profile.cinema')}>
+        <SettingsRow
+          icon={Building2}
+          label={t('profile.branches')}
+          onPress={() => router.push('/branches')}
+        />
+        <SettingsRow
+          icon={Globe}
+          label={t('profile.language')}
+          value={t(locale === 'mn' ? 'lang.mn' : 'lang.en')}
+          onPress={() => setLocale(locale === 'mn' ? 'en' : 'mn')}
+          noChevron
+        />
+      </SettingsSection>
+
+      <SettingsSection title={t('profile.help')}>
+        <SettingsRow
+          icon={Headset}
+          label={t('profile.contact')}
+          onPress={() => router.push('/contact')}
+        />
+        <SettingsRow
+          icon={FileText}
+          label={t('profile.terms')}
+          onPress={() => router.push('/terms')}
+        />
+        <SettingsRow
+          icon={Shield}
+          label={t('profile.privacy')}
+          onPress={() => router.push('/privacy')}
+        />
+      </SettingsSection>
 
       {signedIn ? (
         <Pressable
@@ -141,10 +163,7 @@ export default function ProfileScreen() {
           {loggingOut ? (
             <ActivityIndicator color={colors.danger} />
           ) : (
-            <>
-              <SignOut size={18} weight="bold" color={colors.danger} />
-              <Text style={styles.logoutText}>{t('profile.logout')}</Text>
-            </>
+            <Text style={styles.logoutText}>{t('profile.logout')}</Text>
           )}
         </Pressable>
       ) : null}
@@ -152,51 +171,20 @@ export default function ProfileScreen() {
   );
 }
 
-function InfoRow({
-  tile,
-  label,
-  value,
-  note,
-}: {
-  tile: React.ReactNode;
-  label: string;
-  value: string;
-  note?: string;
-}) {
-  return (
-    <View style={styles.infoRow}>
-      {tile}
-      <View style={styles.guestText}>
-        <Text style={styles.rowLabel}>{label}</Text>
-        <Text style={styles.rowValue} numberOfLines={1}>
-          {value}
-        </Text>
-      </View>
-      {note ? <Text style={styles.note}>{note}</Text> : null}
-    </View>
-  );
-}
-
 const styles = StyleSheet.create({
   root: { flex: 1, backgroundColor: colors.canvas },
-  content: { paddingHorizontal: space.lg, paddingBottom: space.xxxl, gap: space.md },
-  title: { ...type.largeTitle, color: colors.ink, marginBottom: space.xs },
-  group: { ...type.footnote, color: colors.muted, marginTop: space.sm, marginLeft: space.xs },
-  card: {
-    padding: space.lg,
+  content: { paddingHorizontal: space.lg, paddingBottom: space.xxxl, gap: space.xl },
+  title: { ...type.largeTitle, color: colors.ink },
+  guest: {
     gap: space.lg,
+    padding: space.lg,
     borderRadius: radius.card,
     backgroundColor: colors.raised,
-    borderWidth: 1,
-    borderColor: colors.hairline,
-    borderTopColor: colors.highlight,
   },
-  guest: { flexDirection: 'row', alignItems: 'center', gap: space.md },
-  guestText: { flex: 1, gap: 1 },
-  infoRow: { flexDirection: 'row', alignItems: 'center', gap: space.md },
-  rowLabel: { ...type.caption, color: colors.muted },
-  rowValue: { ...type.bodyMedium, color: colors.ink },
-  note: { ...type.footnote, color: colors.success },
+  guestHead: { flexDirection: 'row', alignItems: 'center', gap: space.md },
+  guestText: { flex: 1, gap: 2 },
+  guestTitle: { ...type.headline, color: colors.ink },
+  guestHint: { ...type.caption, color: colors.muted },
   primary: {
     height: 48,
     alignItems: 'center',
@@ -206,36 +194,6 @@ const styles = StyleSheet.create({
   },
   primaryText: { ...type.headline, color: colors.onAction },
   disabled: { opacity: 0.4 },
-  langHead: { flexDirection: 'row', alignItems: 'center', gap: space.md },
-  segments: {
-    flexDirection: 'row',
-    padding: 3,
-    borderRadius: radius.inner + 2,
-    backgroundColor: colors.canvas,
-    borderWidth: 1,
-    borderColor: colors.hairline,
-  },
-  segment: {
-    flex: 1,
-    height: 36,
-    alignItems: 'center',
-    justifyContent: 'center',
-    borderRadius: radius.inner - 1,
-  },
-  segmentOn: { backgroundColor: colors.fill },
-  segmentText: { ...type.bodyMedium, color: colors.muted },
-  segmentTextOn: { color: colors.ink },
-  logout: {
-    marginTop: space.md,
-    height: 50,
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'center',
-    gap: space.sm,
-    borderRadius: radius.card,
-    backgroundColor: colors.dangerFill,
-    borderWidth: 1,
-    borderColor: colors.dangerEdge,
-  },
-  logoutText: { ...type.headline, color: colors.danger },
+  logout: { alignItems: 'center', justifyContent: 'center', height: 48 },
+  logoutText: { ...type.bodyMedium, color: colors.danger },
 });

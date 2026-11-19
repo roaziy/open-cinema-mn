@@ -1,11 +1,10 @@
 import { router, useLocalSearchParams } from 'expo-router';
 import { useHeaderHeight } from 'expo-router/react-navigation';
-import { Buildings } from 'phosphor-react-native';
+import { Building2 } from 'lucide-react-native';
 import { useMemo, useState } from 'react';
 import { ScrollView, StyleSheet, Text, useWindowDimensions, View } from 'react-native';
 import Animated, { useAnimatedRef, useScrollOffset } from 'react-native-reanimated';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
-import { IconTile } from '@/components/icon-tile';
 import { Poster } from '@/components/poster';
 import { PosterBackdrop } from '@/components/poster-backdrop';
 import { Pressable } from '@/components/pressable';
@@ -16,7 +15,7 @@ import { useBranchId } from '@/lib/branch';
 import { useMovie, useShowtimes } from '@/lib/catalog';
 import { formatDuration, nextUbDays, weekdayOf } from '@/lib/format';
 import { formatMnt, formatUbTime, type ShowtimeSlot } from '@/shared';
-import { colors, hairlineWidth, hueFor, radius, space } from '@/theme/tokens';
+import { colors, hairlineWidth, radius, space } from '@/theme/tokens';
 import { type } from '@/theme/type';
 
 const FEW_LEFT = 10;
@@ -135,12 +134,7 @@ export default function ShowtimesScreen() {
           branches.map(({ branch, showtimes }) => (
             <View key={branch.id} style={styles.card}>
               <View style={styles.cardHead}>
-                <IconTile
-                  sf="building.2.fill"
-                  phosphor={Buildings}
-                  hue={hueFor(branch.id)}
-                  size={32}
-                />
+                <Building2 size={20} color={colors.muted} strokeWidth={1.75} />
                 <View style={styles.cardHeadText}>
                   <Text style={styles.branchName}>{branch.name}</Text>
                   <Text style={styles.branchAddr} numberOfLines={1}>

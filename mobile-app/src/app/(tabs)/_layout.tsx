@@ -1,6 +1,6 @@
 import { Tabs } from 'expo-router';
 import { NativeTabs } from 'expo-router/native-tabs';
-import { FilmSlate, Ticket, UserCircle } from 'phosphor-react-native';
+import { CircleUserRound, Film, Ticket } from 'lucide-react-native';
 import { useI18n } from '@/i18n';
 import { haptic } from '@/lib/haptics';
 import { colors } from '@/theme/tokens';
@@ -57,7 +57,7 @@ function AndroidTabs() {
         options={{
           title: t('tabs.movies'),
           tabBarIcon: ({ color, size }) => (
-            <FilmSlate color={color as string} size={size} weight="fill" />
+            <Film color={color as string} size={size} strokeWidth={1.75} />
           ),
         }}
       />
@@ -66,7 +66,7 @@ function AndroidTabs() {
         options={{
           title: t('tabs.tickets'),
           tabBarIcon: ({ color, size }) => (
-            <Ticket color={color as string} size={size} weight="fill" />
+            <Ticket color={color as string} size={size} strokeWidth={1.75} />
           ),
         }}
       />
@@ -75,7 +75,7 @@ function AndroidTabs() {
         options={{
           title: t('tabs.profile'),
           tabBarIcon: ({ color, size }) => (
-            <UserCircle color={color as string} size={size} weight="fill" />
+            <CircleUserRound color={color as string} size={size} strokeWidth={1.75} />
           ),
         }}
       />

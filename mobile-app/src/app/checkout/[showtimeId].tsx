@@ -1,18 +1,17 @@
 import { useQueryClient } from '@tanstack/react-query';
 import { router, Stack, useIsFocused, useLocalSearchParams } from 'expo-router';
 import { useHeaderHeight } from 'expo-router/react-navigation';
-import { Clock, Envelope, QrCode } from 'phosphor-react-native';
+import { Clock, Mail, QrCode } from 'lucide-react-native';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { ActivityIndicator, ScrollView, StyleSheet, Text, View } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
-import { IconTile } from '@/components/icon-tile';
 import { Poster } from '@/components/poster';
 import { Pressable } from '@/components/pressable';
 import { Skeleton } from '@/components/skeleton';
 import { ErrorState } from '@/components/state-views';
 import { type TKey, useI18n } from '@/i18n';
 import { ApiError } from '@/lib/api';
-import { useAuth } from '@/lib/auth';
+import { updateUser, useAuth } from '@/lib/auth';
 import {
   attemptSignature,
   getAttempt,
@@ -20,6 +19,7 @@ import {
   setAttemptBooking,
 } from '@/lib/checkout-store';
 import { haptic } from '@/lib/haptics';
+import { needsEmail } from '@/lib/member';
 import { createBooking, newIdempotencyKey, orderKeys } from '@/lib/orders';
 import {
   formatCountdown,
@@ -31,7 +31,7 @@ import {
 } from '@/lib/seats';
 import { showToast } from '@/lib/toast';
 import { formatMnt, formatUbTime, normalizeEmail, seatPrice } from '@/shared';
-import { colors, hues, radius, space } from '@/theme/tokens';
+import { colors, radius, space } from '@/theme/tokens';
 import { type } from '@/theme/type';
 
 function errorKey(e: unknown): TKey {
@@ -119,6 +119,12 @@ export default function CheckoutScreen() {
   );
   const total = lines.reduce((sum, l) => sum + l.price, 0);
 
+  // A customer without a verified email cannot book: the required-email modal opens over this screen.
+  const emailMissing = needsEmail(user);
+  useEffect(() => {
+    if (emailMissing && focused) router.push('/email-required');
+  }, [emailMissing, focused]);
+
   const isGuest = !user || user.role === 'guest';
   const guestEmail = getContactEmail(showtimeId);
   const receipt = isGuest ? guestEmail : user.email;
@@ -140,6 +146,12 @@ export default function CheckoutScreen() {
       router.replace(`/pay/${booking.id}`);
     } catch (e) {
       haptic.error();
+      if (e instanceof ApiError && e.code === 'email_required') {
+        // The server's word wins over the stored profile: mark it unverified and open the modal.
+        if (user) void updateUser({ ...user, emailVerified: false });
+        router.push('/email-required');
+        return;
+      }
       const key = errorKey(e);
       if (key === 'checkout.err.holds_unavailable' || key === 'checkout.err.seat_taken') {
         qc.invalidateQueries({ queryKey: ['holds', showtimeId] });
@@ -185,49 +197,47 @@ export default function CheckoutScreen() {
         >
           {left !== null ? (
             <View style={[styles.timer, urgent && styles.timerUrgent]}>
-              <Clock size={15} weight="fill" color={urgent ? colors.danger : colors.body} />
+              <Clock size={15} strokeWidth={2} color={urgent ? colors.danger : colors.body} />
               <Text style={[styles.timerText, urgent && { color: colors.danger }]}>
                 {t('checkout.holdLeft', { time: formatCountdown(left) })}
               </Text>
             </View>
           ) : null}
 
-          <View style={styles.panel}>
-            <View style={styles.card}>
-              <View style={styles.film}>
-                <Poster uri={show.movie.posterUrl} width={64} radius={10} />
-                <View style={styles.filmText}>
-                  <Text style={styles.filmTitle} numberOfLines={2}>
-                    {show.movie.title}
-                  </Text>
-                  <Text style={styles.meta}>{show.branch.name}</Text>
-                  <Text style={styles.meta}>
-                    {[show.hallName, formatUbTime(show.startsAt), show.format].join('  ·  ')}
-                  </Text>
-                </View>
+          <View style={styles.card}>
+            <View style={styles.film}>
+              <Poster uri={show.movie.posterUrl} width={64} radius={10} />
+              <View style={styles.filmText}>
+                <Text style={styles.filmTitle} numberOfLines={2}>
+                  {show.movie.title}
+                </Text>
+                <Text style={styles.meta}>{show.branch.name}</Text>
+                <Text style={styles.meta}>
+                  {[show.hallName, formatUbTime(show.startsAt), show.format].join('  ·  ')}
+                </Text>
               </View>
-              <View style={styles.rule} />
-              <Text style={styles.section}>{t('checkout.seats')}</Text>
-              {lines.map((l) => (
-                <View key={l.seat.id} style={styles.line}>
-                  <Text style={styles.lineSeat}>{seatLabel(l.seat)}</Text>
-                  <Text style={styles.lineKind}>
-                    {l.seat.kind === 'premium' ? t('seats.premium') : t('seats.standard')}
-                  </Text>
-                  <Text style={styles.linePrice}>{formatMnt(l.price)}</Text>
-                </View>
-              ))}
-              <View style={styles.rule} />
-              <View style={styles.line}>
-                <Text style={styles.totalLabel}>{t('checkout.total')}</Text>
-                <Text style={styles.total}>{formatMnt(total)}</Text>
+            </View>
+            <View style={styles.rule} />
+            <Text style={styles.section}>{t('checkout.seats')}</Text>
+            {lines.map((l) => (
+              <View key={l.seat.id} style={styles.line}>
+                <Text style={styles.lineSeat}>{seatLabel(l.seat)}</Text>
+                <Text style={styles.lineKind}>
+                  {l.seat.kind === 'premium' ? t('seats.premium') : t('seats.standard')}
+                </Text>
+                <Text style={styles.linePrice}>{formatMnt(l.price)}</Text>
               </View>
+            ))}
+            <View style={styles.rule} />
+            <View style={styles.line}>
+              <Text style={styles.totalLabel}>{t('checkout.total')}</Text>
+              <Text style={styles.total}>{formatMnt(total)}</Text>
             </View>
           </View>
 
           <Text style={styles.group}>{t('checkout.method')}</Text>
           <View style={styles.row}>
-            <IconTile sf="qrcode" phosphor={QrCode} hue={hues.indigo} size={36} />
+            <QrCode size={22} color={colors.muted} strokeWidth={1.75} />
             <View style={styles.rowText}>
               <Text style={styles.rowTitle}>{t('checkout.qpay')}</Text>
               <Text style={styles.rowHint}>{t('checkout.qpayHint')}</Text>
@@ -238,7 +248,7 @@ export default function CheckoutScreen() {
           </View>
 
           <View style={styles.row}>
-            <IconTile sf="envelope.fill" phosphor={Envelope} hue={hues.teal} size={36} />
+            <Mail size={22} color={colors.muted} strokeWidth={1.75} />
             <View style={styles.rowText}>
               <Text style={styles.rowHint}>{t('checkout.receipt')}</Text>
               <Text style={styles.rowTitle} numberOfLines={1}>
@@ -294,19 +304,9 @@ const styles = StyleSheet.create({
   },
   timerUrgent: { backgroundColor: colors.dangerFill },
   timerText: { ...type.footnote, color: colors.body, fontVariant: ['tabular-nums'] },
-  panel: {
-    backgroundColor: colors.surface,
-    borderRadius: radius.panel,
-    padding: space.sm,
-    borderWidth: 1,
-    borderColor: colors.hairline,
-  },
   card: {
     backgroundColor: colors.raised,
-    borderRadius: radius.panel - space.sm,
-    borderWidth: 1,
-    borderColor: colors.hairline,
-    borderTopColor: colors.highlight,
+    borderRadius: radius.card,
     padding: space.lg,
     gap: space.sm,
   },
