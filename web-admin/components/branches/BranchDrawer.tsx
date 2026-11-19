@@ -7,7 +7,9 @@ import { Drawer } from '@/components/ui/Drawer';
 import { Labeled, TextInput } from '@/components/ui/Inputs';
 import { Notice } from '@/components/ui/Notice';
 import { call, messageOf } from '@/lib/client-api';
+import { parseLocation } from '@/lib/map-link';
 import { AdminBranchBody, type Branch } from '@/lib/shared';
+import { MapPicker } from './MapPicker';
 
 // Ulaanbaatar city centre: a starting point the admin nudges, not a real branch location.
 const CENTER = { lat: '47.9184', lng: '106.9177' };
@@ -27,9 +29,26 @@ export function BranchDrawer({
   const [address, setAddress] = useState(branch?.address ?? '');
   const [lat, setLat] = useState(branch ? String(branch.lat) : CENTER.lat);
   const [lng, setLng] = useState(branch ? String(branch.lng) : CENTER.lng);
+  const [link, setLink] = useState('');
+  const [linkBad, setLinkBad] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [confirm, setConfirm] = useState(false);
   const [pending, start] = useTransition();
+
+  // A pasted map link or "lat, lng" pair moves the pin. Read on paste, Enter or blur, never
+  // per keystroke: a half-typed "47.9, 1" is a valid point too.
+  function apply(text: string) {
+    const at = parseLocation(text);
+    if (!at) {
+      setLinkBad(text.trim() !== '');
+      return false;
+    }
+    setLat(String(at.lat));
+    setLng(String(at.lng));
+    setLink('');
+    setLinkBad(false);
+    return true;
+  }
 
   function save() {
     const parsed = AdminBranchBody.safeParse({
@@ -131,6 +150,43 @@ export function BranchDrawer({
             onChange={(e) => setAddress(e.target.value)}
           />
         </Labeled>
+        <Labeled
+          label="Байршил"
+          htmlFor="b-link"
+          hint={
+            linkBad
+              ? 'Координат олдсонгүй. Богино холбоос (maps.app.goo.gl) ажиллахгүй: хөтчийн хаягийн мөрөөс бүтэн холбоосыг, эсвэл газрын зураг дээр баруун товшоод координатыг хуулна уу.'
+              : 'Google Maps эсвэл OpenStreetMap-ийн холбоос, координат буулгана. Эсвэл доорх газрын зураг дээр дарж, зүүг чирнэ.'
+          }
+        >
+          <TextInput
+            id="b-link"
+            value={link}
+            placeholder="https://www.google.com/maps/… эсвэл 47.9184, 106.9177"
+            aria-invalid={linkBad || undefined}
+            onChange={(e) => {
+              setLink(e.target.value);
+              if (!e.target.value.trim()) setLinkBad(false);
+            }}
+            onPaste={(e) => {
+              if (apply(e.clipboardData.getData('text'))) e.preventDefault();
+            }}
+            onKeyDown={(e) => {
+              if (e.key !== 'Enter') return;
+              e.preventDefault();
+              apply(link);
+            }}
+            onBlur={() => apply(link)}
+          />
+        </Labeled>
+        <MapPicker
+          lat={Number(lat)}
+          lng={Number(lng)}
+          onPick={(la, ln) => {
+            setLat(String(la));
+            setLng(String(ln));
+          }}
+        />
         <div className="grid grid-cols-2 gap-3">
           <Labeled label="Өргөрөг" htmlFor="b-lat">
             <TextInput

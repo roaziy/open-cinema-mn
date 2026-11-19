@@ -106,3 +106,39 @@ body {
     display: none;
   }
 }
+
+/* Branch map (Leaflet): dark controls to match the panel; selectors outrank leaflet.css, which loads later. */
+.map-box.leaflet-container {
+  background: var(--color-surface);
+  font: inherit;
+}
+.map-box.leaflet-container .leaflet-tile-pane {
+  /* Light OSM tiles turned dark: invert, then rotate hues back so water stays blue. */
+  filter: invert(1) hue-rotate(180deg) brightness(0.9) contrast(0.9) saturate(0.6);
+}
+.map-box.leaflet-container .leaflet-bar {
+  border: 1px solid var(--color-hairline);
+  box-shadow: none;
+}
+.map-box.leaflet-container .leaflet-bar a {
+  background: var(--color-raised);
+  color: var(--color-ink);
+  border-bottom-color: var(--color-hairline);
+}
+.map-box.leaflet-container .leaflet-bar a:hover {
+  background: var(--color-fill);
+}
+.map-box.leaflet-container .leaflet-control-attribution {
+  background: rgb(11 11 13 / 0.7);
+  color: var(--color-muted);
+  font-size: 10px;
+}
+.map-box.leaflet-container .leaflet-control-attribution a {
+  color: var(--color-body);
+}
+.map-pin {
+  border-radius: 9999px;
+  background: var(--color-action);
+  border: 3px solid var(--color-ink);
+  box-shadow: 0 2px 8px rgb(0 0 0 / 0.6);
+}
