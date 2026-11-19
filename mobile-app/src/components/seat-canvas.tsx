@@ -224,9 +224,6 @@ type LandmarkProps = {
   opacity: SharedValue<number>;
 };
 
-const projOut: [number, number, number] = [0, 0, 0];
-const projRef: [number, number, number] = [0, 0, 0];
-
 type AnchorProps = {
   /** The hall point it belongs to (a seat, or the plane at its content position). */
   world: [number, number, number];
@@ -246,10 +243,12 @@ type AnchorProps = {
 function Anchored({ world, w, h, cam, transform, fit, children }: AnchorProps) {
   const style = useAnimatedStyle(() => {
     const c = cam.get();
-    projectToPx(c, world[0], world[1], world[2], projOut);
+    // Fresh arrays each frame: a module-level scratch array is frozen once a worklet captures it,
+    // and writing to it then floods dev with Reanimated warnings (and is undefined in release).
+    const projOut = projectToPx(c, world[0], world[1], world[2], [0, 0, 0]);
     // pixels per content pixel along x, at this point
     const step = 1 / fit.ppmX;
-    projectToPx(c, world[0] + step, world[1], world[2], projRef);
+    const projRef = projectToPx(c, world[0] + step, world[1], world[2], [0, 0, 0]);
     const k = Math.abs(projRef[0] - projOut[0]) / Math.max(1e-6, transform.scale.get());
     return {
       opacity: projOut[2] ? 1 : 0,
