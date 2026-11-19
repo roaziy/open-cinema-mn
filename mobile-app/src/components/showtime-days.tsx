@@ -1,8 +1,8 @@
 import { ScrollView, StyleSheet, Text } from 'react-native';
 import { type TKey, useI18n } from '@/i18n';
 import { weekdayOf } from '@/lib/format';
-import { colors, hairlineWidth, radius, space } from '@/theme/tokens';
-import { type } from '@/theme/type';
+import { colors, radius, space } from '@/theme/tokens';
+import { fonts, type } from '@/theme/type';
 import { Pressable } from './pressable';
 
 /** Horizontal day chips (YYYY-MM-DD values); the first is "today". */
@@ -55,22 +55,27 @@ export function ShowtimeDays({
 const styles = StyleSheet.create({
   scroll: { flexGrow: 0 },
   days: { paddingHorizontal: space.lg, gap: space.sm, paddingBottom: space.sm },
+  // Shop.mn field: borderless surface, continuous 18pt corner; selected is a solid blue fill.
   day: {
-    width: 70,
-    height: 68,
+    width: 64,
+    height: 64,
     borderRadius: radius.card,
-    backgroundColor: colors.raised,
-    borderWidth: hairlineWidth,
-    borderColor: colors.hairline,
-    borderTopColor: colors.highlight,
+    borderCurve: 'continuous',
+    backgroundColor: colors.surface,
     alignItems: 'center',
     justifyContent: 'center',
     gap: 2,
   },
-  dayOn: { backgroundColor: colors.action, borderColor: colors.action },
+  dayOn: { backgroundColor: colors.action },
   dayQuiet: { opacity: 0.4 },
-  name: { ...type.footnote, color: colors.muted },
+  name: { ...type.caption, fontSize: 12, lineHeight: 16, color: colors.muted },
   nameOn: { color: colors.onActionMuted },
-  num: { ...type.number, fontSize: 20, color: colors.ink },
+  num: {
+    fontFamily: fonts.medium,
+    fontSize: 20,
+    lineHeight: 24,
+    color: colors.ink,
+    fontVariant: ['tabular-nums'],
+  },
   numOn: { color: colors.onAction },
 });

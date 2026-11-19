@@ -72,7 +72,22 @@ export default function RootLayout() {
             screenOptions={{ headerShown: false, contentStyle: { backgroundColor: colors.canvas } }}
           >
             <Stack.Screen name="(tabs)" />
-            <Stack.Screen name="movie/[id]" dangerouslySingular />
+            <Stack.Screen
+              name="movie/[id]"
+              dangerouslySingular
+              options={{
+                // Native bar, clear over the key art; the screen adds the title once scrolled.
+                headerShown: true,
+                headerTransparent: true,
+                headerBackButtonDisplayMode: 'minimal',
+                headerTintColor: colors.ink,
+                headerShadowVisible: false,
+                title: '',
+                headerTitleStyle: { fontFamily: fonts.medium, color: colors.ink },
+                // iOS 26: content under the bar melts into a soft blur, no dividing line.
+                scrollEdgeEffects: { top: 'soft' },
+              }}
+            />
             <Stack.Screen
               name="movie/[id]/showtimes"
               dangerouslySingular
@@ -94,7 +109,7 @@ export default function RootLayout() {
                 presentation: 'formSheet',
                 sheetAllowedDetents: [0.7, 1],
                 sheetGrabberVisible: true,
-                contentStyle: { backgroundColor: colors.surface },
+                contentStyle: { backgroundColor: colors.canvas },
               }}
             />
             <Stack.Screen name="checkout/[showtimeId]" dangerouslySingular />
@@ -145,7 +160,7 @@ export default function RootLayout() {
                 presentation: 'formSheet',
                 sheetAllowedDetents: 'fitToContents',
                 sheetGrabberVisible: true,
-                contentStyle: { backgroundColor: colors.surface },
+                contentStyle: { backgroundColor: colors.canvas },
               }}
             />
           </Stack>

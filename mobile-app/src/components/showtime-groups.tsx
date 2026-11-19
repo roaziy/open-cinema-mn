@@ -1,9 +1,13 @@
+import { ChevronRight } from 'lucide-react-native';
 import { useState } from 'react';
-import { ScrollView, StyleSheet, Text, View } from 'react-native';
+import { Pressable as RNPressable, ScrollView, StyleSheet, Text, View } from 'react-native';
 import { useI18n } from '@/i18n';
+import { formatMarks } from '@/lib/format-marks';
+import { haptic } from '@/lib/haptics';
 import { type BranchShowtimes, formatMnt, formatUbTime, type ShowtimeSlot } from '@/shared';
-import { colors, hairlineWidth, radius, space } from '@/theme/tokens';
-import { type } from '@/theme/type';
+import { colors, radius, space } from '@/theme/tokens';
+import { fonts, type } from '@/theme/type';
+import { FormatMark } from './format-mark';
 import { Pressable } from './pressable';
 import { Skeleton } from './skeleton';
 import { EmptyState, ErrorState } from './state-views';
@@ -13,7 +17,7 @@ const FEW_LEFT = 10;
 type Props = {
   /** Branches that have shows, already ordered (see `groupByBranch`). */
   groups: BranchShowtimes[];
-  /** The film's running time: each slot shows when it ends. */
+  /** The film's running time: each showing shows when it ends. */
   durationMin?: number;
   loading: boolean;
   error: unknown;
@@ -22,8 +26,9 @@ type Props = {
 };
 
 /**
- * Showings of one day: a branch filter when there is more than one branch, then per branch a
- * plain header and a two-column grid of slots. Also owns the loading, error and empty states.
+ * Showings of one day. A branch filter when more than one branch has them, then per branch its
+ * name over one card of rows: start and end on the left, format marks and seats in the middle,
+ * price on the right. Also owns the loading, error and empty states.
  */
 export function ShowtimeGroups({ groups, durationMin, loading, error, onRetry, onPick }: Props) {
   const { t } = useI18n();
@@ -32,7 +37,7 @@ export function ShowtimeGroups({ groups, durationMin, loading, error, onRetry, o
     return (
       <View style={styles.list}>
         <Skeleton width={180} height={20} />
-        <Skeleton height={92} radius={radius.inner + 2} />
+        <Skeleton height={204} radius={radius.panel} />
       </View>
     );
   }
@@ -63,34 +68,29 @@ export function ShowtimeGroups({ groups, durationMin, loading, error, onRetry, o
           ))}
         </ScrollView>
       ) : null}
-      {shown.map(({ branch, showtimes }, i) => (
-        <View key={branch.id} style={[styles.group, i > 0 && styles.groupRule]}>
+      {shown.map(({ branch, showtimes }) => (
+        <View key={branch.id} style={styles.group}>
           <View style={styles.head}>
             <Text style={styles.branchName}>{branch.name}</Text>
             <Text style={styles.branchAddr} numberOfLines={1}>
               {branch.address}
             </Text>
           </View>
-          {pairs(showtimes).map(([a, b]) => (
-            <View key={a.id} style={styles.row}>
-              <Slot slot={a} durationMin={durationMin} onPress={() => onPick(a)} />
-              {b ? (
-                <Slot slot={b} durationMin={durationMin} onPress={() => onPick(b)} />
-              ) : (
-                <View style={styles.cell} />
-              )}
-            </View>
-          ))}
+          <View style={styles.card}>
+            {showtimes.map((s, i) => (
+              <Row
+                key={s.id}
+                slot={s}
+                first={i === 0}
+                durationMin={durationMin}
+                onPress={() => onPick(s)}
+              />
+            ))}
+          </View>
         </View>
       ))}
     </View>
   );
-}
-
-function pairs<T>(list: T[]): [T, T | undefined][] {
-  const out: [T, T | undefined][] = [];
-  for (let i = 0; i < list.length; i += 2) out.push([list[i] as T, list[i + 1]]);
-  return out;
 }
 
 function Chip({ label, on, onPress }: { label: string; on: boolean; onPress: () => void }) {
@@ -108,12 +108,14 @@ function Chip({ label, on, onPress }: { label: string; on: boolean; onPress: () 
   );
 }
 
-function Slot({
+function Row({
   slot,
+  first,
   durationMin,
   onPress,
 }: {
   slot: ShowtimeSlot;
+  first: boolean;
   durationMin?: number;
   onPress: () => void;
 }) {
@@ -124,58 +126,60 @@ function Slot({
   const end = durationMin
     ? formatUbTime(new Date(Date.parse(slot.startsAt) + durationMin * 60_000))
     : null;
-  // Name the format only when the hall's own name does not already say it ("3D танхим", "IMAX").
-  const hall =
-    slot.format !== '2D' && !slot.hallName.toUpperCase().includes(slot.format)
-      ? `${slot.hallName} · ${slot.format}`
-      : slot.hallName;
+  const { marks, hall } = formatMarks(slot.format, slot.hallName);
+  const seats = soldOut
+    ? t('showtimes.soldOut')
+    : few
+      ? t('showtimes.fewLeft', { n: slot.seatsLeft })
+      : t('showtimes.seatsFree', { n: slot.seatsLeft });
   const price = formatMnt(slot.priceStandard);
   return (
-    <Pressable
-      style={[styles.cell, styles.slot, soldOut && styles.slotSold]}
-      onPress={onPress}
+    <RNPressable
+      style={({ pressed }) => [styles.row, pressed && !soldOut && styles.rowPressed]}
+      onPress={() => {
+        haptic.select();
+        onPress();
+      }}
       disabled={soldOut}
-      feedback={!soldOut}
       accessibilityRole="button"
       accessibilityState={{ disabled: soldOut }}
-      accessibilityLabel={[
-        start,
-        end && `– ${end}`,
-        hall,
-        soldOut ? t('showtimes.soldOut') : price,
-        few && t('showtimes.fewLeft', { n: slot.seatsLeft }),
-      ]
+      accessibilityLabel={[start, end && `– ${end}`, slot.hallName, seats, !soldOut && price]
         .filter(Boolean)
         .join(', ')}
     >
-      <Text style={styles.hall} numberOfLines={1}>
-        {hall}
-      </Text>
-      <View style={styles.times}>
-        <Text style={[styles.start, soldOut && styles.struck]}>{start}</Text>
-        {end ? <Text style={styles.end}>– {end}</Text> : null}
+      {/* Rows are split by a hairline that starts where their text does, as in iOS lists. */}
+      {first ? null : <View style={styles.rule} />}
+      <View style={[styles.when, soldOut && styles.dim]}>
+        <Text style={styles.start}>{start}</Text>
+        {end ? <Text style={styles.end}>{end}</Text> : null}
       </View>
-      <Text style={styles.price} numberOfLines={1}>
-        {soldOut ? (
-          t('showtimes.soldOut')
-        ) : (
-          <>
-            {price}
-            {few ? (
-              <Text style={styles.few}>
-                {'  ·  '}
-                {t('showtimes.fewLeft', { n: slot.seatsLeft })}
-              </Text>
-            ) : null}
-          </>
-        )}
-      </Text>
-    </Pressable>
+      <View style={[styles.what, soldOut && styles.dim]}>
+        <View style={styles.marks}>
+          {marks.map((m) => (
+            <FormatMark key={m} mark={m} />
+          ))}
+          {hall ? (
+            <Text style={styles.hall} numberOfLines={1}>
+              {hall}
+            </Text>
+          ) : null}
+        </View>
+        <Text style={[styles.seats, few && styles.few]} numberOfLines={1}>
+          {seats}
+        </Text>
+      </View>
+      {soldOut ? null : (
+        <View style={styles.price}>
+          <Text style={styles.priceText}>{price}</Text>
+          <ChevronRight size={16} color={colors.muted} strokeWidth={2} />
+        </View>
+      )}
+    </RNPressable>
   );
 }
 
 const styles = StyleSheet.create({
-  list: { gap: space.xl },
+  list: { gap: space.xxl },
   // The filter runs to the screen edges and scrolls under them; its chips start on the content line.
   filterBleed: { marginHorizontal: -space.lg, flexGrow: 0 },
   filter: { paddingHorizontal: space.lg, gap: space.sm },
@@ -183,40 +187,61 @@ const styles = StyleSheet.create({
     height: 36,
     paddingHorizontal: space.lg,
     borderRadius: radius.pill,
-    borderWidth: hairlineWidth,
-    borderColor: colors.hairline,
+    backgroundColor: colors.fill,
     justifyContent: 'center',
   },
-  chipOn: { backgroundColor: colors.ink, borderColor: colors.ink },
-  chipText: { ...type.bodyMedium, fontSize: 14, color: colors.body },
-  chipTextOn: { color: colors.canvas },
-  group: { gap: space.sm },
-  groupRule: {
-    paddingTop: space.xl,
-    borderTopWidth: hairlineWidth,
-    borderTopColor: colors.hairline,
-  },
-  head: { gap: 2, marginBottom: space.xs },
-  branchName: { ...type.headline, color: colors.ink },
+  chipOn: { backgroundColor: colors.action },
+  chipText: { fontFamily: fonts.medium, fontSize: 14, lineHeight: 18, color: colors.body },
+  chipTextOn: { color: colors.onAction },
+  group: { gap: space.md },
+  head: { gap: 2 },
+  branchName: { fontFamily: fonts.medium, fontSize: 17, lineHeight: 22, color: colors.ink },
   branchAddr: { ...type.caption, color: colors.muted },
-  row: { flexDirection: 'row', gap: space.sm },
-  cell: { flex: 1 },
-  slot: {
-    gap: 2,
-    paddingHorizontal: space.md,
-    paddingVertical: space.md,
-    borderRadius: radius.inner + 2,
+  // Shop.mn card: one borderless surface, continuous corners, rows split by inset hairlines.
+  card: {
     backgroundColor: colors.surface,
-    borderWidth: hairlineWidth,
-    borderColor: colors.hairline,
-    borderTopColor: colors.highlight,
+    borderRadius: radius.panel,
+    borderCurve: 'continuous',
+    overflow: 'hidden',
   },
-  slotSold: { opacity: 0.45 },
-  hall: { ...type.footnote, color: colors.muted },
-  times: { flexDirection: 'row', alignItems: 'baseline', gap: space.sm },
-  start: { ...type.number, fontSize: 22, lineHeight: 28, color: colors.ink },
+  row: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: space.md,
+    minHeight: 68,
+    paddingHorizontal: space.lg,
+    paddingVertical: space.md,
+  },
+  rowPressed: { backgroundColor: colors.fill },
+  rule: {
+    position: 'absolute',
+    top: 0,
+    left: space.lg,
+    right: 0,
+    height: StyleSheet.hairlineWidth,
+    backgroundColor: colors.hairline,
+  },
+  dim: { opacity: 0.4 },
+  when: { width: 52 },
+  start: {
+    fontFamily: fonts.medium,
+    fontSize: 17,
+    lineHeight: 22,
+    color: colors.ink,
+    fontVariant: ['tabular-nums'],
+  },
   end: { ...type.caption, color: colors.muted, fontVariant: ['tabular-nums'] },
-  struck: { textDecorationLine: 'line-through', color: colors.muted },
-  price: { ...type.caption, color: colors.body, fontVariant: ['tabular-nums'] },
+  what: { flex: 1, gap: 6 },
+  marks: { flexDirection: 'row', alignItems: 'center', gap: 6 },
+  hall: { ...type.caption, color: colors.body, flexShrink: 1 },
+  seats: { ...type.caption, color: colors.muted },
   few: { color: colors.warning },
+  price: { flexDirection: 'row', alignItems: 'center', gap: 2 },
+  priceText: {
+    fontFamily: fonts.medium,
+    fontSize: 15,
+    lineHeight: 20,
+    color: colors.ink,
+    fontVariant: ['tabular-nums'],
+  },
 });

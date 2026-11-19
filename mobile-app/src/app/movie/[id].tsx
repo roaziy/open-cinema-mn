@@ -1,16 +1,15 @@
-import { router, useLocalSearchParams } from 'expo-router';
-import { ChevronLeft, Play } from 'lucide-react-native';
+import { router, Stack, useLocalSearchParams } from 'expo-router';
+import { Play } from 'lucide-react-native';
 import { useMemo, useRef, useState } from 'react';
-import { Linking, StyleSheet, Text, useWindowDimensions, View } from 'react-native';
+import { Linking, Platform, StyleSheet, Text, useWindowDimensions, View } from 'react-native';
 import Animated, {
-  Extrapolation,
-  interpolate,
+  useAnimatedReaction,
   useAnimatedRef,
-  useAnimatedStyle,
   useReducedMotion,
   useScrollOffset,
 } from 'react-native-reanimated';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
+import { scheduleOnRN } from 'react-native-worklets';
 import { AgeBadge } from '@/components/age-badge';
 import { KeyArt } from '@/components/key-art';
 import { Pressable } from '@/components/pressable';
@@ -28,6 +27,8 @@ import { colors, radius, space } from '@/theme/tokens';
 import { type } from '@/theme/type';
 
 const PULL_UP = 64;
+/** iOS 26+: the system draws its own blur under a transparent bar. */
+const LIQUID_GLASS = Platform.OS === 'ios' && Number.parseInt(String(Platform.Version), 10) >= 26;
 const PILL = 40;
 
 export default function MovieScreen() {
@@ -48,16 +49,16 @@ export default function MovieScreen() {
   const [open, setOpen] = useState(false);
   const [lines, setLines] = useState(0);
   const artHeight = Math.min(Math.max(width * 1.2, 460), 640);
-  // A bar in the film's colour fades in once the art has scrolled away, so content never runs
-  // bare under the clock and the back button.
-  const barStyle = useAnimatedStyle(() => ({
-    opacity: interpolate(
-      scrollY.get(),
-      [artHeight - insets.top - 160, artHeight - insets.top - 80],
-      [0, 1],
-      Extrapolation.CLAMP,
-    ),
-  }));
+  // The native bar sits clear over the art; once the art has scrolled away it takes the title
+  // (and, before iOS 26, the system blur material). Flips only when the threshold is crossed.
+  const [scrolled, setScrolled] = useState(false);
+  useAnimatedReaction(
+    () => scrollY.get() > artHeight - insets.top - 120,
+    (now, before) => {
+      if (now !== before) scheduleOnRN(setScrolled, now);
+    },
+    [artHeight, insets.top],
+  );
   const preferred = useBranchId();
   const shows = useShowtimes(id, date);
   // Previous day's cards linger as placeholder data: never show or open them under a new chip.
@@ -66,15 +67,15 @@ export default function MovieScreen() {
   // "From" price: cheapest bookable slot across the loaded week (also covers presale for soon films).
   const fromPrice = useFromPrice(id, days, movie.isSuccess);
 
-  const back = (
-    <Pressable
-      style={[styles.back, { top: insets.top + space.sm }]}
-      onPress={() => router.back()}
-      accessibilityRole="button"
-      accessibilityLabel={t('movie.back')}
-    >
-      <ChevronLeft size={22} color={colors.ink} strokeWidth={2} />
-    </Pressable>
+  const header = (
+    <Stack.Screen
+      options={{
+        title: scrolled && movie.data ? movie.data.title : '',
+        // iOS 26 blurs what scrolls under the bar by itself (scroll edge effect, set in the
+        // layout); a blur material on top would double up, so it is only for older iOS.
+        headerBlurEffect: !LIQUID_GLASS && scrolled ? 'systemChromeMaterialDark' : 'none',
+      }}
+    />
   );
 
   if (movie.isPending || movie.isError) {
@@ -91,7 +92,7 @@ export default function MovieScreen() {
             </>
           )}
         </View>
-        {back}
+        {header}
       </View>
     );
   }
@@ -237,15 +238,7 @@ export default function MovieScreen() {
         </View>
       </Animated.ScrollView>
 
-      <Animated.View
-        pointerEvents="none"
-        style={[styles.bar, { height: insets.top + 56, backgroundColor: page }, barStyle]}
-      >
-        <Text style={styles.barTitle} numberOfLines={1}>
-          {m.title}
-        </Text>
-      </Animated.View>
-      {back}
+      {header}
     </View>
   );
 }
@@ -263,18 +256,6 @@ function Tile({ label, value }: { label: string; value: string }) {
 
 const styles = StyleSheet.create({
   root: { flex: 1, backgroundColor: colors.canvas },
-  back: {
-    position: 'absolute',
-    left: space.lg,
-    width: 40,
-    height: 40,
-    borderRadius: 20,
-    alignItems: 'center',
-    justifyContent: 'center',
-    backgroundColor: colors.scrim,
-    borderWidth: 1,
-    borderColor: colors.scrimBorder,
-  },
   trailer: {
     position: 'absolute',
     alignSelf: 'center',
@@ -329,19 +310,6 @@ const styles = StyleSheet.create({
   section: { paddingHorizontal: space.lg, marginTop: space.xxl, gap: space.md },
   synopsis: { ...type.body, color: colors.body, lineHeight: 23 },
   measure: { position: 'absolute', left: 0, right: 0, opacity: 0 },
-  bar: {
-    position: 'absolute',
-    top: 0,
-    left: 0,
-    right: 0,
-    justifyContent: 'flex-end',
-    alignItems: 'center',
-    paddingHorizontal: 72,
-    paddingBottom: space.md,
-    borderBottomWidth: StyleSheet.hairlineWidth,
-    borderBottomColor: colors.hairline,
-  },
-  barTitle: { ...type.headline, color: colors.ink },
   more: { alignSelf: 'flex-start', minHeight: 32, justifyContent: 'center' },
   moreText: { ...type.bodyMedium, color: colors.ink },
   schedule: { marginTop: space.xxl, paddingHorizontal: space.lg, gap: space.lg },
