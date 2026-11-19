@@ -1,6 +1,7 @@
 import { Asset } from 'expo-asset';
 import { ImageManipulator, SaveFormat } from 'expo-image-manipulator';
 import { useEffect, useState } from 'react';
+import { Image } from 'react-native';
 import * as THREE from 'three';
 import { coverTransform, type ScreenSource } from './camera-math';
 
@@ -10,6 +11,8 @@ const warn = (what: string, e?: unknown) => {
 
 // ponytail: a cinema screen never needs more; also keeps GPU memory small on any phone.
 const MAX_SIDE = 2048;
+/** Larger pictures are refused before decoding (8000×5000); admin uploads are far smaller. */
+const MAX_PIXELS = 40_000_000;
 
 /**
  * Film backdrop/poster as a three texture. expo-asset downloads the remote image to a file, the
@@ -36,16 +39,23 @@ export function useScreenTexture(
     const limit = Math.min(maxTextureSize > 0 ? maxTextureSize : MAX_SIDE, MAX_SIDE);
     (async () => {
       const asset = await Asset.fromURI(url).downloadAsync();
-      if (!asset.localUri || cancelled) return;
-      let image = await ImageManipulator.manipulate(asset.localUri).renderAsync();
-      const longest = Math.max(image.width, image.height);
-      if (!(longest > 0)) throw new Error('empty image');
-      if (longest > limit) {
-        const k = limit / longest;
-        image = await ImageManipulator.manipulate(image)
-          .resize({ width: Math.round(image.width * k), height: Math.round(image.height * k) })
-          .renderAsync();
-      }
+      const uri = asset.localUri;
+      if (!uri || cancelled) return;
+      // Dimensions from the header only, before anything is decoded: a tiny file can still claim
+      // a huge picture, and decoding that whole would exhaust memory.
+      const { w, h } = await new Promise<{ w: number; h: number }>((resolve, reject) =>
+        Image.getSize(uri, (w, h) => resolve({ w, h }), reject),
+      );
+      if (!(w > 0 && h > 0) || w * h > MAX_PIXELS) throw new Error(`image ${w}x${h} refused`);
+      const k = Math.min(1, limit / Math.max(w, h));
+      const ctx =
+        k < 1
+          ? ImageManipulator.manipulate(uri).resize({
+              width: Math.round(w * k),
+              height: Math.round(h * k),
+            })
+          : ImageManipulator.manipulate(uri);
+      const image = await ctx.renderAsync();
       const jpeg = await image.saveAsync({ format: SaveFormat.JPEG, compress: 0.9 });
       if (cancelled) return;
       new THREE.TextureLoader().load(
