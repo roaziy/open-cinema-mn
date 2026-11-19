@@ -12,7 +12,6 @@ import { Linking, StyleSheet, Text, View } from 'react-native';
 import Animated, { useAnimatedRef, useScrollOffset } from 'react-native-reanimated';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { AgeBadge } from '@/components/age-badge';
-import { GlassBar } from '@/components/glass-bar';
 import { Poster } from '@/components/poster';
 import { PosterBackdrop } from '@/components/poster-backdrop';
 import { Pressable } from '@/components/pressable';
@@ -85,7 +84,7 @@ export default function MovieScreen() {
         ref={scrollRef}
         contentInsetAdjustmentBehavior="never"
         showsVerticalScrollIndicator={false}
-        contentContainerStyle={{ paddingBottom: insets.bottom + 120 }}
+        contentContainerStyle={{ paddingBottom: insets.bottom + space.xxxl }}
       >
         <View style={[styles.hero, { paddingTop: insets.top + 64 }]}>
           <PosterBackdrop uri={m.backdropUrl ?? m.posterUrl} tone={m.tone} scrollY={scrollY} />
@@ -100,6 +99,28 @@ export default function MovieScreen() {
                 .filter(Boolean)
                 .join('  ·  ')}
             </Text>
+          </View>
+          {/* Actions sit with the title, where the eye already is, not in a floating bar. */}
+          {m.status === 'soon' && fromPrice === null ? (
+            <Text style={styles.soon}>
+              {t('home.opens', { date: formatMonthDay(m.releaseDate, locale) })}
+            </Text>
+          ) : fromPrice !== null ? (
+            <Text style={styles.price}>
+              {t('movie.fromPrice', { price: formatMnt(fromPrice) })}
+            </Text>
+          ) : null}
+          <View style={styles.actions}>
+            {m.status === 'soon' && fromPrice === null ? null : (
+              <Pressable
+                style={styles.button}
+                onPress={() => router.push(`/movie/${id}/showtimes`)}
+                accessibilityRole="button"
+              >
+                <Text style={styles.buttonText}>{t('movie.pickTime')}</Text>
+              </Pressable>
+            )}
+            {trailer}
           </View>
         </View>
 
@@ -126,37 +147,6 @@ export default function MovieScreen() {
       </Animated.ScrollView>
 
       {back}
-
-      <View style={[styles.cta, { bottom: insets.bottom + space.sm }]} pointerEvents="box-none">
-        <GlassBar>
-          <View style={styles.ctaRow}>
-            {m.status === 'soon' && fromPrice === null ? (
-              <>
-                <Text style={styles.soon}>
-                  {t('home.opens', { date: formatMonthDay(m.releaseDate, locale) })}
-                </Text>
-                {trailer}
-              </>
-            ) : (
-              <>
-                {fromPrice !== null ? (
-                  <Text style={styles.price}>
-                    {t('movie.fromPrice', { price: formatMnt(fromPrice) })}
-                  </Text>
-                ) : null}
-                {trailer}
-                <Pressable
-                  style={styles.button}
-                  onPress={() => router.push(`/movie/${id}/showtimes`)}
-                  accessibilityRole="button"
-                >
-                  <Text style={styles.buttonText}>{t('movie.pickTime')}</Text>
-                </Pressable>
-              </>
-            )}
-          </View>
-        </GlassBar>
-      </View>
     </View>
   );
 }
@@ -216,16 +206,15 @@ const styles = StyleSheet.create({
   infoDivider: { borderBottomWidth: hairlineWidth, borderBottomColor: colors.hairline },
   infoLabel: { ...type.body, color: colors.ink, flex: 1 },
   infoValue: { ...type.body, color: colors.muted, maxWidth: '50%' },
-  cta: { position: 'absolute', left: space.lg, right: space.lg },
-  ctaRow: { flexDirection: 'row', alignItems: 'center', gap: space.md },
-  soon: {
-    ...type.headline,
-    color: colors.ink,
-    flex: 1,
-    textAlign: 'center',
-    paddingVertical: space.md,
+  actions: {
+    flexDirection: 'row',
+    justifyContent: 'center',
+    gap: space.md,
+    alignSelf: 'stretch',
+    marginTop: space.sm,
   },
-  price: { ...type.number, color: colors.ink, paddingLeft: space.md },
+  soon: { ...type.headline, color: colors.ink, textAlign: 'center' },
+  price: { ...type.number, color: colors.ink },
   trailerButton: {
     height: 48,
     paddingHorizontal: space.lg,
