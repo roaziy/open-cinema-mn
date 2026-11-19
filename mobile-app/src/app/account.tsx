@@ -1,7 +1,8 @@
 import { BadgeCheck, Mail, Phone } from 'lucide-react-native';
 import { useState } from 'react';
-import { ActivityIndicator, ScrollView, StyleSheet, Text, TextInput, View } from 'react-native';
+import { ActivityIndicator, ScrollView, StyleSheet, Text, View } from 'react-native';
 import { EmailEditor } from '@/components/email-editor';
+import { Field } from '@/components/field';
 import { Pressable } from '@/components/pressable';
 import { ICON_STROKE, SettingsRow, SettingsSection } from '@/components/settings-list';
 import { useI18n } from '@/i18n';
@@ -10,7 +11,7 @@ import { haptic } from '@/lib/haptics';
 import { saveName } from '@/lib/profile';
 import { showToast } from '@/lib/toast';
 import { colors, radius, space } from '@/theme/tokens';
-import { fonts, type } from '@/theme/type';
+import { type } from '@/theme/type';
 
 export default function AccountScreen() {
   const { t } = useI18n();
@@ -46,18 +47,16 @@ export default function AccountScreen() {
     >
       <View style={styles.block}>
         <Text style={styles.group}>{t('account.name')}</Text>
-        <TextInput
-          style={styles.input}
+        <Field
+          onCanvas
           value={name}
           onChangeText={setName}
           placeholder={t('account.namePlaceholder')}
-          placeholderTextColor={colors.muted}
           maxLength={80}
           autoCapitalize="words"
           textContentType="name"
           returnKeyType="done"
           onSubmitEditing={save}
-          selectionColor={colors.action}
         />
         {dirty ? (
           <Pressable
@@ -103,15 +102,6 @@ const styles = StyleSheet.create({
   content: { padding: space.lg, gap: space.lg, paddingBottom: space.xxxl },
   block: { gap: space.sm },
   group: { ...type.footnote, color: colors.muted, marginLeft: space.xs },
-  input: {
-    height: 50,
-    paddingHorizontal: space.lg,
-    borderRadius: radius.card,
-    backgroundColor: colors.raised,
-    ...type.bodyMedium,
-    fontFamily: fonts.medium,
-    color: colors.ink,
-  },
   primary: {
     height: 48,
     alignItems: 'center',

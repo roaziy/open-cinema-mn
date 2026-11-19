@@ -1,5 +1,5 @@
 import { useState } from 'react';
-import { StyleSheet, Text, TextInput, View } from 'react-native';
+import { StyleSheet, Text, View } from 'react-native';
 import { type TKey, useI18n } from '@/i18n';
 import { ApiError } from '@/lib/api';
 import { haptic } from '@/lib/haptics';
@@ -8,7 +8,8 @@ import { requestEmailCode, verifyEmailCode } from '@/lib/profile';
 import { showToast } from '@/lib/toast';
 import { normalizeEmail } from '@/shared';
 import { colors, radius, space } from '@/theme/tokens';
-import { fonts, type } from '@/theme/type';
+import { type } from '@/theme/type';
+import { Field } from './field';
 import { OtpEntry } from './otp-entry';
 import { Pressable } from './pressable';
 
@@ -67,15 +68,15 @@ export function EmailEditor({
     <View style={styles.editor}>
       {step === 'email' ? (
         <>
-          <TextInput
-            style={styles.input}
+          <Field
+            onCanvas
+            error={error !== null}
             value={email}
             onChangeText={(v) => {
               setEmail(v);
               setError(null);
             }}
             placeholder={t('profile.emailPlaceholder')}
-            placeholderTextColor={colors.muted}
             keyboardType="email-address"
             autoCapitalize="none"
             autoCorrect={false}
@@ -83,7 +84,6 @@ export function EmailEditor({
             textContentType="emailAddress"
             returnKeyType="send"
             onSubmitEditing={send}
-            selectionColor={colors.action}
           />
           {error ? <Text style={styles.error}>{error}</Text> : null}
           <Pressable
@@ -123,16 +123,6 @@ const styles = StyleSheet.create({
   linkRow: { paddingVertical: space.xs },
   link: { ...type.bodyMedium, color: colors.action },
   editor: { gap: space.md },
-  input: {
-    borderCurve: 'continuous',
-    height: 50,
-    paddingHorizontal: space.lg,
-    borderRadius: radius.inner + 2,
-    backgroundColor: colors.canvas,
-    ...type.bodyMedium,
-    fontFamily: fonts.medium,
-    color: colors.ink,
-  },
   primary: {
     height: 48,
     alignItems: 'center',

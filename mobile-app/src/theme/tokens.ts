@@ -13,6 +13,9 @@ export const colors = {
   /** Segmented-control track and its raised thumb (Shop.mn: `line` / `raisedFill`). */
   track: '#2C2C30',
   thumb: '#3A3A40',
+  /** Field edge on focus (the dark palette's own blue, 3:1+ on the field) and placeholder text. */
+  focus: '#60A5FA',
+  hint: '#7C7C88',
 
   ink: '#F5F5F7',
   body: '#C7C7CC',

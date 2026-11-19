@@ -1,8 +1,9 @@
 import { router, useIsFocused, useLocalSearchParams } from 'expo-router';
 import { Clock, LogIn, Ticket } from 'lucide-react-native';
 import { useEffect, useMemo, useState } from 'react';
-import { StyleSheet, Text, TextInput, View } from 'react-native';
+import { StyleSheet, Text, View } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
+import { Field } from '@/components/field';
 import { Pressable } from '@/components/pressable';
 import { useI18n } from '@/i18n';
 import { getContactEmail, setContactEmail } from '@/lib/checkout-store';
@@ -10,7 +11,7 @@ import { confirmGuestLogin } from '@/lib/guest-login';
 import { formatCountdown, liveHolds, useCountdown, useMyHolds } from '@/lib/seats';
 import { normalizeEmail } from '@/shared';
 import { colors, radius, space } from '@/theme/tokens';
-import { fonts, type } from '@/theme/type';
+import { type } from '@/theme/type';
 
 /** Sheet after seats for logged-out customers: log in, or continue as a guest with an email. */
 export default function GateScreen() {
@@ -111,13 +112,13 @@ export default function GateScreen() {
               <Text style={styles.cardHint}>{t('gate.guestHint')}</Text>
             </View>
           </View>
-          <TextInput
-            style={[styles.input, invalid && styles.inputInvalid]}
+          <Field
+            onCanvas
+            error={invalid}
             value={email}
             onChangeText={setEmail}
             onBlur={() => email.length > 0 && setTouched(true)}
             placeholder={t('gate.email')}
-            placeholderTextColor={colors.muted}
             keyboardType="email-address"
             autoCapitalize="none"
             autoCorrect={false}
@@ -125,7 +126,6 @@ export default function GateScreen() {
             autoComplete="email"
             returnKeyType="go"
             onSubmitEditing={asGuest}
-            selectionColor={colors.action}
           />
           {invalid ? <Text style={styles.error}>{t('gate.emailInvalid')}</Text> : null}
           <Pressable
@@ -193,17 +193,6 @@ const styles = StyleSheet.create({
     backgroundColor: colors.raised,
   },
   guestHead: { flexDirection: 'row', alignItems: 'center', gap: space.md },
-  input: {
-    borderCurve: 'continuous',
-    height: 50,
-    paddingHorizontal: space.lg,
-    borderRadius: radius.inner + 2,
-    backgroundColor: colors.canvas,
-    ...type.bodyMedium,
-    fontFamily: fonts.medium,
-    color: colors.ink,
-  },
-  inputInvalid: { borderColor: colors.dangerEdge },
   error: { ...type.caption, color: colors.danger },
   secondary: {
     borderCurve: 'continuous',

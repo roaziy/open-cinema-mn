@@ -7,11 +7,11 @@ import {
   Platform,
   StyleSheet,
   Text,
-  TextInput,
   View,
 } from 'react-native';
 import Animated, { FadeIn } from 'react-native-reanimated';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
+import { Field } from '@/components/field';
 import { OtpEntry } from '@/components/otp-entry';
 import { Pressable } from '@/components/pressable';
 import { useI18n } from '@/i18n';
@@ -24,7 +24,7 @@ import { seatKeys, seatLabel } from '@/lib/seats';
 import { showToast } from '@/lib/toast';
 import { normalizeEmail, normalizePhone, type OtpChannel, type SeatMap } from '@/shared';
 import { colors, radius, space } from '@/theme/tokens';
-import { fonts, type } from '@/theme/type';
+import { type } from '@/theme/type';
 
 type Mode = 'phone' | 'email';
 
@@ -154,31 +154,27 @@ export default function LoginScreen() {
               <Text style={styles.fieldLabel}>
                 {t(mode === 'phone' ? 'login.phoneLabel' : 'login.emailLabel')}
               </Text>
-              <View style={styles.inputRow}>
-                {mode === 'phone' ? <Text style={styles.prefix}>+976</Text> : null}
-                <TextInput
-                  key={mode}
-                  style={styles.input}
-                  value={value}
-                  onChangeText={(v) => {
-                    setValue(mode === 'phone' ? localPhone(v) : v);
-                    setError(null);
-                  }}
-                  autoFocus
-                  autoCorrect={false}
-                  autoCapitalize="none"
-                  keyboardType={mode === 'phone' ? 'phone-pad' : 'email-address'}
-                  textContentType={mode === 'phone' ? 'telephoneNumber' : 'emailAddress'}
-                  autoComplete={mode === 'phone' ? 'tel' : 'email'}
-                  placeholder={t(
-                    mode === 'phone' ? 'login.phonePlaceholder' : 'login.emailPlaceholder',
-                  )}
-                  placeholderTextColor={colors.muted}
-                  returnKeyType="next"
-                  onSubmitEditing={send}
-                  selectionColor={colors.action}
-                />
-              </View>
+              <Field
+                key={mode}
+                prefix={mode === 'phone' ? '+976' : undefined}
+                error={error !== null}
+                value={value}
+                onChangeText={(v) => {
+                  setValue(mode === 'phone' ? localPhone(v) : v);
+                  setError(null);
+                }}
+                autoFocus
+                autoCorrect={false}
+                autoCapitalize="none"
+                keyboardType={mode === 'phone' ? 'phone-pad' : 'email-address'}
+                textContentType={mode === 'phone' ? 'telephoneNumber' : 'emailAddress'}
+                autoComplete={mode === 'phone' ? 'tel' : 'email'}
+                placeholder={t(
+                  mode === 'phone' ? 'login.phonePlaceholder' : 'login.emailPlaceholder',
+                )}
+                returnKeyType="next"
+                onSubmitEditing={send}
+              />
             </View>
 
             {error ? <Text style={styles.error}>{error}</Text> : null}
@@ -241,18 +237,6 @@ const styles = StyleSheet.create({
   segTextOn: { color: colors.ink },
   field: { gap: space.sm },
   fieldLabel: { ...type.caption, color: colors.muted },
-  inputRow: {
-    borderCurve: 'continuous',
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: space.sm,
-    height: 54,
-    paddingHorizontal: space.lg,
-    borderRadius: radius.panel,
-    backgroundColor: colors.raised,
-  },
-  prefix: { ...type.headline, color: colors.muted },
-  input: { flex: 1, ...type.headline, fontFamily: fonts.medium, color: colors.ink, height: '100%' },
   error: { ...type.caption, color: colors.danger },
   primary: {
     height: 52,
