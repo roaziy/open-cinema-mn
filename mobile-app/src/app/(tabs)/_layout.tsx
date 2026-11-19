@@ -6,6 +6,12 @@ import { haptic } from '@/lib/haptics';
 import { colors } from '@/theme/tokens';
 import { fonts } from '@/theme/type';
 
+// Lucide line icons (Clapperboard, Ticket, CircleUserRound) rendered to template PNGs: the native
+// tab bar takes images, not React components, and tints them itself.
+const MOVIES = require('../../../assets/images/tabs/movies.png');
+const TICKETS = require('../../../assets/images/tabs/tickets.png');
+const PROFILE = require('../../../assets/images/tabs/profile.png');
+
 /** iOS: Apple's own tab bar (Liquid Glass on iOS 26). Android: JS tabs, same dark styling. */
 export default function TabsLayout() {
   return process.env.EXPO_OS === 'ios' ? <IosTabs /> : <AndroidTabs />;
@@ -23,15 +29,15 @@ function IosTabs() {
       screenListeners={{ tabPress: haptic.select }}
     >
       <NativeTabs.Trigger name="index">
-        <NativeTabs.Trigger.Icon sf="film.fill" />
+        <NativeTabs.Trigger.Icon src={MOVIES} renderingMode="template" />
         <NativeTabs.Trigger.Label>{t('tabs.movies')}</NativeTabs.Trigger.Label>
       </NativeTabs.Trigger>
       <NativeTabs.Trigger name="tickets">
-        <NativeTabs.Trigger.Icon sf="ticket.fill" />
+        <NativeTabs.Trigger.Icon src={TICKETS} renderingMode="template" />
         <NativeTabs.Trigger.Label>{t('tabs.tickets')}</NativeTabs.Trigger.Label>
       </NativeTabs.Trigger>
       <NativeTabs.Trigger name="profile">
-        <NativeTabs.Trigger.Icon sf="person.crop.circle.fill" />
+        <NativeTabs.Trigger.Icon src={PROFILE} renderingMode="template" />
         <NativeTabs.Trigger.Label>{t('tabs.profile')}</NativeTabs.Trigger.Label>
       </NativeTabs.Trigger>
     </NativeTabs>
