@@ -19,17 +19,27 @@ export function KeyArt({
   height,
   topInset,
   scrollY,
+  fade = 0.45,
+  solid = 0,
+  scrim = 0.55,
+  scrimDepth = 96,
 }: {
   uri: string;
   pageColor: string;
   height: number;
   /** Safe-area top: the dark scrim covers it plus the back button row. */
   topInset: number;
-  scrollY: SharedValue<number>;
+  scrollY?: SharedValue<number>;
+  /** Share of the height the bottom fade covers; its lower `solid` part is fully opaque. */
+  fade?: number;
+  solid?: number;
+  /** Opacity of the dark scrim behind the status bar and header, and how far below the inset it reaches. */
+  scrim?: number;
+  scrimDepth?: number;
 }) {
   const h = useSharedValue(height);
   const stretch = useAnimatedStyle(() => {
-    const pull = Math.max(0, -scrollY.get());
+    const pull = scrollY ? Math.max(0, -scrollY.get()) : 0;
     const base = h.get();
     if (pull === 0 || base <= 0) return { transform: [{ translateY: 0 }, { scale: 1 }] };
     return { transform: [{ translateY: -pull / 2 }, { scale: (base + pull) / base }] };
@@ -46,11 +56,14 @@ export function KeyArt({
         contentFit="cover"
         transition={200}
       />
-      <View style={[styles.top, { height: topInset + 96 }]}>
-        <Fade color="#000000" to="top" strength={0.55} />
+      <View style={[styles.top, { height: topInset + scrimDepth }]}>
+        <Fade color="#000000" to="top" strength={scrim} />
       </View>
-      <View style={[styles.bottom, { height: Math.round(height * 0.45) }]}>
-        <Fade color={pageColor} />
+      <View style={[styles.bottom, { height: Math.round(height * fade) }]}>
+        <View style={{ flex: 1 - solid }}>
+          <Fade color={pageColor} />
+        </View>
+        {solid > 0 ? <View style={{ flex: solid, backgroundColor: pageColor }} /> : null}
       </View>
       {/* Seals the last pixel row so the art never leaks past the fade. */}
       <View style={[styles.seal, { backgroundColor: pageColor }]} />
