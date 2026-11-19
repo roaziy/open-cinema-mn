@@ -10,6 +10,9 @@ export const colors = {
   raised: '#1A1A1D',
   fill: '#26262B',
   hairline: '#2C2C30',
+  /** Segmented-control track and its raised thumb (Shop.mn: `line` / `raisedFill`). */
+  track: '#2C2C30',
+  thumb: '#3A3A40',
 
   ink: '#F5F5F7',
   body: '#C7C7CC',
