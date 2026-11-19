@@ -1,5 +1,5 @@
-import { Building2 } from 'lucide-react-native';
-import { StyleSheet, Text, View } from 'react-native';
+import { useState } from 'react';
+import { ScrollView, StyleSheet, Text, View } from 'react-native';
 import { useI18n } from '@/i18n';
 import { type BranchShowtimes, formatMnt, formatUbTime, type ShowtimeSlot } from '@/shared';
 import { colors, hairlineWidth, radius, space } from '@/theme/tokens';
@@ -13,20 +13,26 @@ const FEW_LEFT = 10;
 type Props = {
   /** Branches that have shows, already ordered (see `groupByBranch`). */
   groups: BranchShowtimes[];
+  /** The film's running time: each slot shows when it ends. */
+  durationMin?: number;
   loading: boolean;
   error: unknown;
   onRetry: () => void;
   onPick: (slot: ShowtimeSlot) => void;
 };
 
-/** One card per branch with wrapping time chips; also owns the loading, error and empty states. */
-export function ShowtimeGroups({ groups, loading, error, onRetry, onPick }: Props) {
+/**
+ * Showings of one day: a branch filter when there is more than one branch, then per branch a
+ * plain header and a two-column grid of slots. Also owns the loading, error and empty states.
+ */
+export function ShowtimeGroups({ groups, durationMin, loading, error, onRetry, onPick }: Props) {
   const { t } = useI18n();
+  const [only, setOnly] = useState<string | null>(null);
   if (loading) {
     return (
       <View style={styles.list}>
-        <Skeleton height={120} radius={radius.card} />
-        <Skeleton height={120} radius={radius.card} />
+        <Skeleton width={180} height={20} />
+        <Skeleton height={92} radius={radius.inner + 2} />
       </View>
     );
   }
@@ -34,110 +40,183 @@ export function ShowtimeGroups({ groups, loading, error, onRetry, onPick }: Prop
   if (groups.length === 0) {
     return <EmptyState title={t('showtimes.empty')} hint={t('showtimes.emptyHint')} />;
   }
+  // A branch picked on another day may have nothing today: fall back to all of them.
+  const picked = only && groups.some((g) => g.branch.id === only) ? only : null;
+  const shown = picked ? groups.filter((g) => g.branch.id === picked) : groups;
   return (
     <View style={styles.list}>
-      {groups.map(({ branch, showtimes }) => (
-        <View key={branch.id} style={styles.card}>
+      {groups.length > 1 ? (
+        <ScrollView
+          horizontal
+          showsHorizontalScrollIndicator={false}
+          style={styles.filterBleed}
+          contentContainerStyle={styles.filter}
+        >
+          <Chip label={t('branch.all')} on={!picked} onPress={() => setOnly(null)} />
+          {groups.map(({ branch }) => (
+            <Chip
+              key={branch.id}
+              label={branch.name}
+              on={picked === branch.id}
+              onPress={() => setOnly(branch.id)}
+            />
+          ))}
+        </ScrollView>
+      ) : null}
+      {shown.map(({ branch, showtimes }, i) => (
+        <View key={branch.id} style={[styles.group, i > 0 && styles.groupRule]}>
           <View style={styles.head}>
-            <Building2 size={20} color={colors.muted} strokeWidth={1.75} />
-            <View style={styles.headText}>
-              <Text style={styles.branchName}>{branch.name}</Text>
-              <Text style={styles.branchAddr} numberOfLines={1}>
-                {branch.address}
-              </Text>
+            <Text style={styles.branchName}>{branch.name}</Text>
+            <Text style={styles.branchAddr} numberOfLines={1}>
+              {branch.address}
+            </Text>
+          </View>
+          {pairs(showtimes).map(([a, b]) => (
+            <View key={a.id} style={styles.row}>
+              <Slot slot={a} durationMin={durationMin} onPress={() => onPick(a)} />
+              {b ? (
+                <Slot slot={b} durationMin={durationMin} onPress={() => onPick(b)} />
+              ) : (
+                <View style={styles.cell} />
+              )}
             </View>
-          </View>
-          <View style={styles.slots}>
-            {showtimes.map((s) => (
-              <Slot key={s.id} slot={s} onPress={() => onPick(s)} />
-            ))}
-          </View>
+          ))}
         </View>
       ))}
     </View>
   );
 }
 
-function Slot({ slot, onPress }: { slot: ShowtimeSlot; onPress: () => void }) {
+function pairs<T>(list: T[]): [T, T | undefined][] {
+  const out: [T, T | undefined][] = [];
+  for (let i = 0; i < list.length; i += 2) out.push([list[i] as T, list[i + 1]]);
+  return out;
+}
+
+function Chip({ label, on, onPress }: { label: string; on: boolean; onPress: () => void }) {
+  return (
+    <Pressable
+      style={[styles.chip, on && styles.chipOn]}
+      onPress={onPress}
+      accessibilityRole="button"
+      accessibilityState={{ selected: on }}
+    >
+      <Text style={[styles.chipText, on && styles.chipTextOn]} numberOfLines={1}>
+        {label}
+      </Text>
+    </Pressable>
+  );
+}
+
+function Slot({
+  slot,
+  durationMin,
+  onPress,
+}: {
+  slot: ShowtimeSlot;
+  durationMin?: number;
+  onPress: () => void;
+}) {
   const { t } = useI18n();
   const soldOut = slot.seatsLeft <= 0;
   const few = !soldOut && slot.seatsLeft <= FEW_LEFT;
-  const time = formatUbTime(slot.startsAt);
-  const note = soldOut
-    ? t('showtimes.soldOut')
-    : few
-      ? t('showtimes.fewLeft', { n: slot.seatsLeft })
+  const start = formatUbTime(slot.startsAt);
+  const end = durationMin
+    ? formatUbTime(new Date(Date.parse(slot.startsAt) + durationMin * 60_000))
+    : null;
+  // Name the format only when the hall's own name does not already say it ("3D танхим", "IMAX").
+  const hall =
+    slot.format !== '2D' && !slot.hallName.toUpperCase().includes(slot.format)
+      ? `${slot.hallName} · ${slot.format}`
       : slot.hallName;
+  const price = formatMnt(slot.priceStandard);
   return (
     <Pressable
-      style={[styles.slot, few && styles.slotFew, soldOut && styles.slotSold]}
+      style={[styles.cell, styles.slot, soldOut && styles.slotSold]}
       onPress={onPress}
       disabled={soldOut}
       feedback={!soldOut}
       accessibilityRole="button"
       accessibilityState={{ disabled: soldOut }}
-      accessibilityLabel={`${time}, ${slot.format}, ${note}, ${formatMnt(slot.priceStandard)}`}
+      accessibilityLabel={[
+        start,
+        end && `– ${end}`,
+        hall,
+        soldOut ? t('showtimes.soldOut') : price,
+        few && t('showtimes.fewLeft', { n: slot.seatsLeft }),
+      ]
+        .filter(Boolean)
+        .join(', ')}
     >
-      <View style={styles.slotTop}>
-        <Text style={[styles.time, few && { color: colors.warning }, soldOut && styles.struck]}>
-          {time}
-        </Text>
-        {slot.format !== '2D' ? (
-          <View style={styles.tag}>
-            <Text style={styles.tagText}>{slot.format}</Text>
-          </View>
-        ) : null}
+      <Text style={styles.hall} numberOfLines={1}>
+        {hall}
+      </Text>
+      <View style={styles.times}>
+        <Text style={[styles.start, soldOut && styles.struck]}>{start}</Text>
+        {end ? <Text style={styles.end}>– {end}</Text> : null}
       </View>
-      {/* Hall (or seats left / sold out) and price: what the viewer weighs before tapping. */}
-      <Text style={[styles.note, few && { color: colors.warning }]} numberOfLines={1}>
-        {soldOut ? note : `${note} · ${formatMnt(slot.priceStandard)}`}
+      <Text style={styles.price} numberOfLines={1}>
+        {soldOut ? (
+          t('showtimes.soldOut')
+        ) : (
+          <>
+            {price}
+            {few ? (
+              <Text style={styles.few}>
+                {'  ·  '}
+                {t('showtimes.fewLeft', { n: slot.seatsLeft })}
+              </Text>
+            ) : null}
+          </>
+        )}
       </Text>
     </Pressable>
   );
 }
 
 const styles = StyleSheet.create({
-  list: { gap: space.lg },
-  card: {
-    backgroundColor: colors.surface,
-    borderRadius: radius.panel,
+  list: { gap: space.xl },
+  // The filter runs to the screen edges and scrolls under them; its chips start on the content line.
+  filterBleed: { marginHorizontal: -space.lg, flexGrow: 0 },
+  filter: { paddingHorizontal: space.lg, gap: space.sm },
+  chip: {
+    height: 36,
+    paddingHorizontal: space.lg,
+    borderRadius: radius.pill,
     borderWidth: hairlineWidth,
     borderColor: colors.hairline,
-    borderTopColor: colors.highlight,
-    padding: 14,
-    gap: space.md,
+    justifyContent: 'center',
   },
-  head: { flexDirection: 'row', alignItems: 'center', gap: space.md },
-  headText: { flex: 1, gap: 2 },
+  chipOn: { backgroundColor: colors.ink, borderColor: colors.ink },
+  chipText: { ...type.bodyMedium, fontSize: 14, color: colors.body },
+  chipTextOn: { color: colors.canvas },
+  group: { gap: space.sm },
+  groupRule: {
+    paddingTop: space.xl,
+    borderTopWidth: hairlineWidth,
+    borderTopColor: colors.hairline,
+  },
+  head: { gap: 2, marginBottom: space.xs },
   branchName: { ...type.headline, color: colors.ink },
   branchAddr: { ...type.caption, color: colors.muted },
-  slots: { flexDirection: 'row', flexWrap: 'wrap', gap: space.sm },
+  row: { flexDirection: 'row', gap: space.sm },
+  cell: { flex: 1 },
   slot: {
-    alignItems: 'flex-start',
-    justifyContent: 'center',
     gap: 2,
-    minHeight: 52,
     paddingHorizontal: space.md,
-    paddingVertical: space.sm,
+    paddingVertical: space.md,
     borderRadius: radius.inner + 2,
-    backgroundColor: colors.raised,
+    backgroundColor: colors.surface,
     borderWidth: hairlineWidth,
     borderColor: colors.hairline,
     borderTopColor: colors.highlight,
   },
-  slotFew: { borderColor: colors.warningTint },
-  slotSold: { opacity: 0.55 },
-  slotTop: { flexDirection: 'row', alignItems: 'center', gap: space.xs },
-  time: { ...type.number, color: colors.ink },
-  note: { ...type.footnote, color: colors.muted },
+  slotSold: { opacity: 0.45 },
+  hall: { ...type.footnote, color: colors.muted },
+  times: { flexDirection: 'row', alignItems: 'baseline', gap: space.sm },
+  start: { ...type.number, fontSize: 22, lineHeight: 28, color: colors.ink },
+  end: { ...type.caption, color: colors.muted, fontVariant: ['tabular-nums'] },
   struck: { textDecorationLine: 'line-through', color: colors.muted },
-  tag: {
-    paddingHorizontal: 5,
-    height: 18,
-    borderRadius: 5,
-    alignItems: 'center',
-    justifyContent: 'center',
-    backgroundColor: colors.chipFill,
-  },
-  tagText: { ...type.footnote, fontSize: 10, lineHeight: 12, color: colors.body },
+  price: { ...type.caption, color: colors.body, fontVariant: ['tabular-nums'] },
+  few: { color: colors.warning },
 });

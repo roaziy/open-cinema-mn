@@ -80,11 +80,12 @@ export default function ShowtimesScreen() {
         />
       )}
 
-      <ShowtimeDays days={days} value={date} onChange={setPicked} />
+      <ShowtimeDays days={days} value={date} onChange={setPicked} open={showDays} />
 
       <View style={styles.list}>
         <ShowtimeGroups
           groups={branches}
+          durationMin={movie.data?.durationMin}
           loading={loading}
           error={shows.isError ? shows.error : null}
           onRetry={() => shows.refetch()}

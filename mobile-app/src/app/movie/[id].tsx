@@ -212,10 +212,11 @@ export default function MovieScreen() {
           >
             <Text style={styles.heading}>{t('movie.schedule')}</Text>
             <View style={styles.daysBleed}>
-              <ShowtimeDays days={days} value={date} onChange={setPicked} />
+              <ShowtimeDays days={days} value={date} onChange={setPicked} open={showDays} />
             </View>
             <ShowtimeGroups
               groups={groups}
+              durationMin={m.durationMin}
               loading={loading}
               error={shows.isError ? shows.error : null}
               onRetry={() => shows.refetch()}

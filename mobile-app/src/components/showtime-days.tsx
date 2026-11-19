@@ -10,10 +10,13 @@ export function ShowtimeDays({
   days,
   value,
   onChange,
+  open,
 }: {
   days: string[];
   value: string;
   onChange: (date: string) => void;
+  /** Days known to have showings: the rest are dimmed (still tappable) once any are known. */
+  open?: string[];
 }) {
   const { t } = useI18n();
   const label = (d: string, i: number): string =>
@@ -31,10 +34,11 @@ export function ShowtimeDays({
     >
       {days.map((d, i) => {
         const on = d === value;
+        const quiet = !on && !!open?.length && !open.includes(d);
         return (
           <Pressable
             key={d}
-            style={[styles.day, on && styles.dayOn]}
+            style={[styles.day, on && styles.dayOn, quiet && styles.dayQuiet]}
             onPress={() => onChange(d)}
             accessibilityRole="button"
             accessibilityState={{ selected: on }}
@@ -64,6 +68,7 @@ const styles = StyleSheet.create({
     gap: 2,
   },
   dayOn: { backgroundColor: colors.action, borderColor: colors.action },
+  dayQuiet: { opacity: 0.4 },
   name: { ...type.footnote, color: colors.muted },
   nameOn: { color: colors.onActionMuted },
   num: { ...type.number, fontSize: 20, color: colors.ink },
