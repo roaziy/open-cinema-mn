@@ -22,6 +22,8 @@ import { PosterBackdrop } from './poster-backdrop';
 import { Pressable } from './pressable';
 
 export const HERO_HEIGHT = 600;
+/** How far a pull-down may stretch a page's backdrop upward before it is clipped. */
+const STRETCH_ROOM = 1000;
 
 /** Horizontal pager of now-showing films; every page sits on its own blurred, tinted poster. */
 export function HeroPager({
@@ -87,11 +89,17 @@ function Page({
   const book = () => router.push(`/movie/${movie.id}/showtimes`);
   return (
     <View style={{ width, height: HERO_HEIGHT }}>
-      <PosterBackdrop
-        uri={movie.backdropUrl ?? movie.posterUrl}
-        tone={movie.tone}
-        scrollY={scrollY}
-      />
+      {/* Clip each page's backdrop to its own width (the stretch on pull-down also widens it,
+          which would spill over the next page) while leaving room above for that stretch. */}
+      <View style={styles.backdropClip} pointerEvents="none">
+        <View style={styles.backdropBox}>
+          <PosterBackdrop
+            uri={movie.backdropUrl ?? movie.posterUrl}
+            tone={movie.tone}
+            scrollY={scrollY}
+          />
+        </View>
+      </View>
       <View style={[styles.content, { paddingTop: insets.top + 64 }]}>
         <Pressable onPress={open} accessibilityRole="button" accessibilityLabel={movie.title}>
           <View style={[styles.glow, { shadowColor: movie.tone }]}>
@@ -120,6 +128,15 @@ function Page({
 }
 
 const styles = StyleSheet.create({
+  backdropClip: {
+    position: 'absolute',
+    left: 0,
+    right: 0,
+    top: -STRETCH_ROOM,
+    bottom: 0,
+    overflow: 'hidden',
+  },
+  backdropBox: { position: 'absolute', left: 0, right: 0, top: STRETCH_ROOM, bottom: 0 },
   content: { flex: 1, alignItems: 'center', paddingHorizontal: space.xl, gap: space.md },
   // The one allowed shadow: the poster casting its own film tone, not a generic drop shadow.
   glow: { shadowOpacity: 0.55, shadowRadius: 36, shadowOffset: { width: 0, height: 14 } },
