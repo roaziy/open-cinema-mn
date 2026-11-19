@@ -51,6 +51,11 @@ export function HeroPager({
         keyExtractor={(m) => m.id}
         horizontal
         pagingEnabled
+        // Past the first/last film there is nothing to show: stop at the edge instead of bouncing
+        // into bare canvas, and do not swipe at all with a single film.
+        bounces={false}
+        overScrollMode="never"
+        scrollEnabled={movies.length > 1}
         // The backdrops stretch above the pager when the page is pulled down: do not clip them.
         style={{ overflow: 'visible' }}
         showsHorizontalScrollIndicator={false}

@@ -233,7 +233,6 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     gap: space.md,
     padding: space.lg,
-    overflow: 'hidden',
   },
   filmText: { flex: 1, gap: 2 },
   filmTitle: { ...type.title, color: colors.ink },
