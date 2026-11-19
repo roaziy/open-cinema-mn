@@ -254,12 +254,6 @@ export function stepSpans(rows: readonly Row[], depth: number): StepSpan[] {
   });
 }
 
-/** Largest texture side we will upload: the GPU limit, capped (posters are never this big). */
-export function textureFits(width: number, height: number, maxTextureSize: number, cap = 4096) {
-  const limit = Math.min(maxTextureSize > 0 ? maxTextureSize : cap, cap);
-  return width > 0 && height > 0 && Math.max(width, height) <= limit;
-}
-
 const smooth = (a: number, b: number, x: number) => {
   'worklet';
   const t = Math.min(1, Math.max(0, (x - a) / (b - a)));

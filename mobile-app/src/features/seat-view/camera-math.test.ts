@@ -20,7 +20,6 @@ import {
   screenCenter,
   seatPlaneHeight,
   stepSpans,
-  textureFits,
   topDownFromMap,
 } from './camera-math';
 
@@ -115,16 +114,6 @@ describe('rows and steps', () => {
     expect(spans[0]).toEqual({ from: 0, to: (4.1 + 6) / 2, height: 0.05 });
     expect(spans[1]?.from).toBe(spans[0]?.to);
     expect(spans[2]).toEqual({ from: 7, to: 9.5, height: 1.2 });
-  });
-});
-
-describe('textureFits', () => {
-  it('rejects empty, oversize and over-cap images', () => {
-    expect(textureFits(960, 1440, 8192)).toBe(true);
-    expect(textureFits(0, 10, 8192)).toBe(false);
-    expect(textureFits(5000, 100, 8192)).toBe(false);
-    expect(textureFits(3000, 100, 2048)).toBe(false);
-    expect(textureFits(100, 100, 0)).toBe(true);
   });
 });
 
