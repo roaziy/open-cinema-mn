@@ -5,6 +5,7 @@ import type { AppDeps } from '../app';
 import { branches, halls, movies, seats, showtimes } from '../db/schema';
 import { notFound } from '../lib/errors';
 import { validate } from '../lib/http';
+import type { Limiters } from '../lib/rate-limit';
 import { heldCount, SLOT_COLUMNS, toBranch, toSlot, toSummary } from '../services/catalog-views';
 import { nonFreeSeats } from '../services/seat-state';
 import type { MovieDetail, SeatDelta, SeatMap } from '../shared';
@@ -28,7 +29,7 @@ function sseWrite(res: import('express').Response, event: string, data: unknown)
   res.write(`event: ${event}\ndata: ${JSON.stringify(data)}\n\n`);
 }
 
-export function createCatalogRouter(deps: AppDeps): Router {
+export function createCatalogRouter(deps: AppDeps, limiters: Limiters): Router {
   const { db, clock, seatHub } = deps;
   const r = Router();
 
@@ -160,7 +161,7 @@ export function createCatalogRouter(deps: AppDeps): Router {
     res.json(body);
   });
 
-  r.get('/showtimes/:id/seats/stream', async (req, res) => {
+  r.get('/showtimes/:id/seats/stream', limiters.stream, async (req, res) => {
     // Registered before the first await so a client dropping mid-query is still cleaned up.
     let closed = false;
     let cleanupFns: (() => void)[] = [];
@@ -172,7 +173,7 @@ export function createCatalogRouter(deps: AppDeps): Router {
     res.on('close', cleanup);
     const gone = () => closed || res.destroyed;
 
-    const id = req.params.id;
+    const id = String(req.params.id);
     if (!UUID.safeParse(id).success) throw notFound();
     const [exists] = await db
       .select({ id: showtimes.id })

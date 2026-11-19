@@ -51,9 +51,38 @@ const limiter = (
     },
   });
 
+/**
+ * At most `max` open live streams per client: each one holds a connection and a seat-hub
+ * subscription until the client leaves, which a request-rate limit does not bound.
+ */
+export function streamGate(max: number): RequestHandler {
+  const open = new Map<string, number>();
+  return (req, res, next) => {
+    const key = clientKey(req);
+    const n = open.get(key) ?? 0;
+    if (n >= max) {
+      res.status(429).json({ error: 'too_many_streams' });
+      return;
+    }
+    open.set(key, n + 1);
+    res.on('close', () => {
+      const left = (open.get(key) ?? 1) - 1;
+      if (left <= 0) open.delete(key);
+      else open.set(key, left);
+    });
+    next();
+  };
+}
+
 /** Per-IP limiters. Created per app so each instance (and each test) has its own counters. */
 export function createLimiters() {
   return {
+    // Ceiling for every /v1 request. High on purpose: many customers share one mobile-carrier IP.
+    api: limiter(5 * 60 * 1000, 3000),
+    // Per user, not per IP (same reason): creating bookings and mock payments.
+    bookings: limiter(60_000, 20, (req) => req.user?.id ?? 'anonymous'),
+    // Open live seat-map streams per client.
+    stream: streamGate(8),
     otp: limiter(15 * 60 * 1000, 20),
     guest: limiter(60 * 60 * 1000, 30),
     login: limiter(15 * 60 * 1000, 30),

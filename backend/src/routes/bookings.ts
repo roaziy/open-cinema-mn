@@ -6,6 +6,7 @@ import { bookings, payments } from '../db/schema';
 import { env } from '../env';
 import { conflict, notFound } from '../lib/errors';
 import { validate } from '../lib/http';
+import type { Limiters } from '../lib/rate-limit';
 import { TimeoutError } from '../lib/timeout';
 import { requireAuth } from '../middleware/auth';
 import { MockPaymentProvider } from '../payments/mock';
@@ -14,7 +15,7 @@ import { BookingCreateBody } from '../shared';
 
 const UUID = z.string().uuid();
 
-export function createBookingsRouter(deps: AppDeps): Router {
+export function createBookingsRouter(deps: AppDeps, limiters: Limiters): Router {
   const { db, clock } = deps;
   const r = Router();
   const auth = requireAuth(deps);
@@ -27,7 +28,7 @@ export function createBookingsRouter(deps: AppDeps): Router {
     return b.id;
   };
 
-  r.post('/bookings', auth, validate(BookingCreateBody), async (req, res) => {
+  r.post('/bookings', auth, limiters.bookings, validate(BookingCreateBody), async (req, res) => {
     const user = req.user as NonNullable<typeof req.user>;
     const id = await createBooking(db, deps, {
       userId: user.id,
@@ -52,7 +53,7 @@ export function createBookingsRouter(deps: AppDeps): Router {
   });
 
   if (env.PAYMENT_PROVIDER === 'mock') {
-    r.post('/bookings/:id/mock-pay', auth, async (req, res) => {
+    r.post('/bookings/:id/mock-pay', auth, limiters.bookings, async (req, res) => {
       const user = req.user as NonNullable<typeof req.user>;
       const id = await ownBookingId(String(req.params.id), user.id);
       if (!(deps.payments instanceof MockPaymentProvider)) throw notFound();
