@@ -3,16 +3,14 @@ import path from 'node:path';
 import { hash } from '@node-rs/argon2';
 import { sql } from 'drizzle-orm';
 import { BACKEND_ROOT } from '../lib/paths';
-import { generateSeats, type HallGenParams, ubDate, ubDayRange } from '../shared';
+import { PREMIUM_EXTRA, planDay, priceFor } from '../services/schedule';
+import { addDays, generateSeats, type HallGenParams, ubDate, ubDayRange } from '../shared';
 import type { StorageProvider } from '../storage';
 import type { Db } from './client';
 import { branches, halls, movies, seats, showtimes, staffAccounts } from './schema';
 
 const MEDIA_DIR = path.join(BACKEND_ROOT, 'seed/media');
-const DAY_MS = 24 * 60 * 60 * 1000;
 const MIN_MS = 60 * 1000;
-const PREMIUM_EXTRA = 7000;
-
 type FilmSeed = {
   slug: string;
   title: string;
@@ -160,34 +158,6 @@ export type SeedOptions = {
 };
 
 export type SeedSummary = { branches: number; halls: number; films: number; showtimes: number };
-
-/** UB calendar date `offset` days after `from` (a YYYY-MM-DD date). */
-function addDays(from: string, offset: number): string {
-  const noon = ubDayRange(from).start.getTime() + 12 * 60 * MIN_MS;
-  return ubDate(new Date(noon + offset * DAY_MS));
-}
-
-function priceFor(date: string, startMin: number, imax: boolean): number {
-  const weekend = [0, 5, 6].includes(new Date(`${date}T12:00:00Z`).getUTCDay());
-  if (imax || (weekend && startMin >= 17 * 60)) return 18000;
-  return startMin >= 17 * 60 ? 15000 : 12000;
-}
-
-/**
- * Shows for one hall and day: first at 10:00-10:30 (UB), then each film's
- * length plus a 20 minute turnaround rounded up to 5 minutes, last start no
- * later than 23:30. Late shows run past midnight.
- */
-function planDay(hallIdx: number, dayIdx: number, nowFilms: FilmSeed[]) {
-  const plan: { film: FilmSeed; startMin: number }[] = [];
-  let cursor = 10 * 60 + (hallIdx % 4) * 10;
-  for (let k = 0; cursor <= 23 * 60 + 30; k++) {
-    const film = nowFilms[(hallIdx + dayIdx + k) % nowFilms.length] as FilmSeed;
-    plan.push({ film, startMin: cursor });
-    cursor = Math.ceil((cursor + film.durationMin + 20) / 5) * 5;
-  }
-  return plan;
-}
 
 /** Replaces all domain data with demo data. Development and test only. */
 export async function runSeed(opts: SeedOptions): Promise<SeedSummary> {

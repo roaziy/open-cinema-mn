@@ -1,5 +1,6 @@
 // Production bundle: dist/index.js (API), dist/migrate.js (migrations), dist/admin-create.js (first
-// admin) and dist/halls-create.js (ready-made halls), run with plain node.
+// admin), dist/halls-create.js (ready-made halls), dist/movies-update.js (TMDB films) and
+// dist/showtimes-week.js (a week of showings), run with plain node.
 // Application code (including src/shared) is bundled; every dependency stays external and is
 // loaded from node_modules at runtime.
 import { rename, rm } from 'node:fs/promises';
@@ -18,6 +19,8 @@ await build({
     migrate: 'src/db/migrate.ts',
     'admin-create': 'src/scripts/admin-create.ts',
     'halls-create': 'src/scripts/halls-create.ts',
+    'movies-update': 'src/scripts/movies-update.ts',
+    'showtimes-week': 'src/scripts/showtimes-week.ts',
   },
   outdir: next,
   bundle: true,

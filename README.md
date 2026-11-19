@@ -188,3 +188,6 @@ Apple Wallet) is optional.
 ## License
 
 [MIT](LICENSE)
+
+Film data and images imported by `movies:update` come from [TMDB](https://www.themoviedb.org).
+This product uses the TMDB API but is not endorsed or certified by TMDB.

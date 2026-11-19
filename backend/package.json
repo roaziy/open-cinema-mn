@@ -17,6 +17,10 @@
     "admin:create:prod": "node --env-file-if-exists=.env dist/admin-create.js",
     "halls:create": "tsx --env-file-if-exists=.env src/scripts/halls-create.ts",
     "halls:create:prod": "node --env-file-if-exists=.env dist/halls-create.js",
+    "movies:update": "tsx --env-file-if-exists=.env src/scripts/movies-update.ts",
+    "movies:update:prod": "node --env-file-if-exists=.env dist/movies-update.js",
+    "showtimes:week": "tsx --env-file-if-exists=.env src/scripts/showtimes-week.ts",
+    "showtimes:week:prod": "node --env-file-if-exists=.env dist/showtimes-week.js",
     "db:seed": "tsx --env-file-if-exists=.env src/db/seed.ts",
     "start:prod": "node --env-file-if-exists=.env dist/index.js",
     "lint": "biome check ."

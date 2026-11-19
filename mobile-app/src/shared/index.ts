@@ -11,3 +11,4 @@ export * from './schemas/scan';
 export * from './schemas/ticket';
 export * from './seat-view';
 export * from './time';
+export * from './tone';

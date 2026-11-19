@@ -54,3 +54,9 @@ export function ubBusinessDayRange(date: string): { start: Date; end: Date } {
   const from = new Date(start.getTime() + BUSINESS_DAY_CUTOFF_MS);
   return { start: from, end: new Date(from.getTime() + DAY_MS) };
 }
+
+/** UB calendar date `offset` days after `from` (a YYYY-MM-DD date). */
+export function addDays(from: string, offset: number): string {
+  const noon = ubDayRange(from).start.getTime() + 12 * 60 * 60 * 1000;
+  return ubDate(new Date(noon + offset * DAY_MS));
+}

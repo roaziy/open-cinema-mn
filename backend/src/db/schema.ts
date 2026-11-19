@@ -190,21 +190,27 @@ export const seats = pgTable(
   (t) => [uniqueIndex('seats_hall_row_number_unique').on(t.hallId, t.rowLabel, t.number)],
 );
 
-export const movies = pgTable('movies', {
-  id: id(),
-  title: text('title').notNull(),
-  synopsis: text('synopsis').notNull().default(''),
-  durationMin: integer('duration_min').notNull(),
-  ageRating: text('age_rating').notNull(),
-  genres: text('genres').array().notNull().default(sql`'{}'::text[]`),
-  posterUrl: text('poster_url').notNull(),
-  backdropUrl: text('backdrop_url'),
-  trailerUrl: text('trailer_url'),
-  tone: text('tone').notNull().default('#2E6BF0'),
-  releaseDate: date('release_date', { mode: 'string' }).notNull(),
-  status: movieStatus('status').notNull().default('soon'),
-  createdAt: createdAt(),
-});
+export const movies = pgTable(
+  'movies',
+  {
+    id: id(),
+    title: text('title').notNull(),
+    synopsis: text('synopsis').notNull().default(''),
+    durationMin: integer('duration_min').notNull(),
+    ageRating: text('age_rating').notNull(),
+    genres: text('genres').array().notNull().default(sql`'{}'::text[]`),
+    posterUrl: text('poster_url').notNull(),
+    backdropUrl: text('backdrop_url'),
+    trailerUrl: text('trailer_url'),
+    tone: text('tone').notNull().default('#2E6BF0'),
+    releaseDate: date('release_date', { mode: 'string' }).notNull(),
+    status: movieStatus('status').notNull().default('soon'),
+    /** Set for films imported by `movies:update` (TMDB id); null for films added in the admin. */
+    tmdbId: integer('tmdb_id'),
+    createdAt: createdAt(),
+  },
+  (t) => [uniqueIndex('movies_tmdb_id_unique').on(t.tmdbId).where(sql`${t.tmdbId} is not null`)],
+);
 
 export const showtimes = pgTable(
   'showtimes',

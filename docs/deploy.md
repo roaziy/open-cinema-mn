@@ -131,6 +131,21 @@ npm run halls:create:prod -- --branch "Your Branch"                  # all of th
 npm run halls:create:prod -- --branch "Your Branch" --only imax,vip  # some of them
 ```
 
+Films and a week of showings can come from commands too, so nothing has to be typed in by hand.
+`movies:update` imports the films in cinemas now and opening soon from TMDB (it needs
+`TMDB_READ_TOKEN` in `backend/.env`): posters and backdrops go to your storage, films are matched by
+their TMDB id so re-running updates them, and imported films that left the box office are archived
+unless a future showing still needs them. Films added in the admin are never touched.
+`showtimes:week` then schedules the films now showing in every hall, 10:00 to 23:30; a hall-day
+that already has showings is left alone, so both are safe to run any time (for example weekly):
+
+```bash
+npm run movies:update:prod                                   # region from TMDB_REGION (default US)
+npm run movies:update:prod -- --region KR --now 12 --soon 6
+npm run showtimes:week:prod                                  # next 7 days, every hall
+npm run showtimes:week:prod -- --branch "Your Branch" --days 14
+```
+
 Demo data (`db:seed`) is for development only: it refuses to run with `NODE_ENV=production` and
 truncates every table.
 

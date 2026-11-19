@@ -45,6 +45,13 @@ const EnvSchema = z
     R2_ACCESS_KEY_ID: optional(z.string()),
     R2_SECRET_ACCESS_KEY: optional(z.string()),
     R2_PUBLIC_URL: optional(z.url()),
+    // TMDB API read access token (v4), only for `movies:update`. Free at themoviedb.org.
+    TMDB_READ_TOKEN: optional(z.string()),
+    // Country whose cinema releases `movies:update` imports (ISO 3166-1, e.g. US, GB, KR).
+    TMDB_REGION: z
+      .string()
+      .regex(/^[A-Z]{2}$/)
+      .default('US'),
     PAYMENT_PROVIDER: z.enum(['mock']).default('mock'),
     // Production refuses the mock provider (anyone can mark an order paid) unless this is set.
     ALLOW_MOCK_PAYMENTS: flag.default(false),
