@@ -1,36 +1,32 @@
 import { router, useLocalSearchParams } from 'expo-router';
 import { useHeaderHeight } from 'expo-router/react-navigation';
-import { Building2 } from 'lucide-react-native';
 import { useMemo, useState } from 'react';
-import { ScrollView, StyleSheet, Text, useWindowDimensions, View } from 'react-native';
+import { StyleSheet, Text, View } from 'react-native';
 import Animated, { useAnimatedRef, useScrollOffset } from 'react-native-reanimated';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Poster } from '@/components/poster';
 import { PosterBackdrop } from '@/components/poster-backdrop';
-import { Pressable } from '@/components/pressable';
-import { Skeleton } from '@/components/skeleton';
-import { EmptyState, ErrorState } from '@/components/state-views';
-import { type TKey, useI18n } from '@/i18n';
+import { ShowtimeDays } from '@/components/showtime-days';
+import { ShowtimeGroups } from '@/components/showtime-groups';
+import { useI18n } from '@/i18n';
 import { useBranchId } from '@/lib/branch';
-import { useMovie, useShowtimes } from '@/lib/catalog';
-import { formatDuration, nextUbDays, weekdayOf } from '@/lib/format';
-import { formatMnt, formatUbTime, type ShowtimeSlot } from '@/shared';
-import { colors, hairlineWidth, radius, space } from '@/theme/tokens';
+import { useMovie, useShowDays, useShowtimes } from '@/lib/catalog';
+import { formatDuration, nextUbDays } from '@/lib/format';
+import { groupByBranch } from '@/lib/showtime-groups';
+import { colors, space } from '@/theme/tokens';
 import { type } from '@/theme/type';
-
-const FEW_LEFT = 10;
-const GAP = space.sm;
 
 export default function ShowtimesScreen() {
   const { t } = useI18n();
   const insets = useSafeAreaInsets();
   const scrollRef = useAnimatedRef<Animated.ScrollView>();
   const scrollY = useScrollOffset(scrollRef);
-  const { width } = useWindowDimensions();
   const { id } = useLocalSearchParams<{ id: string }>();
   const days = useMemo(() => nextUbDays(7), []);
-  const [date, setDate] = useState(days[0] as string);
+  // Open on the first day that has showings, until the viewer picks one.
   const [picked, setPicked] = useState<string | null>(null);
+  const showDays = useShowDays(id, days, true);
+  const date = picked ?? showDays[0] ?? (days[0] as string);
   const preferred = useBranchId();
   const movie = useMovie(id);
   const shows = useShowtimes(id, date);
@@ -39,23 +35,10 @@ export default function ShowtimesScreen() {
   // The transparent native header is laid over the backdrop; reserve its measured height.
   const headerHeight = useHeaderHeight();
 
-  // The preferred branch leads; the rest keep the API order.
-  const branches = useMemo(() => {
-    const list = (shows.data ?? []).filter((b) => b.showtimes.length > 0);
-    return [...list].sort(
-      (a, b) => Number(b.branch.id === preferred) - Number(a.branch.id === preferred),
-    );
-  }, [shows.data, preferred]);
-
-  // card padding 14 + screen gutter 16, three slots per row
-  const slotWidth = Math.floor((width - space.lg * 2 - 14 * 2 - GAP * 2) / 3);
-
-  const dayLabel = (d: string, i: number): string =>
-    i === 0
-      ? t('showtimes.today')
-      : i === 1
-        ? t('showtimes.tomorrow')
-        : t(`weekday.${weekdayOf(d)}` as TKey);
+  const branches = useMemo(
+    () => groupByBranch(shows.data ?? [], preferred),
+    [shows.data, preferred],
+  );
 
   return (
     <Animated.ScrollView
@@ -97,132 +80,18 @@ export default function ShowtimesScreen() {
         />
       )}
 
-      <ScrollView
-        horizontal
-        showsHorizontalScrollIndicator={false}
-        contentContainerStyle={styles.days}
-        style={styles.daysScroll}
-      >
-        {days.map((d, i) => {
-          const on = d === date;
-          return (
-            <Pressable
-              key={d}
-              style={[styles.day, on && styles.dayOn]}
-              onPress={() => setDate(d)}
-              accessibilityRole="button"
-              accessibilityState={{ selected: on }}
-            >
-              <Text style={[styles.dayName, on && styles.dayNameOn]}>{dayLabel(d, i)}</Text>
-              <Text style={[styles.dayNum, on && styles.dayNumOn]}>{Number(d.slice(8))}</Text>
-            </Pressable>
-          );
-        })}
-      </ScrollView>
+      <ShowtimeDays days={days} value={date} onChange={setPicked} />
 
       <View style={styles.list}>
-        {loading ? (
-          <>
-            <Skeleton height={190} radius={radius.card} />
-            <Skeleton height={190} radius={radius.card} />
-          </>
-        ) : shows.isError ? (
-          <ErrorState error={shows.error} onRetry={() => shows.refetch()} />
-        ) : branches.length === 0 ? (
-          <EmptyState title={t('showtimes.empty')} hint={t('showtimes.emptyHint')} />
-        ) : (
-          branches.map(({ branch, showtimes }) => (
-            <View key={branch.id} style={styles.card}>
-              <View style={styles.cardHead}>
-                <Building2 size={20} color={colors.muted} strokeWidth={1.75} />
-                <View style={styles.cardHeadText}>
-                  <Text style={styles.branchName}>{branch.name}</Text>
-                  <Text style={styles.branchAddr} numberOfLines={1}>
-                    {branch.address}
-                  </Text>
-                </View>
-              </View>
-              <View style={styles.slots}>
-                {showtimes.map((s) => (
-                  <Slot
-                    key={s.id}
-                    slot={s}
-                    width={slotWidth}
-                    selected={picked === s.id}
-                    onPress={() => {
-                      setPicked(s.id);
-                      router.push(`/showtime/${s.id}`);
-                    }}
-                  />
-                ))}
-              </View>
-            </View>
-          ))
-        )}
+        <ShowtimeGroups
+          groups={branches}
+          loading={loading}
+          error={shows.isError ? shows.error : null}
+          onRetry={() => shows.refetch()}
+          onPick={(slot) => router.push(`/showtime/${slot.id}`)}
+        />
       </View>
     </Animated.ScrollView>
-  );
-}
-
-function Slot({
-  slot,
-  width,
-  selected,
-  onPress,
-}: {
-  slot: ShowtimeSlot;
-  width: number;
-  selected: boolean;
-  onPress: () => void;
-}) {
-  const { t } = useI18n();
-  const soldOut = slot.seatsLeft <= 0;
-  const few = !soldOut && slot.seatsLeft <= FEW_LEFT;
-  const time = formatUbTime(slot.startsAt);
-  const note = soldOut
-    ? t('showtimes.soldOut')
-    : few
-      ? t('showtimes.fewLeft', { n: slot.seatsLeft })
-      : slot.hallName;
-  return (
-    <Pressable
-      style={[
-        styles.slot,
-        { width },
-        few && styles.slotFew,
-        soldOut && styles.slotSold,
-        selected && styles.slotOn,
-      ]}
-      onPress={onPress}
-      disabled={soldOut}
-      feedback={!soldOut}
-      accessibilityRole="button"
-      accessibilityState={{ disabled: soldOut, selected }}
-      accessibilityLabel={`${time}, ${slot.format}, ${note}`}
-    >
-      <Text
-        style={[
-          styles.time,
-          few && { color: colors.warning },
-          soldOut && styles.struck,
-          selected && { color: colors.onAction },
-        ]}
-      >
-        {time}
-      </Text>
-      <Text
-        style={[styles.slotSub, soldOut && styles.struck, selected && styles.slotSubOn]}
-        numberOfLines={1}
-      >
-        {slot.format} · {formatMnt(slot.priceStandard)}
-      </Text>
-      <Text
-        style={[styles.slotNote, few && { color: colors.warning }, selected && styles.slotSubOn]}
-        numberOfLines={1}
-      >
-        {note}
-      </Text>
-    </Pressable>
   );
 }
 
@@ -237,56 +106,5 @@ const styles = StyleSheet.create({
   filmText: { flex: 1, gap: 2 },
   filmTitle: { ...type.title, color: colors.ink },
   filmMeta: { ...type.caption, color: colors.body },
-  daysScroll: { flexGrow: 0 },
-  days: { paddingHorizontal: space.lg, gap: space.sm, paddingBottom: space.sm },
-  day: {
-    width: 70,
-    height: 68,
-    borderRadius: radius.card,
-    backgroundColor: colors.raised,
-    borderWidth: hairlineWidth,
-    borderColor: colors.hairline,
-    borderTopColor: colors.highlight,
-    alignItems: 'center',
-    justifyContent: 'center',
-    gap: 2,
-  },
-  dayOn: { backgroundColor: colors.action, borderColor: colors.action },
-  dayName: { ...type.footnote, color: colors.muted },
-  dayNameOn: { color: colors.onActionMuted },
-  dayNum: { ...type.number, fontSize: 20, color: colors.ink },
-  dayNumOn: { color: colors.onAction },
   list: { paddingHorizontal: space.lg, gap: space.lg, marginTop: space.lg },
-  card: {
-    backgroundColor: colors.surface,
-    borderRadius: radius.panel,
-    borderWidth: hairlineWidth,
-    borderColor: colors.hairline,
-    borderTopColor: colors.highlight,
-    padding: 14,
-    gap: space.lg,
-  },
-  cardHead: { flexDirection: 'row', alignItems: 'center', gap: space.md },
-  cardHeadText: { flex: 1, gap: 2 },
-  branchName: { ...type.headline, color: colors.ink },
-  branchAddr: { ...type.caption, color: colors.muted },
-  slots: { flexDirection: 'row', flexWrap: 'wrap', gap: GAP },
-  slot: {
-    paddingVertical: space.md,
-    paddingHorizontal: 10,
-    borderRadius: radius.inner + 2,
-    backgroundColor: colors.raised,
-    borderWidth: hairlineWidth,
-    borderColor: colors.hairline,
-    borderTopColor: colors.highlight,
-    gap: 2,
-  },
-  slotFew: { borderColor: colors.warningTint },
-  slotSold: { opacity: 0.55 },
-  slotOn: { backgroundColor: colors.action, borderColor: colors.action },
-  time: { ...type.number, fontSize: 19, color: colors.ink },
-  struck: { textDecorationLine: 'line-through', color: colors.muted },
-  slotSub: { ...type.footnote, color: colors.body },
-  slotSubOn: { color: colors.onActionMuted },
-  slotNote: { ...type.footnote, color: colors.muted },
 });

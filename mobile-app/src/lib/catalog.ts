@@ -57,6 +57,18 @@ export function useShowtimes(id: string, date: string) {
  * Cheapest standard price among slots that still have seats over the given days
  * (null while loading, on failure, or when nothing is bookable). Shares the showtimes cache.
  */
+/** Days (of `days`) that have at least one showing; shares the cache with useFromPrice. */
+export function useShowDays(id: string, days: string[], enabled: boolean): string[] {
+  const results = useQueries({
+    queries: days.map((date) => ({
+      queryKey: catalogKeys.showtimes(id, date),
+      queryFn: () => fetchShowtimes(id, date),
+      enabled,
+    })),
+  });
+  return days.filter((_, i) => (results[i]?.data ?? []).some((b) => b.showtimes.length > 0));
+}
+
 export function useFromPrice(id: string, days: string[], enabled: boolean): number | null {
   const results = useQueries({
     queries: days.map((date) => ({
