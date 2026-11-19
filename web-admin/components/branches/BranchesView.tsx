@@ -1,14 +1,12 @@
 'use client';
 
-import { Buildings, PencilSimple, Plus } from '@phosphor-icons/react/dist/ssr';
+import { Building2, Pencil, Plus } from 'lucide-react';
 import Link from 'next/link';
 import { useState } from 'react';
 import { Button } from '@/components/ui/Button';
 import { Empty } from '@/components/ui/Empty';
-import { IconTile } from '@/components/ui/IconTile';
 import { PageHeader } from '@/components/ui/PageHeader';
 import { count } from '@/lib/format';
-import { type HueKey, hueFor } from '@/lib/hues';
 import type { Branch } from '@/lib/shared';
 import { BranchDrawer } from './BranchDrawer';
 
@@ -33,16 +31,18 @@ export function BranchesView({ branches }: { branches: BranchRow[] }) {
       ) : (
         <ul className="grid gap-3 md:grid-cols-2 2xl:grid-cols-3">
           {branches.map((b) => {
-            const hue: HueKey = hueFor(b.id);
             return (
               <li
                 key={b.id}
                 className="highlight group relative rounded-panel border border-hairline bg-raised p-4"
               >
                 <div className="flex items-start gap-3">
-                  <IconTile hue={hue} size={36}>
-                    <Buildings size={20} weight="fill" />
-                  </IconTile>
+                  <Building2
+                    size={22}
+                    strokeWidth={1.75}
+                    className="mt-0.5 shrink-0 text-muted"
+                    aria-hidden
+                  />
                   <div className="min-w-0 flex-1">
                     <Link
                       href={`/admin/branches/${b.id}`}
@@ -58,7 +58,7 @@ export function BranchesView({ branches }: { branches: BranchRow[] }) {
                     aria-label={`${b.name} засах`}
                     className="focus-ring relative z-10 -mr-1 -mt-1 flex size-8 items-center justify-center rounded-card text-muted transition-colors hover:bg-white/[0.06] hover:text-ink"
                   >
-                    <PencilSimple size={16} />
+                    <Pencil size={16} />
                   </button>
                 </div>
                 <dl className="mt-4 grid grid-cols-3 gap-2 border-t border-hairline pt-3">

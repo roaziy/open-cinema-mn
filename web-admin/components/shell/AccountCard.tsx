@@ -1,6 +1,6 @@
 'use client';
 
-import { Gear, SignOut } from '@phosphor-icons/react/dist/ssr';
+import { LogOut, Settings } from 'lucide-react';
 import Link from 'next/link';
 import { Avatar } from '../ui/Avatar';
 import { signOut } from './sign-out';
@@ -39,7 +39,7 @@ export function AccountCard({
           title="Нууц үг солих"
           className="focus-ring flex size-8 items-center justify-center rounded-tile text-muted transition-colors hover:bg-white/[0.08] hover:text-ink"
         >
-          <Gear size={18} />
+          <Settings size={18} />
         </Link>
       )}
       <form action={signOut.bind(null, loginPath)}>
@@ -49,7 +49,7 @@ export function AccountCard({
           title="Гарах"
           className="focus-ring flex size-8 items-center justify-center rounded-tile text-muted transition-colors hover:bg-white/[0.08] hover:text-ink"
         >
-          <SignOut size={18} />
+          <LogOut size={18} />
         </button>
       </form>
     </div>

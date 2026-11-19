@@ -1,4 +1,4 @@
-import { Armchair, Plus } from '@phosphor-icons/react/dist/ssr';
+import { Armchair, Plus } from 'lucide-react';
 import type { Metadata } from 'next';
 import Link from 'next/link';
 import { notFound } from 'next/navigation';
@@ -6,11 +6,9 @@ import { BranchEditButton } from '@/components/branches/BranchEditButton';
 import { buttonClass } from '@/components/ui/Button';
 import { Empty } from '@/components/ui/Empty';
 import { ErrorState } from '@/components/ui/ErrorState';
-import { IconTile } from '@/components/ui/IconTile';
 import { PageHeader } from '@/components/ui/PageHeader';
 import { getBranches, getHalls, safely } from '@/lib/admin-data';
 import { count } from '@/lib/format';
-import { hueFor } from '@/lib/hues';
 
 export const metadata: Metadata = { title: 'Салбар' };
 
@@ -29,7 +27,6 @@ export default async function BranchPage({ params }: Props) {
   }
   const branch = branches.find((b) => b.id === id);
   if (!branch) notFound();
-  const hue = hueFor(branch.id);
   return (
     <>
       <PageHeader
@@ -57,9 +54,12 @@ export default async function BranchPage({ params }: Props) {
                 href={`/admin/halls/${h.id}`}
                 className="focus-ring highlight flex items-center gap-3 rounded-panel border border-hairline bg-raised p-3.5 transition-colors hover:border-white/15"
               >
-                <IconTile hue={hue} size={34}>
-                  <Armchair size={19} weight="fill" />
-                </IconTile>
+                <Armchair
+                  size={20}
+                  strokeWidth={1.75}
+                  className="shrink-0 text-muted"
+                  aria-hidden
+                />
                 <div className="min-w-0 flex-1">
                   <p className="truncate text-sm font-medium text-ink">{h.name}</p>
                   <p className="text-xs text-muted">

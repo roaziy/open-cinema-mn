@@ -1,6 +1,6 @@
 'use client';
 
-import { X } from '@phosphor-icons/react/dist/ssr';
+import { X } from 'lucide-react';
 import { type ReactNode, useEffect, useId, useRef } from 'react';
 
 const FOCUSABLE =

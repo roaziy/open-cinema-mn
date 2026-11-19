@@ -1,15 +1,12 @@
 'use client';
 
 import Link from 'next/link';
-import { HUES, type HueKey } from '@/lib/hues';
-import { IconTile } from '../ui/IconTile';
 import type { NavItemDef } from './nav';
 
 export type NavChild = {
   id: string;
   href: string;
   label: string;
-  hue: HueKey;
   count?: number;
   attention?: boolean;
 };
@@ -65,9 +62,12 @@ export function NavItem({
             className="absolute -left-1.5 top-2 bottom-2 w-[3px] rounded-full bg-action"
           />
         )}
-        <IconTile hue={item.hue}>
-          <Icon size={16} weight="fill" />
-        </IconTile>
+        <span
+          aria-hidden
+          className={`flex size-5 shrink-0 items-center justify-center transition-colors ${active ? 'text-ink' : 'text-muted group-hover:text-ink'}`}
+        >
+          <Icon size={18} strokeWidth={1.75} />
+        </span>
         <span className="truncate">{item.label}</span>
         <Count value={count} />
         <Dot show={attention} />
@@ -97,11 +97,6 @@ export function NavItem({
                   aria-current={here ? 'page' : undefined}
                   className={`${row} min-h-8 text-[13px] ${here ? 'bg-fill text-ink' : 'text-body hover:bg-white/[0.04] hover:text-ink'}`}
                 >
-                  <span
-                    aria-hidden
-                    className="size-2 shrink-0 rounded-full"
-                    style={{ background: HUES[child.hue] }}
-                  />
                   <span className="truncate">{child.label}</span>
                   <Count value={child.count} />
                   <Dot show={child.attention} />

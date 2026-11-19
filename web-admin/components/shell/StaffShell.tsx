@@ -1,16 +1,15 @@
 'use client';
 
-import { CalendarBlank, QrCode } from '@phosphor-icons/react/dist/ssr';
+import { Calendar, QrCode } from 'lucide-react';
 import Link from 'next/link';
 import { usePathname } from 'next/navigation';
 import type { ReactNode } from 'react';
-import { IconTile } from '../ui/IconTile';
 import { Logo } from '../ui/Logo';
 import { AccountCard } from './AccountCard';
 
 const TABS = [
-  { href: '/staff', label: 'Өнөөдөр', icon: CalendarBlank, hue: 'green' },
-  { href: '/staff/scan', label: 'Шалгах', icon: QrCode, hue: 'teal' },
+  { href: '/staff', label: 'Өнөөдөр', icon: Calendar },
+  { href: '/staff/scan', label: 'Шалгах', icon: QrCode },
 ] as const;
 
 /** Phone-first: brand and account up top, two big tabs on the bottom edge. */
@@ -66,9 +65,7 @@ export function StaffShell({
                 aria-current={on ? 'page' : undefined}
                 className={`focus-ring flex h-12 items-center justify-center gap-2.5 rounded-card text-[15px] font-medium transition-colors ${on ? 'bg-fill text-ink' : 'text-muted hover:text-ink'}`}
               >
-                <IconTile hue={t.hue} size={26}>
-                  <Icon size={16} weight="fill" />
-                </IconTile>
+                <Icon size={20} strokeWidth={1.75} aria-hidden />
                 {t.label}
               </Link>
             );

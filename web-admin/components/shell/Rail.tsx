@@ -1,23 +1,20 @@
 'use client';
 
-import { CaretDoubleLeft, CaretDoubleRight } from '@phosphor-icons/react/dist/ssr';
+import { ChevronsRight } from 'lucide-react';
 import Link from 'next/link';
 import { Avatar } from '../ui/Avatar';
-import { IconTile } from '../ui/IconTile';
 import { Logo } from '../ui/Logo';
 import { isActive, type NavGroupDef } from './nav';
 
-/** The slim outer strip: logo, one tile per section, collapse toggle, your avatar. */
+/** The slim strip shown only while the sidebar is collapsed: logo, one icon per section, expand toggle, your avatar. */
 export function Rail({
   groups,
   pathname,
-  collapsed,
   onToggle,
   user,
 }: {
   groups: NavGroupDef[];
   pathname: string;
-  collapsed: boolean;
   onToggle: () => void;
   user: { id: string; name: string | null };
 }) {
@@ -37,11 +34,16 @@ export function Rail({
               href={first ? first.href : '/admin'}
               aria-label={g.label}
               title={g.label}
-              className={`focus-ring flex size-9 items-center justify-center rounded-card transition-colors ${on ? 'bg-fill' : 'hover:bg-white/[0.05]'}`}
+              aria-current={on ? 'true' : undefined}
+              className={`focus-ring relative flex size-9 items-center justify-center rounded-card transition-colors ${on ? 'bg-fill text-ink' : 'text-muted hover:bg-white/[0.05] hover:text-ink'}`}
             >
-              <IconTile hue={g.hue} size={24}>
-                <Icon size={14} weight="fill" />
-              </IconTile>
+              {on && (
+                <span
+                  aria-hidden
+                  className="absolute -left-1 top-2 bottom-2 w-[3px] rounded-full bg-action"
+                />
+              )}
+              <Icon size={18} strokeWidth={1.75} />
             </Link>
           );
         })}
@@ -50,11 +52,11 @@ export function Rail({
         <button
           type="button"
           onClick={onToggle}
-          aria-label={collapsed ? 'Цэсийг нээх' : 'Цэсийг хураах'}
-          aria-expanded={!collapsed}
+          aria-label="Цэсийг нээх"
+          aria-expanded={false}
           className="focus-ring flex size-8 items-center justify-center rounded-card text-muted transition-colors hover:bg-white/[0.05] hover:text-ink"
         >
-          {collapsed ? <CaretDoubleRight size={16} /> : <CaretDoubleLeft size={16} />}
+          {<ChevronsRight size={16} />}
         </button>
         <Avatar seed={user.id} name={user.name} size={30} />
       </div>

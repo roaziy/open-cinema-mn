@@ -1,6 +1,6 @@
 'use client';
 
-import { PencilSimple } from '@phosphor-icons/react/dist/ssr';
+import { Pencil } from 'lucide-react';
 import { useState } from 'react';
 import { Button } from '@/components/ui/Button';
 import type { Branch } from '@/lib/shared';
@@ -11,7 +11,7 @@ export function BranchEditButton({ branch }: { branch: Branch }) {
   return (
     <>
       <Button onClick={() => setOpen(true)}>
-        <PencilSimple size={16} aria-hidden />
+        <Pencil size={16} aria-hidden />
         Засах
       </Button>
       <BranchDrawer branch={branch} open={open} onClose={() => setOpen(false)} />

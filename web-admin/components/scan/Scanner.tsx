@@ -1,6 +1,6 @@
 'use client';
 
-import { CaretLeft, Keyboard, PencilSimple } from '@phosphor-icons/react/dist/ssr';
+import { ChevronLeft, Keyboard, Pencil } from 'lucide-react';
 import Link from 'next/link';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { errorMessage } from '@/lib/errors-mn';
@@ -247,7 +247,7 @@ export function Scanner() {
           aria-label="Өнөөдрийн сеанс руу буцах"
           className="focus-ring flex size-12 shrink-0 items-center justify-center rounded-full bg-black/60 text-white backdrop-blur"
         >
-          <CaretLeft size={24} weight="bold" />
+          <ChevronLeft size={24} />
         </Link>
         <button
           type="button"
@@ -256,7 +256,7 @@ export function Scanner() {
           className={`${PILL} focus-ring flex min-h-12 min-w-0 items-center gap-2`}
         >
           <span className="truncate">{door || 'Хаалгаа нэрлэх'}</span>
-          <PencilSimple size={16} weight="fill" className="shrink-0 opacity-70" />
+          <Pencil size={16} className="shrink-0 opacity-70" />
         </button>
         <button
           type="button"
@@ -264,7 +264,7 @@ export function Scanner() {
           onClick={() => setSheet('manual')}
           className="focus-ring flex size-12 shrink-0 items-center justify-center rounded-full bg-black/60 text-white backdrop-blur"
         >
-          <Keyboard size={24} weight="fill" />
+          <Keyboard size={24} />
         </button>
       </header>
 

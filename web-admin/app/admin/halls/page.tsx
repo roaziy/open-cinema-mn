@@ -1,14 +1,12 @@
-import { Armchair, Lock, Plus } from '@phosphor-icons/react/dist/ssr';
+import { Armchair, Lock, Plus } from 'lucide-react';
 import type { Metadata } from 'next';
 import Link from 'next/link';
 import { buttonClass } from '@/components/ui/Button';
 import { Empty } from '@/components/ui/Empty';
 import { ErrorState } from '@/components/ui/ErrorState';
-import { IconTile } from '@/components/ui/IconTile';
 import { PageHeader } from '@/components/ui/PageHeader';
 import { getBranches, getHalls, safely } from '@/lib/admin-data';
 import { count } from '@/lib/format';
-import { hueFor } from '@/lib/hues';
 
 export const metadata: Metadata = { title: 'Заал' };
 
@@ -47,16 +45,18 @@ export default async function HallsPage() {
         <div className="space-y-6">
           {branches.map((b) => {
             const rows = halls.filter((h) => h.branchId === b.id);
-            const hue = hueFor(b.id);
             return (
               <section key={b.id} aria-labelledby={`b-${b.id}`}>
                 <h2
                   id={`b-${b.id}`}
                   className="mb-2.5 flex items-center gap-2 text-[15px] font-semibold text-ink"
                 >
-                  <IconTile hue={hue} size={22}>
-                    <Armchair size={13} weight="fill" />
-                  </IconTile>
+                  <Armchair
+                    size={16}
+                    strokeWidth={1.75}
+                    className="shrink-0 text-muted"
+                    aria-hidden
+                  />
                   {b.name}
                   <span className="text-[13px] font-normal text-muted tabular-nums">
                     {rows.length}
@@ -79,16 +79,18 @@ export default async function HallsPage() {
                           href={`/admin/halls/${h.id}`}
                           className="focus-ring highlight flex items-center gap-3 rounded-panel border border-hairline bg-raised p-3.5 transition-colors hover:border-white/15"
                         >
-                          <IconTile hue={hue} size={34}>
-                            <Armchair size={19} weight="fill" />
-                          </IconTile>
+                          <Armchair
+                            size={20}
+                            strokeWidth={1.75}
+                            className="shrink-0 text-muted"
+                            aria-hidden
+                          />
                           <div className="min-w-0 flex-1">
                             <p className="flex items-center gap-1.5 truncate text-sm font-medium text-ink">
                               {h.name}
                               {h.locked && (
                                 <Lock
                                   size={12}
-                                  weight="fill"
                                   className="shrink-0 text-muted"
                                   aria-label="Тасалбар олгогдсон, бүтэц түгжигдсэн"
                                 />

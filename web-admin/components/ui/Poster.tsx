@@ -1,4 +1,4 @@
-import { FilmStrip } from '@phosphor-icons/react/dist/ssr';
+import { Film } from 'lucide-react';
 
 /** The film's own poster as imagery. A missing or broken URL falls back to a tone block. */
 export function Poster({
@@ -18,7 +18,7 @@ export function Poster({
       style={tone ? { backgroundColor: `${tone}33` } : undefined}
     >
       <span aria-hidden className="absolute inset-0 flex items-center justify-center text-muted/60">
-        <FilmStrip size={20} weight="fill" />
+        <Film size={20} />
       </span>
       {src && (
         // biome-ignore lint/performance/noImgElement: posters come from arbitrary storage hosts

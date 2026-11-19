@@ -1,25 +1,23 @@
 import {
   Armchair,
-  Buildings,
-  CalendarBlank,
-  ChartBar,
-  FilmSlate,
-  FilmStrip,
+  Building2,
+  Calendar,
+  ChartColumn,
+  Clapperboard,
+  Film,
+  LayoutGrid,
   QrCode,
-  SquaresFour,
   Ticket,
-  UsersThree,
-} from '@phosphor-icons/react/dist/ssr';
+  Users,
+} from 'lucide-react';
 import type { ComponentType } from 'react';
-import type { HueKey } from '@/lib/hues';
 
-type Icon = ComponentType<{ size?: number; weight?: 'fill' | 'regular' }>;
+type Icon = ComponentType<{ size?: number; strokeWidth?: number }>;
 
 export type NavItemDef = {
   href: string;
   label: string;
   icon: Icon;
-  hue: HueKey;
   /** Which live number sits at the right edge. */
   count?: 'showtimes' | 'admitted';
   /** Marks the item whose children are the branches. */
@@ -29,7 +27,6 @@ export type NavItemDef = {
 export type NavGroupDef = {
   key: string;
   label: string;
-  hue: HueKey;
   icon: Icon;
   items: NavItemDef[];
 };
@@ -38,53 +35,45 @@ export const ADMIN_NAV: NavGroupDef[] = [
   {
     key: 'today',
     label: 'Өнөөдөр',
-    hue: 'green',
-    icon: SquaresFour,
+    icon: LayoutGrid,
     items: [
-      { href: '/admin', label: 'Хяналтын самбар', icon: SquaresFour, hue: 'indigo' },
+      { href: '/admin', label: 'Хяналтын самбар', icon: LayoutGrid },
       {
         href: '/admin/today',
         label: 'Өнөөдрийн сеанс',
-        icon: CalendarBlank,
-        hue: 'green',
+        icon: Calendar,
         count: 'showtimes',
       },
-      { href: '/admin/scans', label: 'Шалгалт', icon: QrCode, hue: 'teal', count: 'admitted' },
+      { href: '/admin/scans', label: 'Шалгалт', icon: QrCode, count: 'admitted' },
     ],
   },
   {
     key: 'cinema',
     label: 'Кино театр',
-    hue: 'purple',
-    icon: FilmSlate,
+    icon: Clapperboard,
     items: [
       {
         href: '/admin/branches',
         label: 'Салбар',
-        icon: Buildings,
-        hue: 'purple',
+        icon: Building2,
         branches: true,
       },
-      { href: '/admin/halls', label: 'Заал', icon: Armchair, hue: 'indigo' },
-      { href: '/admin/movies', label: 'Кино', icon: FilmStrip, hue: 'pink' },
-      { href: '/admin/schedule', label: 'Сеанс, үнэ', icon: Ticket, hue: 'yellow' },
+      { href: '/admin/halls', label: 'Заал', icon: Armchair },
+      { href: '/admin/movies', label: 'Кино', icon: Film },
+      { href: '/admin/schedule', label: 'Сеанс, үнэ', icon: Ticket },
     ],
   },
   {
     key: 'team',
     label: 'Баг',
-    hue: 'teal',
-    icon: UsersThree,
-    items: [{ href: '/admin/staff', label: 'Ажилтнууд', icon: UsersThree, hue: 'sky' }],
+    icon: Users,
+    items: [{ href: '/admin/staff', label: 'Ажилтнууд', icon: Users }],
   },
   {
     key: 'reports',
     label: 'Тайлан',
-    hue: 'yellow',
-    icon: ChartBar,
-    items: [
-      { href: '/admin/reports', label: 'Борлуулалт, дүүргэлт', icon: ChartBar, hue: 'green' },
-    ],
+    icon: ChartColumn,
+    items: [{ href: '/admin/reports', label: 'Борлуулалт, дүүргэлт', icon: ChartColumn }],
   },
 ];
 

@@ -1,6 +1,6 @@
 'use client';
 
-import { X } from '@phosphor-icons/react/dist/ssr';
+import { X } from 'lucide-react';
 import { type KeyboardEvent, useState } from 'react';
 
 /** Chips with a trailing text box: Enter or comma adds, Backspace on an empty box removes the last. */

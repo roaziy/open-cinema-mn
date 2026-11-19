@@ -1,6 +1,6 @@
 'use client';
 
-import { CircleNotch, UploadSimple } from '@phosphor-icons/react/dist/ssr';
+import { LoaderCircle, Upload } from 'lucide-react';
 import { useId, useRef, useState } from 'react';
 import { CallError, imageProblem, messageOf, uploadImage } from '@/lib/client-api';
 import { prepareImage, TooLargeError } from '@/lib/image-resize';
@@ -83,7 +83,7 @@ export function ImagePicker({
           <img src={shown} alt="" className="absolute inset-0 size-full object-cover" />
         ) : (
           <span className="absolute inset-0 flex flex-col items-center justify-center gap-1.5 text-muted">
-            <UploadSimple size={22} />
+            <Upload size={22} />
             <span className="text-[13px]">Зураг сонгох</span>
           </span>
         )}
@@ -94,7 +94,11 @@ export function ImagePicker({
         )}
         {busy && (
           <span className="absolute inset-0 flex items-center justify-center bg-black/55">
-            <CircleNotch size={22} className="animate-spin text-ink" aria-label="Байршуулж байна" />
+            <LoaderCircle
+              size={22}
+              className="animate-spin text-ink"
+              aria-label="Байршуулж байна"
+            />
           </span>
         )}
       </button>

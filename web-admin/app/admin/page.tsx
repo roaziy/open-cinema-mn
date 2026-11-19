@@ -1,9 +1,4 @@
-import {
-  ArrowCounterClockwise,
-  ChartLineUp,
-  Percent,
-  Ticket,
-} from '@phosphor-icons/react/dist/ssr';
+import { Percent, RotateCcw, Ticket, TrendingUp } from 'lucide-react';
 import type { Metadata } from 'next';
 import Link from 'next/link';
 import { redirect } from 'next/navigation';
@@ -12,7 +7,6 @@ import { BranchPills } from '@/components/dashboard/BranchPills';
 import { Delta } from '@/components/dashboard/Delta';
 import { Empty } from '@/components/ui/Empty';
 import { ErrorState } from '@/components/ui/ErrorState';
-import { IconTile } from '@/components/ui/IconTile';
 import { PageHeader } from '@/components/ui/PageHeader';
 import { Poster } from '@/components/ui/Poster';
 import { getBranches, getDashboard, getShowtimes, safely } from '@/lib/admin-data';
@@ -81,9 +75,12 @@ export default async function Dashboard({ searchParams }: Props) {
           className="highlight rounded-panel border border-hairline bg-raised p-5"
         >
           <div className="flex items-start gap-3">
-            <IconTile hue="green" size={30}>
-              <ChartLineUp size={18} weight="fill" />
-            </IconTile>
+            <TrendingUp
+              size={20}
+              strokeWidth={1.75}
+              className="mt-0.5 shrink-0 text-muted"
+              aria-hidden
+            />
             <div className="min-w-0">
               <h2 id="sales-h" className="text-sm text-muted">
                 Өнөөдрийн борлуулалт
@@ -115,8 +112,7 @@ export default async function Dashboard({ searchParams }: Props) {
           className="highlight divide-y divide-hairline rounded-panel border border-hairline bg-raised"
         >
           <Stat
-            hue="purple"
-            icon={<Ticket size={18} weight="fill" />}
+            icon={<Ticket size={20} strokeWidth={1.75} />}
             label="Өнөөдөр зарагдсан тасалбар"
             value={count(data.today.tickets)}
             foot={
@@ -128,8 +124,7 @@ export default async function Dashboard({ searchParams }: Props) {
             }
           />
           <Stat
-            hue="indigo"
-            icon={<Percent size={18} weight="fill" />}
+            icon={<Percent size={20} strokeWidth={1.75} />}
             label="Өнөөдрийн сеансын дүүргэлт"
             value={pct(data.today.occupancy)}
             foot={
@@ -148,8 +143,7 @@ export default async function Dashboard({ searchParams }: Props) {
             }
           />
           <Stat
-            hue="red"
-            icon={<ArrowCounterClockwise size={18} weight="fill" />}
+            icon={<RotateCcw size={20} strokeWidth={1.75} />}
             label="Өнөөдрийн буцаалт"
             value={count(data.refundsToday.count)}
             foot={
@@ -286,13 +280,11 @@ export default async function Dashboard({ searchParams }: Props) {
 }
 
 function Stat({
-  hue,
   icon,
   label,
   value,
   foot,
 }: {
-  hue: 'purple' | 'indigo' | 'red';
   icon: React.ReactNode;
   label: string;
   value: string;
@@ -300,9 +292,9 @@ function Stat({
 }) {
   return (
     <div className="flex items-start gap-3 p-4">
-      <IconTile hue={hue} size={30}>
+      <span aria-hidden className="mt-0.5 flex shrink-0 text-muted">
         {icon}
-      </IconTile>
+      </span>
       <div className="min-w-0 flex-1">
         <p className="text-sm text-muted">{label}</p>
         <p className="mt-0.5 text-[26px] font-semibold leading-tight text-ink tabular-nums">

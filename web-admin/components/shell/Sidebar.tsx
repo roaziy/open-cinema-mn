@@ -1,6 +1,7 @@
 'use client';
 
-import { List, X } from '@phosphor-icons/react/dist/ssr';
+import { ChevronsLeft, Menu, X } from 'lucide-react';
+import Link from 'next/link';
 import { usePathname } from 'next/navigation';
 import { useEffect, useState } from 'react';
 import type { ShellData } from '@/lib/shell-data';
@@ -58,7 +59,6 @@ export function Sidebar({
     id: b.id,
     href: `/admin/branches/${b.id}`,
     label: b.name,
-    hue: b.hue,
     count: data.failed ? undefined : b.showtimes,
     attention: b.attention,
   }));
@@ -76,7 +76,7 @@ export function Sidebar({
           aria-expanded={open}
           className="focus-ring -ml-2 flex size-10 items-center justify-center rounded-card text-body hover:bg-white/[0.05]"
         >
-          <List size={22} />
+          <Menu size={22} />
         </button>
         <Logo size={26} />
         <span className="text-[15px] font-semibold text-ink">{appName}</span>
@@ -97,23 +97,35 @@ export function Sidebar({
         className={`fixed inset-y-0 left-0 z-50 w-[288px] max-w-[88vw] p-2 transition-transform duration-200 lg:sticky lg:top-0 lg:z-auto lg:h-dvh lg:w-auto lg:max-w-none lg:translate-x-0 lg:pr-0 ${open ? 'translate-x-0' : '-translate-x-full'}`}
       >
         <div className="highlight flex h-full gap-1 rounded-rail border border-hairline bg-surface p-1">
-          <Rail
-            groups={ADMIN_NAV}
-            pathname={pathname}
-            collapsed={collapsed}
-            onToggle={toggle}
-            user={user}
-          />
+          {collapsed && (
+            <Rail groups={ADMIN_NAV} pathname={pathname} onToggle={toggle} user={user} />
+          )}
           <div
             className={`min-w-0 flex-1 flex-col rounded-panel border border-hairline bg-raised lg:w-[248px] lg:flex-none ${collapsed ? 'flex lg:hidden' : 'flex'}`}
           >
             <div className="flex items-center gap-2.5 px-3.5 pb-2 pt-3.5">
+              <Link
+                href="/admin"
+                aria-label="Нүүр"
+                className="focus-ring hidden rounded-tile lg:block"
+              >
+                <Logo size={30} />
+              </Link>
               <div className="min-w-0 flex-1">
                 <p className="truncate text-[15px] font-semibold leading-tight text-ink">
                   {appName}
                 </p>
                 <p className="text-xs leading-tight text-muted">Удирдлагын самбар</p>
               </div>
+              <button
+                type="button"
+                onClick={toggle}
+                aria-label="Цэсийг хураах"
+                aria-expanded={!collapsed}
+                className="focus-ring hidden size-8 items-center justify-center rounded-card text-muted hover:bg-white/[0.05] hover:text-ink lg:flex"
+              >
+                <ChevronsLeft size={16} />
+              </button>
               <button
                 type="button"
                 onClick={close}

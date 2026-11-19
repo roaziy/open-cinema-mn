@@ -1,4 +1,4 @@
-import { CaretLeft, CaretRight } from '@phosphor-icons/react/dist/ssr';
+import { ChevronLeft, ChevronRight } from 'lucide-react';
 import type { Metadata } from 'next';
 import Link from 'next/link';
 import { redirect } from 'next/navigation';
@@ -51,7 +51,7 @@ export default async function SchedulePage({ searchParams }: Props) {
             aria-label="Өмнөх өдөр"
             className={`${buttonClass('secondary')} !px-2.5`}
           >
-            <CaretLeft size={16} />
+            <ChevronLeft size={16} />
           </Link>
           <DateJump date={date} branch={branchId} />
           <Link
@@ -59,7 +59,7 @@ export default async function SchedulePage({ searchParams }: Props) {
             aria-label="Дараах өдөр"
             className={`${buttonClass('secondary')} !px-2.5`}
           >
-            <CaretRight size={16} />
+            <ChevronRight size={16} />
           </Link>
           {date !== today && (
             <Link href={href(today)} className={buttonClass('ghost')}>

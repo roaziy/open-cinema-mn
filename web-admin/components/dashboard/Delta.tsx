@@ -1,4 +1,4 @@
-import { ArrowDownRight, ArrowUpRight, Minus } from '@phosphor-icons/react/dist/ssr';
+import { ArrowDownRight, ArrowUpRight, Minus } from 'lucide-react';
 import { deltaPct } from '@/lib/format';
 
 /** Change against the baseline in words: colour only supports the sign and the arrow. */

@@ -1,6 +1,6 @@
 'use client';
 
-import { ArrowLeft } from '@phosphor-icons/react/dist/ssr';
+import { ArrowLeft } from 'lucide-react';
 import { useActionState, useEffect, useState } from 'react';
 import {
   type RequestState,

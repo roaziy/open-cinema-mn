@@ -1,4 +1,4 @@
-import { QrCode } from '@phosphor-icons/react/dist/ssr';
+import { QrCode } from 'lucide-react';
 import type { Metadata } from 'next';
 import Link from 'next/link';
 import { unstable_rethrow } from 'next/navigation';
@@ -30,7 +30,7 @@ export default async function StaffToday() {
   const title = `${weekdayMn(today)}, ${dayMonth(today)}`;
   const scanButton = (
     <Link href="/staff/scan" className={`${buttonClass('primary')} h-14 w-full text-[17px]`}>
-      <QrCode size={22} weight="fill" />
+      <QrCode size={22} />
       Билет шалгах
     </Link>
   );

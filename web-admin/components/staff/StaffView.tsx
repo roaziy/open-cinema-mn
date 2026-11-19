@@ -1,6 +1,6 @@
 'use client';
 
-import { Plus } from '@phosphor-icons/react/dist/ssr';
+import { Plus } from 'lucide-react';
 import { useRouter } from 'next/navigation';
 import { useState, useTransition } from 'react';
 import { Avatar } from '@/components/ui/Avatar';

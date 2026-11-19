@@ -1,4 +1,4 @@
-import { Plus } from '@phosphor-icons/react/dist/ssr';
+import { Plus } from 'lucide-react';
 import type { Metadata } from 'next';
 import Link from 'next/link';
 import { buttonClass } from '@/components/ui/Button';

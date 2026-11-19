@@ -1,23 +1,20 @@
-import { CalendarBlank, ChartBar, QrCode } from '@phosphor-icons/react/dist/ssr';
+import { Calendar, ChartColumn, QrCode } from 'lucide-react';
 import type { ReactNode } from 'react';
 import { APP_NAME } from '@/lib/env';
-import { IconTile } from '../ui/IconTile';
 import { Logo } from '../ui/Logo';
 
 const POINTS = [
   {
-    icon: CalendarBlank,
-    hue: 'green',
+    icon: Calendar,
     title: 'Өнөөдрийн сеанс',
     text: 'Заал бүрийн хуваарь, зарагдсан суудал',
   },
   {
     icon: QrCode,
-    hue: 'teal',
     title: 'Хаалганы шалгалт',
     text: 'Билетийг утсаар уншуулж нэвтрүүлнэ',
   },
-  { icon: ChartBar, hue: 'yellow', title: 'Борлуулалтын тайлан', text: 'Өдөр, кино, заалаар' },
+  { icon: ChartColumn, title: 'Борлуулалтын тайлан', text: 'Өдөр, кино, заалаар' },
 ] as const;
 
 /** Two layers: a brand rail on wide screens, and the sign-in panel. */
@@ -33,14 +30,17 @@ export function AuthShell({ children }: { children: ReactNode }) {
           <h2 className="max-w-md text-[34px] font-semibold leading-[1.15] tracking-[-0.015em] text-ink">
             Танхимын өдөр нэг дор харагдана
           </h2>
-          <ul className="mt-8 flex max-w-md flex-col gap-1.5 rounded-panel border border-hairline bg-raised p-2">
+          <ul className="mt-8 flex max-w-md flex-col gap-4">
             {POINTS.map((p) => {
               const Icon = p.icon;
               return (
-                <li key={p.title} className="flex items-center gap-3 rounded-card bg-fill/60 p-2.5">
-                  <IconTile hue={p.hue} size={32}>
-                    <Icon size={18} weight="fill" />
-                  </IconTile>
+                <li key={p.title} className="flex items-start gap-3">
+                  <Icon
+                    size={20}
+                    strokeWidth={1.75}
+                    className="mt-0.5 shrink-0 text-muted"
+                    aria-hidden
+                  />
                   <div>
                     <p className="text-sm font-medium text-ink">{p.title}</p>
                     <p className="text-[13px] text-muted">{p.text}</p>
