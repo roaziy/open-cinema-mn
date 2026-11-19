@@ -124,12 +124,11 @@ const styles = StyleSheet.create({
   link: { ...type.bodyMedium, color: colors.action },
   editor: { gap: space.md },
   input: {
+    borderCurve: 'continuous',
     height: 50,
     paddingHorizontal: space.lg,
     borderRadius: radius.inner + 2,
     backgroundColor: colors.canvas,
-    borderWidth: 1,
-    borderColor: colors.hairline,
     ...type.bodyMedium,
     fontFamily: fonts.medium,
     color: colors.ink,

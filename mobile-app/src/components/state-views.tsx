@@ -43,12 +43,11 @@ const styles = StyleSheet.create({
   title: { ...type.headline, color: colors.ink, textAlign: 'center' },
   hint: { ...type.body, color: colors.muted, textAlign: 'center' },
   retry: {
+    borderCurve: 'continuous',
     backgroundColor: colors.fill,
     borderRadius: radius.pill,
     paddingHorizontal: space.xl,
     paddingVertical: space.md,
-    borderWidth: 1,
-    borderColor: colors.hairline,
   },
   retryText: { ...type.bodyMedium, color: colors.ink },
 });

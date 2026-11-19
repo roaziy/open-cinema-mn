@@ -77,11 +77,9 @@ function Metric({ label, value }: { label: string; value: string }) {
 
 const styles = StyleSheet.create({
   card: {
+    borderCurve: 'continuous',
     backgroundColor: colors.surface,
-    borderRadius: radius.card,
-    borderWidth: 1,
-    borderColor: colors.hairline,
-    borderTopColor: colors.highlight,
+    borderRadius: radius.panel,
     padding: space.md,
     gap: space.md,
   },

@@ -18,9 +18,7 @@ export function GlassBar({ children }: { children: ReactNode }) {
 const styles = StyleSheet.create({
   bar: { borderRadius: radius.panel + 8, padding: 10 },
   fallback: {
+    borderCurve: 'continuous',
     backgroundColor: colors.raised,
-    borderWidth: 1,
-    borderColor: colors.hairline,
-    borderTopColor: colors.highlight,
   },
 });

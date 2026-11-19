@@ -141,13 +141,11 @@ export function SeatFooter({
 
 const styles = StyleSheet.create({
   sheet: {
+    borderCurve: 'continuous',
     backgroundColor: colors.raised,
     borderTopLeftRadius: radius.panel,
     borderTopRightRadius: radius.panel,
-    borderWidth: 1,
     borderBottomWidth: 0,
-    borderColor: colors.hairline,
-    borderTopColor: colors.highlight,
     paddingTop: space.lg,
     gap: space.md,
   },
@@ -159,6 +157,7 @@ const styles = StyleSheet.create({
   chipsWrap: { height: 36 },
   chips: { paddingHorizontal: space.lg, gap: space.sm, alignItems: 'center' },
   chip: {
+    borderCurve: 'continuous',
     flexDirection: 'row',
     alignItems: 'center',
     gap: 6,
@@ -166,8 +165,6 @@ const styles = StyleSheet.create({
     paddingHorizontal: space.md,
     borderRadius: radius.pill,
     backgroundColor: colors.fill,
-    borderWidth: 1,
-    borderColor: colors.hairline,
   },
   premiumDot: { width: 6, height: 6, borderRadius: 3, backgroundColor: hues.indigo },
   chipText: { ...type.bodyMedium, color: colors.ink, fontVariant: ['tabular-nums'] },
@@ -195,6 +192,7 @@ const styles = StyleSheet.create({
   total: { ...type.title, color: colors.ink, fontVariant: ['tabular-nums'] },
   actions: { flexDirection: 'row', gap: space.sm, paddingHorizontal: space.lg },
   secondary: {
+    borderCurve: 'continuous',
     flex: 1,
     height: 50,
     flexDirection: 'row',
@@ -203,8 +201,6 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
     borderRadius: radius.card,
     backgroundColor: colors.fill,
-    borderWidth: 1,
-    borderColor: colors.hairline,
   },
   secondaryText: { ...type.bodyMedium, color: colors.ink },
   primary: {

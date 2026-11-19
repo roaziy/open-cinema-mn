@@ -7,7 +7,7 @@ import { ErrorState } from '@/components/state-views';
 import { useI18n } from '@/i18n';
 import { setBranchId, useBranchId } from '@/lib/branch';
 import { useBranches } from '@/lib/catalog';
-import { colors, hairlineWidth, radius, space } from '@/theme/tokens';
+import { colors, radius, space } from '@/theme/tokens';
 import { type } from '@/theme/type';
 
 /** Form sheet: pick the preferred branch (or all of them). */
@@ -91,11 +91,9 @@ const styles = StyleSheet.create({
   content: { padding: space.lg, gap: space.lg },
   title: { ...type.title, color: colors.ink, marginTop: space.sm },
   card: {
+    borderCurve: 'continuous',
     backgroundColor: colors.raised,
-    borderRadius: radius.card,
-    borderWidth: hairlineWidth,
-    borderColor: colors.hairline,
-    borderTopColor: colors.highlight,
+    borderRadius: radius.panel,
     padding: space.sm,
     gap: space.xs,
   },

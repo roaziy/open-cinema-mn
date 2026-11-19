@@ -247,11 +247,9 @@ const styles = StyleSheet.create({
   wrap: { gap: space.md, paddingHorizontal: space.lg },
   note: { ...type.caption, color: colors.muted },
   card: {
+    borderCurve: 'continuous',
     backgroundColor: colors.surface,
-    borderRadius: radius.card,
-    borderWidth: 1,
-    borderColor: colors.hairline,
-    borderTopColor: colors.highlight,
+    borderRadius: radius.panel,
     paddingVertical: space.md,
     gap: space.sm,
     alignItems: 'center',

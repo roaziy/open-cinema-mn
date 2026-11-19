@@ -163,6 +163,7 @@ const styles = StyleSheet.create({
   count: { ...type.footnote, color: colors.muted, marginLeft: space.xs },
   actions: { gap: space.sm },
   action: {
+    borderCurve: 'continuous',
     height: 50,
     flexDirection: 'row',
     alignItems: 'center',
@@ -171,8 +172,6 @@ const styles = StyleSheet.create({
     borderRadius: radius.card,
     // The raised tone matches Apple's dark Wallet button, so both actions read as a pair.
     backgroundColor: colors.raised,
-    borderWidth: 1,
-    borderColor: colors.hairline,
   },
   busy: { opacity: 0.6 },
   walletFrame: { overflow: 'hidden', paddingHorizontal: 0 },

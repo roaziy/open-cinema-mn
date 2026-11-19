@@ -59,13 +59,12 @@ export function MemberCard({ name, phone, memberNo, points, onPress }: Props) {
 
 const styles = StyleSheet.create({
   card: {
+    borderCurve: 'continuous',
     overflow: 'hidden',
     padding: space.xl,
     gap: space.xxl,
     borderRadius: radius.panel,
     backgroundColor: colors.raised,
-    borderWidth: 1,
-    borderColor: colors.hairline,
     borderTopColor: colors.scrimBorder,
   },
   top: { flexDirection: 'row', alignItems: 'flex-start', gap: space.md },

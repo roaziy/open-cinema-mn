@@ -55,14 +55,12 @@ export function ToastHost() {
 const styles = StyleSheet.create({
   layer: { position: 'absolute', left: space.lg, right: space.lg, alignItems: 'center' },
   toast: {
+    borderCurve: 'continuous',
     flexDirection: 'row',
     alignItems: 'center',
     gap: space.sm,
     backgroundColor: colors.raised,
     borderRadius: radius.pill,
-    borderWidth: 1,
-    borderColor: colors.hairline,
-    borderTopColor: colors.highlight,
     paddingVertical: space.md,
     paddingHorizontal: space.lg,
     maxWidth: '100%',

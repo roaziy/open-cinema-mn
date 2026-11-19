@@ -2,19 +2,21 @@
 import { HUES, type HueKey, hueFor as sharedHueFor } from '@/shared';
 
 export const colors = {
+  // Same dark palette as the Shop.mn vendor app: cards are one borderless surface on the canvas,
+  // `fill` is a control sitting on a card, `hairline` only separates rows inside a card.
   canvas: '#0B0B0D',
-  surface: '#151517',
-  raised: '#1D1D21',
+  surface: '#1A1A1D',
+  /** Kept for the call sites that named their card "raised": the same card surface. */
+  raised: '#1A1A1D',
   fill: '#26262B',
-  hairline: 'rgba(255,255,255,0.07)',
-  highlight: 'rgba(255,255,255,0.05)',
+  hairline: '#2C2C30',
 
   ink: '#F5F5F7',
   body: '#C7C7CC',
-  muted: '#8E8E93',
+  muted: '#98989F',
 
   /** Action blue: primary CTA, selected seat, live/selected states only. */
-  action: '#2E6BF0',
+  action: '#2B7FFF',
   onAction: '#FFFFFF',
 
   success: '#34D399',
@@ -52,8 +54,8 @@ export function hueFor(key: string): string {
   return HUES[sharedHueFor(key)];
 }
 
-/** Layered depth: panel -> card -> row, each one step in. Nested radius = outer - padding. */
-export const radius = { panel: 20, card: 16, inner: 10, tile: 8, pill: 999 } as const;
+/** Shop.mn vendor app radii: cards 26, fields/buttons/chips 18, tiles 12. Pair with `borderCurve: 'continuous'`. */
+export const radius = { panel: 26, card: 18, inner: 12, tile: 8, pill: 999 } as const;
 
 export const space = { xs: 4, sm: 8, md: 12, lg: 16, xl: 20, xxl: 24, xxxl: 32 } as const;
 
