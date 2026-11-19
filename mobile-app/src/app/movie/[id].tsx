@@ -5,7 +5,6 @@ import { Linking, StyleSheet, Text, useWindowDimensions, View } from 'react-nati
 import Animated, {
   Extrapolation,
   interpolate,
-  scrollTo,
   useAnimatedRef,
   useAnimatedStyle,
   useReducedMotion,
@@ -24,7 +23,6 @@ import { useBranchId } from '@/lib/branch';
 import { useFromPrice, useMovie, useShowDays, useShowtimes } from '@/lib/catalog';
 import { formatDuration, formatMonthDay, nextUbDays } from '@/lib/format';
 import { groupByBranch } from '@/lib/showtime-groups';
-import { tintedCanvas } from '@/lib/tint';
 import { formatMnt } from '@/shared';
 import { colors, radius, space } from '@/theme/tokens';
 import { type } from '@/theme/type';
@@ -99,7 +97,8 @@ export default function MovieScreen() {
   }
 
   const m = movie.data;
-  const page = tintedCanvas(m.tone);
+  // Plain black page: the art carries the film's colour, the page does not.
+  const page = colors.canvas;
   const soon = m.status === 'soon';
   const noTickets = soon && fromPrice === null;
   const trailerUrl = m.trailerUrl;
@@ -158,7 +157,10 @@ export default function MovieScreen() {
           ) : (
             <Pressable
               style={styles.cta}
-              onPress={() => scrollTo(scrollRef, 0, scheduleY.current, !still)}
+              // A JS-side press: Reanimated's scrollTo is UI-thread only and did nothing here.
+              onPress={() =>
+                scrollRef.current?.scrollTo({ y: scheduleY.current, animated: !still })
+              }
               accessibilityRole="button"
             >
               <Text style={styles.ctaText}>{t('movie.buy')}</Text>
@@ -204,7 +206,8 @@ export default function MovieScreen() {
           <View
             style={styles.schedule}
             onLayout={(e) => {
-              scheduleY.current = Math.max(0, e.nativeEvent.layout.y - insets.top - space.sm);
+              // Land the heading just under the top bar (insets.top + 56).
+              scheduleY.current = Math.max(0, e.nativeEvent.layout.y - insets.top - 56);
             }}
           >
             <Text style={styles.heading}>{t('movie.schedule')}</Text>
