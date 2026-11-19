@@ -1,8 +1,8 @@
-import { useState } from 'react';
+import { type ComponentRef, useRef, useState } from 'react';
 import {
+  Pressable,
   type StyleProp,
   StyleSheet,
-  Text,
   TextInput,
   type TextInputProps,
   type ViewStyle,
@@ -40,6 +40,7 @@ export function Field({
   ...input
 }: Props) {
   const [focused, setFocused] = useState(false);
+  const ref = useRef<ComponentRef<typeof TextInput>>(null);
   const state = useDerivedValue(
     () => withTiming(error ? 2 : focused ? 1 : 0, { duration: 200 }),
     [error, focused],
@@ -49,7 +50,9 @@ export function Field({
     borderColor: interpolateColor(state.value, [0, 1, 2], [idle, colors.focus, colors.danger]),
   }));
   return (
-    <Animated.View
+    <AnimatedPressable
+      onPress={() => ref.current?.focus()}
+      accessible={false}
       style={[
         styles.shell,
         { backgroundColor: onCanvas ? colors.surface : colors.fill },
@@ -57,13 +60,26 @@ export function Field({
         containerStyle,
       ]}
     >
-      {prefix ? <Text style={styles.text}>{prefix}</Text> : null}
+      {prefix ? (
+        // A read-only text box, not a Text: iOS centres a label and a text field differently
+        // (by a point or two, more on some versions), so the prefix is drawn by the same
+        // renderer as the value and the placeholder and sits on their line on every iOS.
+        <TextInput
+          value={prefix}
+          editable={false}
+          pointerEvents="none"
+          accessibilityElementsHidden
+          importantForAccessibility="no"
+          style={[styles.text, styles.prefix]}
+        />
+      ) : null}
       <TextInput
+        ref={ref}
         placeholderTextColor={colors.hint}
         selectionColor={colors.action}
         {...input}
-        // Same family and size as the prefix and no fixed line height on either: iOS then centres
-        // both on the same line (a lineHeight on a TextInput pushes its text off-centre).
+        // Same family and size as the prefix and no fixed line height (a lineHeight on a
+        // TextInput pushes its text off-centre).
         style={[styles.text, styles.input, style]}
         onFocus={(e) => {
           setFocused(true);
@@ -74,9 +90,11 @@ export function Field({
           onBlur?.(e);
         }}
       />
-    </Animated.View>
+    </AnimatedPressable>
   );
 }
+
+const AnimatedPressable = Animated.createAnimatedComponent(Pressable);
 
 const styles = StyleSheet.create({
   shell: {
@@ -89,6 +107,8 @@ const styles = StyleSheet.create({
     borderCurve: 'continuous',
     borderWidth: 1,
   },
-  text: { fontFamily: fonts.medium, fontSize: 16, color: colors.muted },
+  text: { fontFamily: fonts.medium, fontSize: 16, color: colors.muted, paddingVertical: 0 },
+  // Both boxes run the field's full height, so iOS centres prefix and value in the same box.
+  prefix: { alignSelf: 'stretch' },
   input: { flex: 1, alignSelf: 'stretch', paddingVertical: 0, color: colors.ink },
 });
