@@ -49,13 +49,14 @@ import type { RigGoal } from './camera-rig';
 import { GlBoundary } from './gl-boundary';
 import { createGlMachine } from './gl-machine';
 import { Hall2D } from './Hall2D';
+import { loadHall3D } from './hall3d-loader';
 import { CROSSFADE_MS } from './handoff';
 import { dragLook, grabLook, letGoLook, newLook, releaseLook } from './look-around';
 import { StatsCard } from './StatsCard';
 import { goalOf, initialTransition, panelLive, transitionReducer } from './transition-machine';
 
 // Loaded on demand: if three or expo-gl cannot even be imported, the boundary routes to 2D.
-const Hall3D = lazy(() => import('./Hall3D'));
+const Hall3D = lazy(loadHall3D);
 
 /** If no frame has been drawn this long after the canvas mounts, GL is treated as unavailable. */
 const WATCHDOG_MS = 3000;

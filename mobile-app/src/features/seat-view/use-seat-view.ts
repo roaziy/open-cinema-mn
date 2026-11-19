@@ -20,6 +20,7 @@ import {
   topDownFromMap,
 } from './camera-math';
 import { chromeOpacity, footerSlide } from './chrome-fade';
+import { loadHall3D } from './hall3d-loader';
 import { handoffLook, NOT_CLOSING } from './handoff';
 import type { OverlayRect } from './SeatViewOverlay';
 
@@ -72,6 +73,12 @@ export function useSeatView({ layout, transform, mapSeats, selected, isTaken }: 
     opacity: chromeOpacity(dive.get(), fade.get(), still),
     transform: [{ translateY: footerSlide(dive.get(), fade.get(), still) }],
   }));
+
+  // Warm the 3D code once a seat is picked (the button needs one), so the tap does not wait for it.
+  const hasPick = selected.length > 0;
+  useEffect(() => {
+    if (hasPick) loadHall3D().catch(() => {});
+  }, [hasPick]);
 
   const [viewing, setViewing] = useState<Viewing | null>(null);
   const isViewing = viewing !== null;
