@@ -14,7 +14,7 @@ import { addDays, dayMonth, isDate, todayUb, weekdayMn } from '@/lib/format';
 import { hueFor } from '@/lib/hues';
 import { isUuid } from '@/lib/ids';
 
-export const metadata: Metadata = { title: 'Сеанс, үнэ' };
+export const metadata: Metadata = { title: 'Үзвэр' };
 
 type Props = { searchParams: Promise<{ date?: string; branch?: string }> };
 
@@ -42,7 +42,7 @@ export default async function SchedulePage({ searchParams }: Props) {
 
   const header = (
     <PageHeader
-      title="Сеанс, үнэ"
+      title="Үзвэр"
       subtitle={`${dayMonth(date)}, ${weekdayMn(date)}${date === today ? ' · өнөөдөр' : ''}`}
       action={
         <div className="flex items-center gap-2">

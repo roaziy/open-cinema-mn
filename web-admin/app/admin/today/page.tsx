@@ -56,7 +56,7 @@ export default async function TodayPage({ searchParams }: Props) {
       )}
       {visible.length === 0 ? (
         <Empty title="Өнөөдөр товлогдсон сеанс алга">
-          Сеанс нэмэхийн тулд «Сеанс, үнэ» хэсгийг ашиглана уу.
+          Сеанс нэмэхийн тулд «Үзвэр» хэсгийг ашиглана уу.
         </Empty>
       ) : (
         <div className="flex flex-col gap-6">

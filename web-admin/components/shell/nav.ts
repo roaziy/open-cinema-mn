@@ -60,7 +60,7 @@ export const ADMIN_NAV: NavGroupDef[] = [
       },
       { href: '/admin/halls', label: 'Заал', icon: Armchair },
       { href: '/admin/movies', label: 'Кино', icon: Film },
-      { href: '/admin/schedule', label: 'Сеанс, үнэ', icon: Ticket },
+      { href: '/admin/schedule', label: 'Үзвэр', icon: Ticket },
     ],
   },
   {
